@@ -1,0 +1,87 @@
+openapi: 3.1.0
+info:
+  title: Waypoint Guarded Agent Orchestrator
+  version: 0.2.0
+servers:
+  - url: /api/v1
+paths:
+  /agent/chat:
+    post:
+      operationId: agentChat
+      description: Authenticated assistant request. Read tools execute with the caller's bearer token. Sensitive tool calls return an approval card and are not executed.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message]
+              additionalProperties: false
+              properties:
+                message: { type: string, minLength: 1, maxLength: 4000 }
+      responses:
+        "200": { description: Assistant reply with verified source names and optional deterministic result }
+        "202": { description: Sensitive action is pending explicit human approval }
+        "403": { description: Role or tool is not permitted }
+        "503": { description: LLM provider is unavailable; core workflows remain available }
+  /agent/tools:
+    get:
+      operationId: listAgentTools
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Role-filtered, fixed allowlist of service tools }
+        "401": { description: Authentication required }
+        "403": { description: Dispatcher or Store Manager role required }
+  /agent/approvals:
+    post:
+      operationId: proposeSensitiveAction
+      description: Create a five-minute, actor-owned approval for a schema-validated sensitive allowlisted tool. Does not execute the action.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tool, args]
+              additionalProperties: false
+              properties:
+                tool: { type: string }
+                args: { type: object, additionalProperties: true }
+      responses:
+        "202": { description: Approval created; exact arguments and hash are returned for review }
+        "400": { description: Arguments failed allowlisted tool validation }
+        "403": { description: Tool is unavailable to this role }
+  /agent/approvals/{id}/decide:
+    post:
+      operationId: decideSensitiveAction
+      description: Only the approval owner can approve or reject. Approved actions execute through the target public service with the same human bearer token, and that service rechecks authorization and business rules.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [approved]
+              additionalProperties: false
+              properties:
+                approved: { type: boolean }
+                reason: { type: string, maxLength: 4000 }
+      responses:
+        "200": { description: Rejected with no execution, or approved and sent to the business service }
+        "403": { description: Approval owner mismatch or target business authorization denied }
+        "409": { description: Approval is no longer pending }
+        "410": { description: Approval expired }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

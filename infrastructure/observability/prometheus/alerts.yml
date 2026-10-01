@@ -1,0 +1,91 @@
+groups:
+  - name: waypoint-service-health
+    rules:
+      - alert: WaypointServiceDown
+        expr: up{job="waypoint-services"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Waypoint service is not responding to Prometheus"
+          description: "{{ $labels.instance }} has failed scrapes for at least two minutes."
+      - alert: WaypointHighServerErrorRate
+        expr: sum by (service) (rate(http_errors_total{status=~"5.."}[5m])) / clamp_min(sum by (service) (rate(http_requests_total[5m])), 0.001) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Waypoint service has elevated server errors"
+          description: "More than five percent of requests to {{ $labels.service }} returned 5xx for five minutes."
+      - alert: WaypointHighRequestLatency
+        expr: histogram_quantile(0.95, sum by (service, le) (rate(http_request_duration_seconds_bucket[5m]))) > 2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Waypoint request latency is elevated"
+          description: "The p95 request latency for {{ $labels.service }} exceeded two seconds for ten minutes."
+      - alert: WaypointFleetAuditOutboxStale
+        expr: waypoint_fleet_audit_outbox_oldest_age_seconds > 300
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Fleet audit events are waiting to publish"
+          description: "The oldest undelivered fleet audit event is more than five minutes old."
+      - alert: WaypointFleetAuditOutboxLarge
+        expr: waypoint_fleet_audit_outbox_pending > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Fleet audit outbox is growing"
+          description: "More than 100 fleet audit events remain undelivered."
+      - alert: WaypointSMSOutboxStale
+        expr: waypoint_sms_outbox_oldest_age_seconds > 300
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Outlet SMS notifications are waiting to send"
+          description: "The oldest pending SMS event is more than five minutes old."
+      - alert: WaypointSMSStatusMissing
+        expr: waypoint_sms_awaiting_status_oldest_age_seconds > 900
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Provider delivery status has not arrived"
+          description: "An accepted SMS has been awaiting a terminal provider callback for more than fifteen minutes."
+      - alert: WaypointSMSUnknownOutcome
+        expr: increase(waypoint_sms_notifications_total{state="UNKNOWN"}[5m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "An SMS send has an ambiguous outcome"
+          description: "Reconcile the provider message before any manual retry to avoid sending a duplicate."
+      - alert: WaypointRepeatedDeliverySyncConflicts
+        expr: increase(waypoint_delivery_sync_conflicts_total[10m]) >= 3
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Repeated delivery sync conflicts may strand queued work"
+          description: "At least three delivery sync conflicts were recorded in ten minutes. Review the affected trip operations and resolve the conflict before retrying the device queue."
+      - alert: WaypointDriverQueueStale
+        expr: increase(waypoint_driver_offline_queue_reports_total{age_bucket=~"7d_30d|30d_plus"}[20m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "A driver device reported long-lived unsynced work"
+          description: "An authenticated driver reported an offline queue at least seven days old while online. No trip, stop, operation, or driver identifiers are included in this aggregate metric."
+      - alert: WaypointDriverQueueCritical
+        expr: increase(waypoint_driver_offline_queue_reports_total{age_bucket="30d_plus"}[20m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "A driver device reported unsynced work over 30 days old"
+          description: "Contact dispatch/support to recover device-saved work. Telemetry is emitted only when the PWA is online and the driver session is authorized."

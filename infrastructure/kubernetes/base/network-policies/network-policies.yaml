@@ -1,0 +1,153 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: waypoint
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: waypoint
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-kgateway-to-backends
+  namespace: waypoint
+spec:
+  podSelector:
+    matchLabels:
+      waypoint.io/tier: backend
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: { app: kgateway }
+      ports:
+        - { protocol: TCP, port: 8080 }
+    - from:
+        - podSelector:
+            matchLabels: { waypoint.io/tier: agent }
+      ports:
+        - { protocol: TCP, port: 8080 }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-agent-to-business-services
+  namespace: waypoint
+spec:
+  podSelector:
+    matchLabels:
+      waypoint.io/tier: agent
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: { app: order-service }
+      ports: [{ protocol: TCP, port: 8080 }]
+    - to:
+        - podSelector:
+            matchLabels: { app: planning-service }
+      ports: [{ protocol: TCP, port: 8080 }]
+    - to:
+        - podSelector:
+            matchLabels: { app: fleet-service }
+      ports: [{ protocol: TCP, port: 8080 }]
+    - to:
+        - podSelector:
+            matchLabels: { app: loading-service }
+      ports: [{ protocol: TCP, port: 8080 }]
+    - to:
+        - podSelector:
+            matchLabels: { app: delivery-service }
+      ports: [{ protocol: TCP, port: 8080 }]
+    - to:
+        - podSelector:
+            matchLabels: { app: otel-collector }
+      ports: [{ protocol: TCP, port: 4318 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-backends-to-postgres
+  namespace: waypoint
+spec:
+  podSelector:
+    matchLabels:
+      waypoint.io/tier: backend
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: { app: postgres }
+      ports: [{ protocol: TCP, port: 5432 }]
+    - to:
+        - podSelector:
+            matchLabels: { app: redis }
+      ports: [{ protocol: TCP, port: 6379 }]
+    - to:
+        - podSelector:
+            matchLabels: { app: otel-collector }
+      ports: [{ protocol: TCP, port: 4318 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-object-storage
+  namespace: waypoint
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values: [delivery-service, integration-service]
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: { app: minio }
+      ports: [{ protocol: TCP, port: 9000 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-backend-to-backend
+  namespace: waypoint
+spec:
+  podSelector:
+    matchLabels:
+      waypoint.io/tier: backend
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: { waypoint.io/tier: backend }
+      ports:
+        - { protocol: TCP, port: 8080 }
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: { waypoint.io/tier: backend }
+      ports:
+        - { protocol: TCP, port: 8080 }
+    - to:
+        - podSelector:
+            matchLabels: { app: thunderid }
+      ports:
+        - { protocol: TCP, port: 8090 }
+# Agent → PostgreSQL is not allowed. default-deny plus allow-agent-to-business-services
+# lists only HTTP backends and OTel. Planning reaches order/fleet/shared over HTTP only.

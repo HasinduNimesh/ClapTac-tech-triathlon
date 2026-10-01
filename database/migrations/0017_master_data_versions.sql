@@ -1,0 +1,2 @@
+ALTER TABLE shared.outlets ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1 CHECK (version > 0);
+ALTER TABLE shared.operating_calendar ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1 CHECK (version > 0);

@@ -1,0 +1,31 @@
+openapi: 3.1.0
+info:
+  title: Waypoint Integration Service
+  version: 0.1.0
+servers:
+  - url: /api/v1
+paths:
+  /integrations/routing/directions:
+    post:
+      operationId: directions
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Directions placeholder }
+  /integrations/storage/presign:
+    post:
+      operationId: presignObject
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Presigned URL placeholder }
+  /integrations/notifications/send:
+    post:
+      operationId: sendExternalNotification
+      security: [{ bearerAuth: [] }]
+      responses:
+        "202": { description: Adapter placeholder }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

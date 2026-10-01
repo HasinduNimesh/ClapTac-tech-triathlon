@@ -1,0 +1,34 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+patches:
+  - target:
+      kind: ConfigMap
+      name: waypoint-config
+    patch: |-
+      - op: replace
+        path: /data/ENVIRONMENT
+        value: production
+      - op: replace
+        path: /data/AUTH_DISABLED
+        value: "false"
+images:
+  - name: waypoint/order-service
+    newTag: production
+  - name: waypoint/planning-service
+    newTag: production
+  - name: waypoint/fleet-service
+    newTag: production
+  - name: waypoint/loading-service
+    newTag: production
+  - name: waypoint/delivery-service
+    newTag: production
+  - name: waypoint/shared-service
+    newTag: production
+  - name: waypoint/integration-service
+    newTag: production
+  - name: waypoint/agent-orchestrator
+    newTag: production
+  - name: waypoint/web
+    newTag: production

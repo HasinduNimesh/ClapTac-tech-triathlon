@@ -1,0 +1,47 @@
+# Waypoint privacy and retention inventory
+
+This is an engineering inventory of data observed in the current prototype, prepared against NFR-07, NFR-08, NFR-14, and the delivery-proof requirements in the Waypoint design report. It is not a legal compliance determination. The report classifies privacy compliance as a production must; the prototype does not yet have an approved retention schedule or production privacy review.
+
+## Data observed in the system
+
+| Data | Current use and storage | Access boundary | Lifecycle status |
+|---|---|---|---|
+| OIDC session and access token | The web OIDC client stores user state in browser `sessionStorage`; the API profile is fetched using the bearer token. | Session-bound browser storage; service authorization enforces role permissions. | Session cleanup runs on sign-out. Production issuer, scopes, shared-device policy, token lifetime, and session revocation need deployment review. |
+| Order and outlet operations | Orders store outlet, brand, requested date, quantities, weight/volume, temperature requirement, creator ID, and timestamps. Outlet master data stores outlet name, district, depot, access/window constraints. | Role-scoped order, store, planning, and dispatch APIs. | Operational retention and correction/deletion rules are not defined. Seed outlets are synthetic. |
+| Driver route and delivery events | Delivery runs/stops store trip/vehicle/outlet context, event times, outcomes, reasons, and notes. The prototype has no continuous GPS latitude/longitude capture. | Driver assignment and dispatcher permissions; append-only audit records for key actions. | Route/event retention is not defined. District/outlet-level operations are still location-related data. |
+| Proof of delivery | Signature and photo blobs are accepted as PNG/JPEG with size limits, stored in object storage, and referenced by proof rows containing type, object key, MIME, hash, timestamps, creator, and idempotency key. | Proof-upload permission and assigned run/stop checks; proof summaries shown to permitted roles. | A configurable expiry worker removes completed-trip proof blobs and their content metadata after the configured period, writes a minimal append-only erasure record, and honors claim/legal holds. It is disabled by default until the data owner/legal reviewer approves the draft period and hold process. |
+| Offline driver cache and queue | IndexedDB database `waypoint-driver` stores trip summaries/details and queued delivery events and proof blobs. | Bound to the first authenticated driver subject on the device. A different account is blocked from accessing or changing it; queued work is preserved. | Unsynced queue age is surfaced in-app at 24 hours, 7 days, and 30 days; no queued item is deleted by age. Server-confirmed completed summaries/details are deleted after seven days only when no queue item remains for the trip. |
+| Offline queue health telemetry | When online, the Driver PWA reports only bounded oldest-age and queue-count buckets, at most every 15 minutes; the delivery service increments aggregate Prometheus counters and keeps no per-report row. | Authenticated assigned driver with delivery sync permission. Payload rejects any fields beyond the two buckets; it contains no driver, device, trip, stop, operation IDs, precise timestamps, or queue contents. | Reports are best-effort and skipped offline or while sync is paused. Prometheus TSDB retention applies; alerts are aggregate and cannot identify a specific driver. |
+| Audit and sync history | Audit/event rows identify actors/resources/actions; delivery sync operations retain operation ID, operation type, event timestamps, result status, and result payload. | Role-protected audit search and operational service permissions. | Append-only behavior is intentional; audit retention, archival, and legally approved deletion exceptions are not defined. |
+| Outlet SMS notifications | Shared-service stores a dispatcher-managed outlet phone number, consent and alert preferences, and a message snapshot in its delivery outbox. Planning queues only deferrals and confirmed breakdown ETA changes of at least 30 minutes. | Preference reads/writes require dispatcher master-data permission; integration send endpoint requires a service-only `notifications:send` scope. Audit state omits phone number and message body. | Terminal outbox payloads (phone and message body) are erased seven days after the attempt; status and provider message ID remain. Pending work is never age-deleted. The seven-day value is a practical engineering default and requires Waypoint privacy-owner review. Sending is disabled until valid Twilio credentials and an opted-in contact are configured. No Twilio status callback is configured. |
+
+## Production decisions and safeguards still required
+
+- An accountable Waypoint data owner and qualified Sri Lankan privacy/legal reviewer must approve purpose, lawful basis, retention periods, data-subject handling, and any applicable cross-border processing before production use.
+- Define separate retention periods and deletion/archival procedures for orders, route events, signatures/photos, offline cache, audit records, and backups. Preserve audit integrity and unsent offline work while enforcing those rules.
+- Device policy confirmed by Hasindu: one driver account per device. The implementation binds the existing local database to the first authenticated driver ID; another account sees a lock message, and existing queued data is not deleted. Device replacement/recovery and authorized unbinding still need an operational support process.
+- Provision production transport/storage encryption, object-store lifecycle, backup expiry, least-privilege credentials, access logging, incident handling, and documented export/deletion workflows.
+- Keep location collection disabled unless an explicitly approved operational purpose, consent/notice, access policy, retention rule, and device behavior are defined. The current prototype does not require GPS for planning or event-based ETA.
+
+## Proposed retention schedule — draft, not active
+
+These are practical starting periods for the Waypoint owner and Sri Lankan privacy/legal reviewer to approve or change. They are not represented as statutory periods. The seven-day local completed-cache cleanup and offline queue warning thresholds are active; server-proof deletion remains inactive.
+
+| Data | Proposed period | Handling rule |
+|---|---:|---|
+| Completed trip details cached on driver device | 7 days after server-confirmed trip completion | The client removes cached summary/detail only if the completed timestamp came from an authenticated server response and the trip queue is empty. An unsynced trip or proof is never auto-deleted by age. |
+| Unsent offline queue and local proof blobs | Until server acceptance or a human-led recovery/resolution | The driver UI warns at 24 hours, escalates to dispatcher contact at 7 days, and flags support recovery at 30 days. Queue entries and blobs are never age-deleted. |
+| Server-side delivery photo/signature proof | 180 days after delivery completion | Implemented as a configurable worker, disabled by default pending accountable owner/legal approval. On activation it deletes the blob and identifying content metadata, records a minimal append-only erasure event, and skips explicit retention holds; review a held record within 30 days after claim closure. |
+| Driver trip summaries/details not needed for queued work | 7 days after server-confirmed completion | Purge with the same completion guard as above; retain the minimum state needed to explain an unresolved queued operation. |
+
+The 180-day proof period is a product-risk recommendation, not a period prescribed by Sri Lankan law. Section 9 of the Personal Data Protection Act requires retention only for a period necessary for the processing purpose. The DPA's public website notice uses six months for its own inquiry data, but that is specific to that service and is not authority for Waypoint's business records. Confirm the actual customer-dispute, tax, contract, and other applicable periods before enabling a bucket lifecycle rule. [PDPA No. 9 of 2022](https://www.dpa.gov.lk/acts/Data%20Protection%20Act%20SL%20-%20English%20%282%29.pdf) · [DPA privacy notice](https://www.dpa.gov.lk/notice.php) · [DPA guidelines page](https://www.dpa.gov.lk/guidelines.php).
+
+## Evidence references
+
+- OIDC browser storage: `apps/web/src/auth/userManager.ts` and sign-out cleanup in `apps/web/src/auth/AuthContext.tsx`.
+- Local offline cache and account binding: `apps/web/src/offline/db.ts`, `apps/web/src/offline/singleOwner.mjs`, and event/proof queuing in `apps/web/src/driver/DriverTripsPage.tsx`.
+- Order fields: `database/migrations/0003_orders.sql`.
+- Delivery run, stop, proof, and sync fields: `database/migrations/0012_delivery.sql`.
+- Proof upload size/type checks and object storage: `services/delivery-service/internal/domain/domain.go`, `services/delivery-service/internal/service/service.go`, and `services/delivery-service/cmd/server/main.go`.
+- Server proof expiry worker, hold columns, and append-only erasure record: `services/delivery-service/internal/retention/runner.go`, `database/migrations/0028_delivery_proof_retention.sql`, and [proof-retention operations](operations/proof-retention.md).
+- Role permissions and append-only audit tests: `services/shared-service/internal/e2e/audit_test.go` and the service-specific end-to-end suites.
