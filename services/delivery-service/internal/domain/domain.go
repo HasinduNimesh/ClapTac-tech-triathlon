@@ -33,6 +33,15 @@ const (
 	OpStopOutcome        = "STOP_OUTCOME"
 	OpTemperatureReading = "TEMPERATURE_READING"
 	OpRouteCompleted     = "ROUTE_COMPLETED"
+	OpIncidentReport     = "INCIDENT_REPORT"
+
+	// FR-22: categories for a Driver-reported incident.
+	IncidentVehicle = "VEHICLE"
+	IncidentRoad    = "ROAD"
+	IncidentOutlet  = "OUTLET"
+	IncidentGoods   = "GOODS"
+	IncidentSafety  = "SAFETY"
+	IncidentOther   = "OTHER"
 
 	ResultApplied   = "APPLIED"
 	ResultConflict  = "CONFLICT"
@@ -123,6 +132,21 @@ type TemperatureReading struct {
 	MinC        *float64  `json:"minC,omitempty"`
 	MaxC        *float64  `json:"maxC,omitempty"`
 	Note        string    `json:"note,omitempty"`
+}
+
+// DriverIncident is FR-22's categorised field report: vehicle, road, outlet,
+// goods, safety, or other. StopID is optional because not every incident
+// (a road closure, a vehicle fault between stops) happens at a stop.
+type DriverIncident struct {
+	ID          string    `json:"id"`
+	OperationID string    `json:"operationId"`
+	RunID       string    `json:"runId"`
+	StopID      string    `json:"stopId,omitempty"`
+	Category    string    `json:"category"`
+	Description string    `json:"description"`
+	ReportedBy  string    `json:"reportedBy"`
+	OccurredAt  time.Time `json:"occurredAt"`
+	CreatedAt   time.Time `json:"createdAt"`
 }
 
 type Proof struct {

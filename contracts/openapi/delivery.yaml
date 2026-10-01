@@ -143,7 +143,7 @@ paths:
   /delivery/sync:
     post:
       operationId: syncOfflineEvents
-      description: FIFO operations ARRIVED, STOP_OUTCOME, ROUTE_COMPLETED. Proof bytes are not in this JSON. Duplicate operationId returns DUPLICATE with originalStatus and does not overwrite APPLIED.
+      description: FIFO operations ARRIVED, STOP_OUTCOME, ROUTE_COMPLETED, TEMPERATURE_READING, INCIDENT_REPORT. Proof bytes are not in this JSON. Duplicate operationId returns DUPLICATE with originalStatus and does not overwrite APPLIED.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -159,13 +159,13 @@ paths:
                     required: [operationId, type]
                     properties:
                       operationId: { type: string }
-                      type: { type: string, enum: [ARRIVED, STOP_OUTCOME, ROUTE_COMPLETED] }
+                      type: { type: string, enum: [ARRIVED, STOP_OUTCOME, ROUTE_COMPLETED, TEMPERATURE_READING, INCIDENT_REPORT] }
                       tripId: { type: string }
                       runId: { type: string }
-                      stopId: { type: string }
+                      stopId: { type: string, description: "Optional for INCIDENT_REPORT; not every incident happens at a stop." }
                       occurredAt: { type: string, format: date-time }
                       dependsOnOperationId: { type: string }
-                      payload: { type: object }
+                      payload: { type: object, description: "INCIDENT_REPORT: { category: VEHICLE|ROAD|OUTLET|GOODS|SAFETY|OTHER, description: string }" }
       responses:
         "200": { description: Per-operation APPLIED, DUPLICATE, CONFLICT, or REJECTED }
   /delivery/telemetry/offline-queue:

@@ -416,6 +416,34 @@ func (p Postgres) RecordTemperatureReading(ctx context.Context, runID, stopID, o
 	return item, nil
 }
 
+// InsertDriverIncident records a FR-22 categorised field report and its
+// matching sync-operation ledger row in one transaction, mirroring how a
+// temperature reading is recorded.
+func (p Postgres) InsertDriverIncident(ctx context.Context, runID, stopID, operationID, category, description, reportedBy string, occurredAt time.Time) (domain.DriverIncident, error) {
+	tx, err := p.Pool.Begin(ctx)
+	if err != nil {
+		return domain.DriverIncident{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	item := domain.DriverIncident{OperationID: operationID, RunID: runID, StopID: stopID, Category: category, Description: description, ReportedBy: reportedBy, OccurredAt: occurredAt}
+	err = tx.QueryRow(ctx, `
+		INSERT INTO delivery.driver_incidents(run_id, stop_id, operation_id, category, description, reported_by, occurred_at)
+		VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7)
+		RETURNING id::text, created_at
+	`, runID, nullIfEmpty(stopID), operationID, category, description, reportedBy, occurredAt).Scan(&item.ID, &item.CreatedAt)
+	if err != nil {
+		return domain.DriverIncident{}, err
+	}
+	payload, _ := json.Marshal(map[string]any{"incident": item})
+	if _, err = tx.Exec(ctx, `INSERT INTO delivery.sync_operations(operation_id,run_id,stop_id,operation_type,occurred_at,result_status,result_payload) VALUES($1,$2,$3,$4,$5,'APPLIED',$6::jsonb)`, operationID, runID, nullIfEmpty(stopID), domain.OpIncidentReport, occurredAt, payload); err != nil {
+		return domain.DriverIncident{}, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return domain.DriverIncident{}, err
+	}
+	return item, nil
+}
+
 func (p Postgres) OrderTracking(ctx context.Context, orderID string) (domain.OrderTracking, error) {
 	var t domain.OrderTracking
 	var short []byte
