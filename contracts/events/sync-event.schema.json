@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://waypoint.local/schemas/sync-event.json",
+  "title": "SyncEvent",
+  "type": "object",
+  "required": [
+    "event_id",
+    "idempotency_key",
+    "correlation_id",
+    "actor_id",
+    "action",
+    "resource_type",
+    "resource_id",
+    "timestamp",
+    "source"
+  ],
+  "properties": {
+    "event_id": { "type": "string" },
+    "idempotency_key": {
+      "type": "string",
+      "description": "Client-generated unique key. Retrying the same event must not create duplicate outcomes or proof records."
+    },
+    "correlation_id": { "type": "string" },
+    "actor_id": { "type": "string" },
+    "actor_type": { "type": "string" },
+    "action": { "type": "string" },
+    "resource_type": { "type": "string" },
+    "resource_id": { "type": "string" },
+    "previous_state": { "type": ["object", "null"] },
+    "new_state": { "type": ["object", "null"] },
+    "reason": { "type": "string" },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "source": { "type": "string" },
+    "payload": { "type": "object" }
+  },
+  "additionalProperties": false
+}

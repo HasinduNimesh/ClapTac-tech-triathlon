@@ -1,0 +1,12 @@
+.git
+**/.git
+**/node_modules
+**/dist
+**/.dart_tool
+**/build
+.env
+bin
+*.md
+apps/driver-mobile
+infrastructure/kubernetes
+docs

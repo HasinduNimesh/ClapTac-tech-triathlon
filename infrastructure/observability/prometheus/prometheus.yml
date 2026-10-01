@@ -1,0 +1,18 @@
+global:
+  scrape_interval: 15s
+
+rule_files:
+  - alerts.yml
+
+scrape_configs:
+  - job_name: waypoint-services
+    static_configs:
+      - targets:
+          - order-service:8080
+          - planning-service:8080
+          - fleet-service:8080
+          - loading-service:8080
+          - delivery-service:8080
+          - shared-service:8080
+          - integration-service:8080
+          - agent-orchestrator:8080

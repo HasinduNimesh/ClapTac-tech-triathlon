@@ -1,0 +1,223 @@
+openapi: 3.1.0
+info:
+  title: Waypoint Delivery Service
+  version: 0.5.0
+servers:
+  - url: /api/v1
+paths:
+  /delivery/trips:
+    get:
+      operationId: listDeliveryTrips
+      description: Ready-for-departure trips for the driver's assigned vehicle, or all vehicles with delivery:view-all.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: date
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: vehicleId
+          in: query
+          schema: { type: string }
+      responses:
+        "200": { description: Trip summaries }
+  /delivery/drivers/me/trips:
+    get:
+      operationId: listMyTrips
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: date
+          in: query
+          required: true
+          schema: { type: string, format: date }
+      responses:
+        "200": { description: Assigned trips }
+  /delivery/trips/{tripId}:
+    get:
+      operationId: getDeliveryTrip
+      description: Drivers prepare a run from the loading READY snapshot on first get. Dispatchers receive a read-only view and never mutate loading.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TripID"
+      responses:
+        "200": { description: Run and stops }
+  /delivery/trips/{tripId}/prepare:
+    post:
+      operationId: prepareDeliveryRun
+      description: Atomic snapshot of loading READY orders. Idempotent. Does not change loading status.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TripID"
+      responses:
+        "200": { description: Prepared run }
+        "409": { description: Trip is not ready }
+  /delivery/trips/{tripId}/start:
+    post:
+      operationId: startDeliveryRun
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TripID"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200": { description: In progress }
+  /delivery/trips/{tripId}/stops/{stopId}/arrive:
+    post:
+      operationId: arriveStop
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TripID"
+        - $ref: "#/components/parameters/StopID"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                occurredAt: { type: string, format: date-time }
+                operationId: { type: string }
+      responses:
+        "200": { description: Arrived }
+  /delivery/trips/{tripId}/stops/{stopId}/proofs:
+    post:
+      operationId: uploadProof
+      description: Multipart PNG/JPEG only. Proofs are never accepted in /sync JSON. Size caps apply.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TripID"
+        - $ref: "#/components/parameters/StopID"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [type, file]
+              properties:
+                type: { type: string, enum: [SIGNATURE, PHOTO] }
+                file: { type: string, format: binary }
+                mimeType: { type: string }
+                capturedAt: { type: string, format: date-time }
+                operationId: { type: string }
+      responses:
+        "201": { description: Proof stored }
+        "400": { description: Invalid type, mime, or size }
+  /delivery/trips/{tripId}/stops/{stopId}/outcome:
+    post:
+      operationId: recordStopOutcome
+      description: DELIVERED and PARTIAL require a finalized proof. FAILED and REFUSED require a reason. Dual timestamps occurredAt vs received_at.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TripID"
+        - $ref: "#/components/parameters/StopID"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string, enum: [DELIVERED, PARTIAL, FAILED, REFUSED] }
+                reason: { type: string }
+                note: { type: string }
+                occurredAt: { type: string, format: date-time }
+                operationId: { type: string }
+                dependsOnOperationId: { type: string }
+      responses:
+        "200": { description: Outcome recorded }
+        "400": { description: Proof required or invalid transition }
+  /delivery/trips/{tripId}/complete:
+    post:
+      operationId: completeDeliveryRun
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TripID"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200": { description: Run completed }
+        "409":
+          description: delivery_incomplete
+  /delivery/sync:
+    post:
+      operationId: syncOfflineEvents
+      description: FIFO operations ARRIVED, STOP_OUTCOME, ROUTE_COMPLETED. Proof bytes are not in this JSON. Duplicate operationId returns DUPLICATE with originalStatus and does not overwrite APPLIED.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                operations:
+                  type: array
+                  items:
+                    type: object
+                    required: [operationId, type]
+                    properties:
+                      operationId: { type: string }
+                      type: { type: string, enum: [ARRIVED, STOP_OUTCOME, ROUTE_COMPLETED] }
+                      tripId: { type: string }
+                      runId: { type: string }
+                      stopId: { type: string }
+                      occurredAt: { type: string, format: date-time }
+                      dependsOnOperationId: { type: string }
+                      payload: { type: object }
+      responses:
+        "200": { description: Per-operation APPLIED, DUPLICATE, CONFLICT, or REJECTED }
+  /delivery/telemetry/offline-queue:
+    post:
+      operationId: reportOfflineQueueHealth
+      description: Best-effort online-only driver telemetry. Reports bounded age/count buckets only; no driver, trip, stop, operation identifiers, timestamps, or queue contents are accepted. Requires an assigned driver with delivery sync permission.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [ageBucket, countBucket]
+              properties:
+                ageBucket: { type: string, enum: [none, unknown, lt24h, 1d_7d, 7d_30d, 30d_plus] }
+                countBucket: { type: string, enum: [none, one, 2_5, 6_plus] }
+      responses:
+        "204": { description: Aggregate report accepted }
+        "400": { description: Unknown fields or invalid bucket combination }
+        "401": { description: Unauthenticated }
+        "403": { description: Assigned driver permission required }
+  /delivery/internal/orders/{orderId}:
+    get:
+      operationId: getInternalOrderDelivery
+      security: [{ bearerAuth: [] }]
+      description: Latest terminal delivery state and safe proof metadata, without object keys or proof URLs. Requires deliveries:read-internal.
+      parameters:
+        - { name: orderId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Delivery outcome and metadata summary }
+        "401": { description: Unauthenticated }
+        "403": { description: Missing internal-read scope }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    TripID:
+      name: tripId
+      in: path
+      required: true
+      schema: { type: string }
+    StopID:
+      name: stopId
+      in: path
+      required: true
+      schema: { type: string }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string }

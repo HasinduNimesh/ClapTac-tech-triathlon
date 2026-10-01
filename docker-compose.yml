@@ -1,0 +1,332 @@
+x-svc-env: &svc-env
+  ENVIRONMENT: ${ENVIRONMENT:-local}
+  AUTH_DISABLED: "false"
+  HTTP_ADDR: :8080
+  DATABASE_URL: ${DATABASE_URL:-postgres://waypoint:waypoint@postgres:5432/waypoint?sslmode=disable}
+  REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+  OIDC_ISSUER: ${OIDC_ISSUER:-http://localhost:8090}
+  OIDC_JWKS_URL: http://thunderid:8090/oauth2/jwks
+  OIDC_AUDIENCE: ${OIDC_AUDIENCE:-waypoint-api}
+  OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+
+x-backend-healthcheck: &backend-healthcheck
+  test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health/ready"]
+  interval: 10s
+  timeout: 3s
+  retries: 6
+  start_period: 5s
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-waypoint}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-waypoint}
+      POSTGRES_DB: ${POSTGRES_DB:-waypoint}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/migrations/0001_init.sql:/docker-entrypoint-initdb.d/0001_init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-waypoint}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    image: postgres:16-alpine
+    environment:
+      DATABASE_URL: postgres://waypoint:waypoint@postgres:5432/waypoint?sslmode=disable
+    volumes:
+      - ./database:/db
+    working_dir: /db
+    command: ["sh", "/db/apply.sh"]
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  seed:
+    image: postgres:16-alpine
+    environment:
+      DATABASE_URL: postgres://waypoint:waypoint@postgres:5432/waypoint?sslmode=disable
+    volumes:
+      - ./database:/db
+    working_dir: /db
+    command: ["sh", "/db/seed.sh"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  bootstrap:
+    image: postgres:16-alpine
+    environment:
+      DATABASE_URL: postgres://waypoint:waypoint@postgres:5432/waypoint?sslmode=disable
+      THUNDER_URL: http://thunderid:8090
+    volumes:
+      - ./scripts:/scripts:ro
+    command: ["sh", "/scripts/thunder-bootstrap.sh"]
+    depends_on:
+      seed: { condition: service_completed_successfully }
+      thunderid: { condition: service_started }
+
+  thunderid:
+    build: { context: ., dockerfile: tools/dev-oidc/Dockerfile }
+    environment:
+      HTTP_ADDR: :8090
+      OIDC_ISSUER: http://localhost:8090
+      OIDC_AUDIENCE: waypoint-api
+    ports:
+      - "127.0.0.1:8090:8090"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8090/health/live"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 5s
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "127.0.0.1:6379:6379"
+
+  minio:
+    image: adobe/s3mock:latest
+    environment:
+      initialBuckets: ${MINIO_BUCKET:-waypoint-proof}
+    ports:
+      - "127.0.0.1:9000:9090"
+
+  objectstore-backup-target:
+    profiles: ["backup-test"]
+    image: adobe/s3mock:latest
+    environment:
+      initialBuckets: waypoint-proof-restore
+    ports:
+      - "127.0.0.1:9001:9090"
+
+  order-service:
+    build: { context: ., dockerfile: Dockerfile, args: { SERVICE: order-service } }
+    environment:
+      <<: *svc-env
+      DATABASE_SCHEMA: orders
+      SHARED_SERVICE_URL: http://shared-service:8080
+      PLANNING_SERVICE_URL: http://planning-service:8080
+      DELIVERY_SERVICE_URL: http://delivery-service:8080
+      OIDC_TOKEN_URL: http://thunderid:8090/oauth2/token
+      M2M_CLIENT_ID: waypoint-order-service
+      M2M_CLIENT_SECRET: ${ORDER_M2M_CLIENT_SECRET:-local-order-m2m}
+      CALENDAR_PATH: /data/calendar.csv
+    volumes:
+      - ./database/seeds/calendar.csv:/data/calendar.csv:ro
+    healthcheck: *backend-healthcheck
+    depends_on:
+      bootstrap: { condition: service_completed_successfully }
+      thunderid: { condition: service_started }
+      shared-service: { condition: service_healthy }
+
+  planning-service:
+    build: { context: ., dockerfile: Dockerfile, args: { SERVICE: planning-service } }
+    environment:
+      <<: *svc-env
+      DATABASE_SCHEMA: planning
+      ORDER_SERVICE_URL: http://order-service:8080
+      FLEET_SERVICE_URL: http://fleet-service:8080
+      SHARED_SERVICE_URL: http://shared-service:8080
+      DELIVERY_SERVICE_URL: http://delivery-service:8080
+      OIDC_TOKEN_URL: http://thunderid:8090/oauth2/token
+      M2M_CLIENT_ID: waypoint-planning-service
+      M2M_CLIENT_SECRET: ${PLANNING_M2M_CLIENT_SECRET:-local-planning-m2m}
+    healthcheck: *backend-healthcheck
+    depends_on:
+      bootstrap: { condition: service_completed_successfully }
+      thunderid: { condition: service_started }
+      order-service: { condition: service_healthy }
+      fleet-service: { condition: service_healthy }
+      shared-service: { condition: service_healthy }
+
+  fleet-service:
+    build: { context: ., dockerfile: Dockerfile, args: { SERVICE: fleet-service } }
+    environment:
+      <<: *svc-env
+      DATABASE_SCHEMA: fleet
+      SHARED_SERVICE_URL: http://shared-service:8080
+      OIDC_TOKEN_URL: http://thunderid:8090/oauth2/token
+      M2M_CLIENT_ID: waypoint-fleet-service
+      M2M_CLIENT_SECRET: ${FLEET_M2M_CLIENT_SECRET:-local-fleet-m2m}
+    healthcheck: *backend-healthcheck
+    depends_on:
+      bootstrap: { condition: service_completed_successfully }
+      shared-service: { condition: service_healthy }
+
+  loading-service:
+    build: { context: ., dockerfile: Dockerfile, args: { SERVICE: loading-service } }
+    environment:
+      <<: *svc-env
+      DATABASE_SCHEMA: loading
+      PLANNING_SERVICE_URL: http://planning-service:8080
+      ORDER_SERVICE_URL: http://order-service:8080
+      SHARED_SERVICE_URL: http://shared-service:8080
+      OIDC_TOKEN_URL: http://thunderid:8090/oauth2/token
+      M2M_CLIENT_ID: waypoint-loading-service
+      M2M_CLIENT_SECRET: ${LOADING_M2M_CLIENT_SECRET:-local-loading-m2m}
+    healthcheck: *backend-healthcheck
+    depends_on:
+      bootstrap: { condition: service_completed_successfully }
+      thunderid: { condition: service_started }
+      planning-service: { condition: service_healthy }
+      order-service: { condition: service_healthy }
+      shared-service: { condition: service_healthy }
+
+  delivery-service:
+    build: { context: ., dockerfile: Dockerfile, args: { SERVICE: delivery-service } }
+    environment:
+      <<: *svc-env
+      DATABASE_SCHEMA: delivery
+      LOADING_SERVICE_URL: http://loading-service:8080
+      SHARED_SERVICE_URL: http://shared-service:8080
+      OIDC_TOKEN_URL: http://thunderid:8090/oauth2/token
+      M2M_CLIENT_ID: waypoint-delivery-service
+      M2M_CLIENT_SECRET: ${DELIVERY_M2M_CLIENT_SECRET:-local-delivery-m2m}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-http://minio:9090}
+      MINIO_BUCKET: ${MINIO_BUCKET:-waypoint-proof}
+      DELIVERY_PROOF_RETENTION_ENABLED: ${DELIVERY_PROOF_RETENTION_ENABLED:-false}
+      DELIVERY_PROOF_RETENTION_DAYS: ${DELIVERY_PROOF_RETENTION_DAYS:-180}
+    healthcheck: *backend-healthcheck
+    depends_on:
+      bootstrap: { condition: service_completed_successfully }
+      thunderid: { condition: service_started }
+      loading-service: { condition: service_healthy }
+      shared-service: { condition: service_healthy }
+      minio: { condition: service_started }
+
+  shared-service:
+    build: { context: ., dockerfile: Dockerfile, args: { SERVICE: shared-service } }
+    environment:
+      <<: *svc-env
+      DATABASE_SCHEMA: shared
+      OIDC_TOKEN_URL: http://thunderid:8090/oauth2/token
+      M2M_CLIENT_ID: waypoint-shared-service
+      M2M_CLIENT_SECRET: ${SHARED_M2M_CLIENT_SECRET:-local-shared-m2m}
+      INTEGRATION_SERVICE_URL: http://integration-service:8080
+    healthcheck: *backend-healthcheck
+    depends_on:
+      bootstrap: { condition: service_completed_successfully }
+      thunderid: { condition: service_started }
+      integration-service: { condition: service_healthy }
+
+  integration-service:
+    build: { context: ., dockerfile: Dockerfile, args: { SERVICE: integration-service } }
+    environment:
+      <<: *svc-env
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-http://minio:9090}
+      SHARED_SERVICE_URL: http://shared-service:8080
+      OIDC_TOKEN_URL: http://thunderid:8090/oauth2/token
+      M2M_CLIENT_ID: waypoint-integration-service
+      M2M_CLIENT_SECRET: ${INTEGRATION_M2M_CLIENT_SECRET:-local-integration-m2m}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_FROM: ${TWILIO_FROM:-}
+      TWILIO_MESSAGING_SERVICE_SID: ${TWILIO_MESSAGING_SERVICE_SID:-}
+      TWILIO_STATUS_CALLBACK_URL: ${TWILIO_STATUS_CALLBACK_URL:-}
+    healthcheck: *backend-healthcheck
+
+  agent-orchestrator:
+    build: { context: ., dockerfile: Dockerfile, args: { SERVICE: agent-orchestrator } }
+    environment:
+      <<: *svc-env
+      ORDER_SERVICE_URL: http://order-service:8080
+      PLANNING_SERVICE_URL: http://planning-service:8080
+      FLEET_SERVICE_URL: http://fleet-service:8080
+      LOADING_SERVICE_URL: http://loading-service:8080
+      DELIVERY_SERVICE_URL: http://delivery-service:8080
+      SHARED_SERVICE_URL: http://shared-service:8080
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+    healthcheck: *backend-healthcheck
+    depends_on:
+      order-service: { condition: service_healthy }
+      planning-service: { condition: service_healthy }
+      fleet-service: { condition: service_healthy }
+      loading-service: { condition: service_healthy }
+      delivery-service: { condition: service_healthy }
+      shared-service: { condition: service_healthy }
+
+  web:
+    build:
+      context: ./apps/web
+      args:
+        VITE_OIDC_ISSUER: http://localhost:8090
+        VITE_OIDC_CLIENT_ID: waypoint-web
+        VITE_OIDC_REDIRECT_URI: http://localhost/auth/callback
+        VITE_API_BASE_URL: /api/v1
+    expose:
+      - "80"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 5s
+
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "127.0.0.1:80:80"
+    volumes:
+      - ./infrastructure/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - web
+      - order-service
+      - planning-service
+      - fleet-service
+      - loading-service
+      - delivery-service
+      - shared-service
+      - integration-service
+      - agent-orchestrator
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/health/live"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 5s
+
+  otel-collector:
+    profiles: ["observability"]
+    image: otel/opentelemetry-collector:0.120.0
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./infrastructure/observability/otel/otel-collector.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "127.0.0.1:4318:4318"
+
+  prometheus:
+    profiles: ["observability"]
+    image: prom/prometheus:v2.55.1
+    volumes:
+      - ./infrastructure/observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./infrastructure/observability/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+    ports:
+      - "127.0.0.1:9090:9090"
+
+  grafana:
+    profiles: ["observability"]
+    image: grafana/grafana:11.3.0
+    volumes:
+      - ./infrastructure/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infrastructure/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "127.0.0.1:3001:3000"
+
+  opensearch:
+    profiles: ["search"]
+    image: opensearchproject/opensearch:2.17.1
+    environment:
+      discovery.type: single-node
+      DISABLE_SECURITY_PLUGIN: "true"
+      OPENSEARCH_INITIAL_ADMIN_PASSWORD: WaypointDev_1
+    ports:
+      - "127.0.0.1:9200:9200"
+
+volumes:
+  postgres_data:

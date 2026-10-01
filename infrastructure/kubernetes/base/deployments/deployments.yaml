@@ -1,0 +1,224 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: order-service, namespace: waypoint }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: order-service } }
+  template:
+    metadata: { labels: { app: order-service, waypoint.io/tier: backend } }
+    spec:
+      serviceAccountName: waypoint-service
+      containers:
+        - name: app
+          image: waypoint/order-service:dev
+          ports: [{ containerPort: 8080 }]
+          envFrom: [{ configMapRef: { name: waypoint-config } }]
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: waypoint-database, key: ORDER_DATABASE_URL }
+            - { name: DATABASE_SCHEMA, value: orders }
+            - { name: SHARED_SERVICE_URL, value: http://shared-service:8080 }
+            - { name: PLANNING_SERVICE_URL, value: http://planning-service:8080 }
+            - { name: DELIVERY_SERVICE_URL, value: http://delivery-service:8080 }
+            - { name: OIDC_TOKEN_URL, value: http://thunderid:8090/oauth2/token }
+            - { name: M2M_CLIENT_ID, value: waypoint-order-service }
+            - { name: M2M_CLIENT_SECRET, valueFrom: { secretKeyRef: { name: waypoint-m2m, key: ORDER_M2M_CLIENT_SECRET } } }
+          readinessProbe: { httpGet: { path: /health/ready, port: 8080 } }
+          livenessProbe: { httpGet: { path: /health/live, port: 8080 } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: planning-service, namespace: waypoint }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: planning-service } }
+  template:
+    metadata: { labels: { app: planning-service, waypoint.io/tier: backend } }
+    spec:
+      serviceAccountName: waypoint-service
+      containers:
+        - name: app
+          image: waypoint/planning-service:dev
+          ports: [{ containerPort: 8080 }]
+          envFrom: [{ configMapRef: { name: waypoint-config } }]
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: waypoint-database, key: PLANNING_DATABASE_URL }
+            - { name: DATABASE_SCHEMA, value: planning }
+            - { name: ORDER_SERVICE_URL, value: http://order-service:8080 }
+            - { name: FLEET_SERVICE_URL, value: http://fleet-service:8080 }
+            - { name: SHARED_SERVICE_URL, value: http://shared-service:8080 }
+            - { name: OIDC_TOKEN_URL, value: http://thunderid:8090/oauth2/token }
+            - { name: M2M_CLIENT_ID, value: waypoint-planning-service }
+            - { name: M2M_CLIENT_SECRET, valueFrom: { secretKeyRef: { name: waypoint-m2m, key: PLANNING_M2M_CLIENT_SECRET } } }
+          readinessProbe: { httpGet: { path: /health/ready, port: 8080 } }
+          livenessProbe: { httpGet: { path: /health/live, port: 8080 } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: fleet-service, namespace: waypoint }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: fleet-service } }
+  template:
+    metadata: { labels: { app: fleet-service, waypoint.io/tier: backend } }
+    spec:
+      serviceAccountName: waypoint-service
+      containers:
+        - name: app
+          image: waypoint/fleet-service:dev
+          ports: [{ containerPort: 8080 }]
+          envFrom: [{ configMapRef: { name: waypoint-config } }]
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: waypoint-database, key: FLEET_DATABASE_URL }
+            - { name: DATABASE_SCHEMA, value: fleet }
+            - { name: SHARED_SERVICE_URL, value: http://shared-service:8080 }
+            - { name: OIDC_TOKEN_URL, value: http://thunderid:8090/oauth2/token }
+            - { name: M2M_CLIENT_ID, value: waypoint-fleet-service }
+            - { name: M2M_CLIENT_SECRET, valueFrom: { secretKeyRef: { name: waypoint-m2m, key: FLEET_M2M_CLIENT_SECRET } } }
+          readinessProbe: { httpGet: { path: /health/ready, port: 8080 } }
+          livenessProbe: { httpGet: { path: /health/live, port: 8080 } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: loading-service, namespace: waypoint }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: loading-service } }
+  template:
+    metadata: { labels: { app: loading-service, waypoint.io/tier: backend } }
+    spec:
+      serviceAccountName: waypoint-service
+      containers:
+        - name: app
+          image: waypoint/loading-service:dev
+          ports: [{ containerPort: 8080 }]
+          envFrom: [{ configMapRef: { name: waypoint-config } }]
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: waypoint-database, key: LOADING_DATABASE_URL }
+            - { name: DATABASE_SCHEMA, value: loading }
+            - { name: PLANNING_SERVICE_URL, value: http://planning-service:8080 }
+            - { name: ORDER_SERVICE_URL, value: http://order-service:8080 }
+            - { name: SHARED_SERVICE_URL, value: http://shared-service:8080 }
+            - { name: OIDC_TOKEN_URL, value: http://thunderid:8090/oauth2/token }
+            - { name: M2M_CLIENT_ID, value: waypoint-loading-service }
+            - { name: M2M_CLIENT_SECRET, valueFrom: { secretKeyRef: { name: waypoint-m2m, key: LOADING_M2M_CLIENT_SECRET } } }
+          readinessProbe: { httpGet: { path: /health/ready, port: 8080 } }
+          livenessProbe: { httpGet: { path: /health/live, port: 8080 } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: delivery-service, namespace: waypoint }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: delivery-service } }
+  template:
+    metadata: { labels: { app: delivery-service, waypoint.io/tier: backend } }
+    spec:
+      serviceAccountName: waypoint-service
+      containers:
+        - name: app
+          image: waypoint/delivery-service:dev
+          ports: [{ containerPort: 8080 }]
+          envFrom: [{ configMapRef: { name: waypoint-config } }]
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: waypoint-database, key: DELIVERY_DATABASE_URL }
+            - { name: DATABASE_SCHEMA, value: delivery }
+            - { name: LOADING_SERVICE_URL, value: http://loading-service:8080 }
+            - { name: SHARED_SERVICE_URL, value: http://shared-service:8080 }
+            - { name: OIDC_TOKEN_URL, value: http://thunderid:8090/oauth2/token }
+            - { name: M2M_CLIENT_ID, value: waypoint-delivery-service }
+            - { name: M2M_CLIENT_SECRET, valueFrom: { secretKeyRef: { name: waypoint-m2m, key: DELIVERY_M2M_CLIENT_SECRET } } }
+            - { name: MINIO_ENDPOINT, value: http://minio:9090 }
+            - { name: MINIO_BUCKET, value: waypoint-proof }
+            - { name: DELIVERY_PROOF_RETENTION_ENABLED, value: "false" }
+            - { name: DELIVERY_PROOF_RETENTION_DAYS, value: "180" }
+          readinessProbe: { httpGet: { path: /health/ready, port: 8080 } }
+          livenessProbe: { httpGet: { path: /health/live, port: 8080 } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: shared-service, namespace: waypoint }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: shared-service } }
+  template:
+    metadata: { labels: { app: shared-service, waypoint.io/tier: backend } }
+    spec:
+      serviceAccountName: waypoint-service
+      containers:
+        - name: app
+          image: waypoint/shared-service:dev
+          ports: [{ containerPort: 8080 }]
+          envFrom: [{ configMapRef: { name: waypoint-config } }]
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: waypoint-database, key: SHARED_DATABASE_URL }
+            - { name: DATABASE_SCHEMA, value: shared }
+          readinessProbe: { httpGet: { path: /health/ready, port: 8080 } }
+          livenessProbe: { httpGet: { path: /health/live, port: 8080 } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: integration-service, namespace: waypoint }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: integration-service } }
+  template:
+    metadata: { labels: { app: integration-service, waypoint.io/tier: backend } }
+    spec:
+      serviceAccountName: waypoint-service
+      containers:
+        - name: app
+          image: waypoint/integration-service:dev
+          ports: [{ containerPort: 8080 }]
+          envFrom: [{ configMapRef: { name: waypoint-config } }]
+          readinessProbe: { httpGet: { path: /health/ready, port: 8080 } }
+          livenessProbe: { httpGet: { path: /health/live, port: 8080 } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: agent-orchestrator, namespace: waypoint }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: agent-orchestrator } }
+  template:
+    metadata: { labels: { app: agent-orchestrator, waypoint.io/tier: agent } }
+    spec:
+      serviceAccountName: agent-orchestrator
+      containers:
+        - name: app
+          image: waypoint/agent-orchestrator:dev
+          ports: [{ containerPort: 8080 }]
+          envFrom: [{ configMapRef: { name: waypoint-config } }]
+          env:
+            - name: LLM_API_KEY
+              valueFrom:
+                secretKeyRef: { name: waypoint-llm, key: api-key, optional: true }
+          readinessProbe: { httpGet: { path: /health/ready, port: 8080 } }
+          livenessProbe: { httpGet: { path: /health/live, port: 8080 } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: web, namespace: waypoint }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: web } }
+  template:
+    metadata: { labels: { app: web, waypoint.io/tier: frontend } }
+    spec:
+      containers:
+        - name: web
+          image: waypoint/web:dev
+          ports: [{ containerPort: 80 }]
+          readinessProbe: { httpGet: { path: /, port: 80 } }
+          livenessProbe: { httpGet: { path: /, port: 80 } }

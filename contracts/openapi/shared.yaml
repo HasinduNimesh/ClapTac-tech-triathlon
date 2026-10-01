@@ -1,0 +1,53 @@
+openapi: 3.1.0
+info:
+  title: Waypoint Shared Service
+  version: 0.2.0
+servers:
+  - url: /api/v1
+paths:
+  /shared/profiles/me:
+    get:
+      operationId: getMyProfile
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Application profile }
+        "401": { description: Unauthenticated }
+        "404": { description: User not provisioned }
+  /shared/outlets:
+    get:
+      operationId: listOutlets
+      security: [{ bearerAuth: [] }]
+      description: Requires outlets:read-internal, order:view-all, order:view-own, or fleet:view
+      responses:
+        "200": { description: Outlet list }
+  /shared/outlets/{id}:
+    get:
+      operationId: getOutlet
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Outlet }
+        "404": { description: Missing }
+  /shared/travel:
+    get:
+      operationId: listTravel
+      security: [{ bearerAuth: [] }]
+      description: District travel table plus service allowances. Requires outlets:read-internal, order:view-all, or fleet:view
+      responses:
+        "200": { description: Travel rows }
+  /shared/audit-events:
+    post:
+      operationId: ingestAuditEvent
+      security: [{ bearerAuth: [] }]
+      description: Requires M2M scope audit:write
+      responses:
+        "202": { description: Ingested }
+        "401": { description: Unauthenticated }
+        "403": { description: Missing audit:write }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

@@ -1,0 +1,166 @@
+openapi: 3.1.0
+info:
+  title: Waypoint Loading Service
+  version: 0.4.0
+servers:
+  - url: /api/v1
+paths:
+  /loading/trips:
+    get:
+      operationId: listLoadingTrips
+      summary: Confirmed depot trips for a delivery date
+      description: Requires loading:view (depot-scoped) or loading:view-all.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: date
+          in: query
+          required: true
+          schema: { type: string, format: date }
+      responses:
+        "200": { description: Trip summaries with loading counters }
+        "400": { description: date required }
+        "403": { description: Missing permission or depot }
+  /loading/trips/{tripId}:
+    get:
+      operationId: getLoadingTrip
+      description: Snapshot after start; planning view before start.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TripID"
+      responses:
+        "200": { description: Trip loading detail with suggested load order }
+        "404": { description: Trip not found }
+  /loading/trips/{tripId}/start:
+    post:
+      operationId: startLoading
+      description: Atomic snapshot of allocated orders. Idempotent. LOADER + depot only.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TripID"
+      responses:
+        "200": { description: Session in progress }
+        "409": { description: Trip is not on a confirmed plan }
+  /loading/trips/{tripId}/orders/{orderId}/loaded:
+    put:
+      operationId: markOrderLoaded
+      description: Forbidden while any issue is active (409 ACTIVE_LOADING_ISSUE).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TripID"
+        - $ref: "#/components/parameters/OrderID"
+      responses:
+        "200": { description: Marked loaded }
+        "409": { description: ACTIVE_LOADING_ISSUE or session ready }
+  /loading/trips/{tripId}/orders/{orderId}/issues:
+    post:
+      operationId: createLoadingIssue
+      description: Record MISSING or DAMAGED. Unique Idempotency-Key.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TripID"
+        - $ref: "#/components/parameters/OrderID"
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type, affectedUnits]
+              properties:
+                type: { type: string, enum: [MISSING, DAMAGED] }
+                affectedUnits: { type: integer, minimum: 1 }
+                note: { type: string }
+      responses:
+        "201": { description: Issue created or replayed }
+        "400": { description: Invalid type, units, or missing key }
+  /loading/trips/{tripId}/orders/{orderId}/issues/{issueId}:
+    put:
+      operationId: updateLoadingIssue
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TripID"
+        - $ref: "#/components/parameters/OrderID"
+        - $ref: "#/components/parameters/IssueID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                type: { type: string, enum: [MISSING, DAMAGED] }
+                affectedUnits: { type: integer, minimum: 1 }
+                note: { type: string }
+      responses:
+        "200": { description: Updated }
+    delete:
+      operationId: deleteLoadingIssue
+      description: After the last issue is removed the order stays SHORTFALL until explicitly loaded.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TripID"
+        - $ref: "#/components/parameters/OrderID"
+        - $ref: "#/components/parameters/IssueID"
+      responses:
+        "200": { description: Removed }
+  /loading/trips/{tripId}/ready:
+    post:
+      operationId: markTripReady
+      description: Atomic and immutable. Shortfall does not block; pending does (409 loading_incomplete).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TripID"
+      responses:
+        "200": { description: Ready for departure }
+        "409": { description: loading_incomplete }
+  /loading/internal/trips:
+    get:
+      operationId: listReadyTripsInternal
+      description: Ready-for-departure snapshots for delivery-service. Requires loading:read-internal or loading:view-all.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: date
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: vehicleId
+          in: query
+          schema: { type: string }
+      responses:
+        "200": { description: Ready trip DTOs }
+  /loading/internal/trips/{tripId}:
+    get:
+      operationId: getReadyTripInternal
+      description: 409 if the trip is not READY. Delivery must not mutate loading.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TripID"
+      responses:
+        "200": { description: Ready trip snapshot }
+        "409": { description: Trip is not ready for departure }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    TripID:
+      name: tripId
+      in: path
+      required: true
+      schema: { type: string }
+    OrderID:
+      name: orderId
+      in: path
+      required: true
+      schema: { type: string }
+    IssueID:
+      name: issueId
+      in: path
+      required: true
+      schema: { type: string }

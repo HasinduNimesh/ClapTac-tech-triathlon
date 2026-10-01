@@ -1,0 +1,41 @@
+# Environment and secrets
+.env
+.env.local
+*.pem
+*.key
+
+# Go
+bin/
+dist/
+vendor/
+*.exe
+*.test
+*.out
+coverage.out
+
+# Node
+apps/web/node_modules/
+apps/web/dist/
+apps/web/.vite/
+
+# Flutter
+apps/driver-mobile/.dart_tool/
+apps/driver-mobile/.packages
+apps/driver-mobile/build/
+apps/driver-mobile/.flutter-plugins
+apps/driver-mobile/.flutter-plugins-dependencies
+apps/driver-mobile/*.iml
+
+# IDE
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# OS
+Thumbs.db
+
+*.tsbuildinfo
+
+__pycache__/
+*.py[cod]

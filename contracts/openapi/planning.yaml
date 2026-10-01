@@ -1,0 +1,216 @@
+openapi: 3.1.0
+info:
+  title: Waypoint Planning Service
+  version: 0.3.0
+servers:
+  - url: /api/v1
+paths:
+  /planning/plans:
+    post:
+      operationId: createPlan
+      security: [{ bearerAuth: [] }]
+      description: Requires plan:create. One unique plan per deliveryDate.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [deliveryDate]
+              properties:
+                deliveryDate: { type: string, format: date }
+      responses:
+        "201": { description: Created }
+        "200": { description: Existing plan for that date }
+        "400": { description: Invalid date }
+        "401": { description: Unauthenticated }
+        "403": { description: Missing plan:create }
+    get:
+      operationId: getPlanByDate
+      security: [{ bearerAuth: [] }]
+      description: Requires plan:view
+      parameters:
+        - { name: date, in: query, required: true, schema: { type: string, format: date } }
+      responses:
+        "200": { description: Plan detail }
+        "404": { description: Missing }
+  /planning/plans/{id}:
+    get:
+      operationId: getPlan
+      security: [{ bearerAuth: [] }]
+      description: Requires plan:view
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      responses:
+        "200": { description: Plan, trips, allocations, deferrals, unallocated }
+        "404": { description: Missing }
+  /planning/plans/{id}/simulate:
+    post:
+      operationId: simulatePlan
+      security: [{ bearerAuth: [] }]
+      description: Requires plan:view. Runs the deterministic allocation engine against current data without persisting assignments or changing plan state.
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      responses:
+        "200": { description: Proposed allocations and deterministic constraint failures; no writes }
+        "403": { description: Dispatcher role required }
+        "404": { description: Missing plan }
+  /planning/plans/{id}/generate:
+    post:
+      operationId: generatePlan
+      security: [{ bearerAuth: [] }]
+      description: Requires plan:update. Generate-once unless reset.
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      responses:
+        "200": { description: Allocation result }
+        "409": { description: Already generated or confirmed }
+  /planning/plans/{id}/reset:
+    post:
+      operationId: resetPlan
+      security: [{ bearerAuth: [] }]
+      description: Requires plan:update. Clears allocations and generated_at.
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      responses:
+        "200": { description: Reset }
+        "409": { description: Confirmed }
+  /planning/plans/{id}/allocations:
+    post:
+      operationId: assignOrder
+      security: [{ bearerAuth: [] }]
+      description: Requires allocation:create. Backend revalidates every assignment.
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [orderId, vehicleId, tripNumber]
+              properties:
+                orderId: { type: string }
+                vehicleId: { type: string }
+                tripNumber: { type: integer, enum: [1, 2] }
+      responses:
+        "201": { description: Allocated }
+        "409": { description: Constraint failure }
+  /planning/plans/{id}/allocations/{allocId}:
+    put:
+      operationId: reassignOrder
+      security: [{ bearerAuth: [] }]
+      description: Requires allocation:update
+      parameters:
+        - $ref: "#/components/parameters/ID"
+        - { name: allocId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [vehicleId, tripNumber]
+              properties:
+                vehicleId: { type: string }
+                tripNumber: { type: integer, enum: [1, 2] }
+      responses:
+        "200": { description: Reassigned }
+        "409": { description: Constraint failure }
+    delete:
+      operationId: removeAllocation
+      security: [{ bearerAuth: [] }]
+      description: Requires allocation:update
+      parameters:
+        - $ref: "#/components/parameters/ID"
+        - { name: allocId, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Removed }
+  /planning/plans/{id}/deferrals:
+    post:
+      operationId: deferOrder
+      security: [{ bearerAuth: [] }]
+      description: Requires order:defer. Structured reason codes only.
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [orderId, reasonCode]
+              properties:
+                orderId: { type: string }
+                reasonCode:
+                  type: string
+                  enum:
+                    - NO_ELIGIBLE_VEHICLE
+                    - WEIGHT_CAPACITY_EXCEEDED
+                    - VOLUME_CAPACITY_EXCEEDED
+                    - REFRIGERATION_REQUIRED
+                    - VAN_REQUIRED
+                    - DEPOT_MISMATCH
+                    - DELIVERY_WINDOW_CONFLICT
+                    - FUEL_QUOTA_EXCEEDED
+                    - TRIP_LIMIT_REACHED
+                    - VEHICLE_UNAVAILABLE
+                    - MANUAL_DISPATCHER_DEFERRAL
+                comment: { type: string }
+      responses:
+        "201": { description: Deferred }
+        "400": { description: Invalid reason }
+        "409": { description: Order already allocated }
+  /planning/plans/{id}/confirm:
+    post:
+      operationId: confirmPlan
+      security: [{ bearerAuth: [] }]
+      description: Requires plan:update. Every order must be allocated or deferred.
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      responses:
+        "200": { description: Confirmed }
+        "409": { description: Unresolved orders or constraint failure }
+  /planning/internal/trips:
+    get:
+      operationId: listConfirmedTripsInternal
+      security: [{ bearerAuth: [] }]
+      description: Requires plan:view or plans:read-internal. Confirmed plans only.
+      parameters:
+        - { name: date, in: query, schema: { type: string, format: date } }
+        - { name: depot, in: query, schema: { type: string } }
+      responses:
+        "200": { description: Confirmed trips }
+  /planning/internal/trips/{tripId}:
+    get:
+      operationId: getConfirmedTripInternal
+      security: [{ bearerAuth: [] }]
+      description: Requires plan:view or plans:read-internal
+      parameters:
+        - { name: tripId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Confirmed trip with allocations and vehicle fields }
+        "404": { description: Missing or not confirmed }
+  /planning/internal/orders/{orderId}:
+    get:
+      operationId: getInternalOrderPlanning
+      security: [{ bearerAuth: [] }]
+      description: Narrow order planning state, deferral reason, stop and persisted ETA. Requires plans:read-internal.
+      parameters:
+        - { name: orderId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Planning state and persisted stop times }
+        "401": { description: Unauthenticated }
+        "403": { description: Missing internal-read scope }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    ID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
