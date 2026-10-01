@@ -35,7 +35,7 @@ Open:
 
 `.env.example` lists local placeholders for OIDC, Postgres, Redis, MinIO, optional OTLP, and optional LLM configuration. Keep real credentials out of Git. `AUTH_DISABLED` must remain `false`; the application rejects disabled auth unless the explicit runtime environment is `local`. Configure an OpenAI-compatible provider only when needed with `LLM_BASE_URL`, `LLM_MODEL`, and `LLM_API_KEY`; without it, assistant endpoints return the safe `agent_unavailable` response and the operational app continues.
 
-The checked-in `database/seeds/` files are clearly labeled development/competition-shaped fixtures, not an official competition data release. Place official files at the documented paths after verifying their source/schema, run `./scripts/validate-seeds.py`, then `make seed-competition-data`. The importer upserts outlet/vehicle rows and reloads the optional reference tables.
+The checked-in `database/seeds/` files are generated from the official `Tech-Triathlon 2026 - Datasets/` release via `scripts/convert-official-dataset.py` (120 outlets, 60 vehicles, 910 calendar dates — matching the official counts). The travel and service-allowance tables are a documented lossy approximation of the official reference model; see `database/seeds/README.md`. After pulling an updated official dataset, re-run `python3 scripts/convert-official-dataset.py`, then `./scripts/validate-seeds.py`, then `make seed-competition-data`. The importer upserts outlet/vehicle rows and reloads the optional reference tables.
 
 ## Seeded judge accounts
 
@@ -86,7 +86,7 @@ make verify
 
 ## Limitations and deviations
 
-- No official competition CSV source was included in this checkout; the current reference CSVs are development fixtures. The seed importer supports replacement CSVs and `validate-seeds.py` checks consistency.
+- `database/seeds/` CSVs are converted from the official `Tech-Triathlon 2026 - Datasets/` release via `scripts/convert-official-dataset.py`; the converted district-travel and service-allowance tables are documented lossy approximations (see `database/seeds/README.md`), not the official reference model exactly. `validate-seeds.py` checks structural consistency, not semantic fidelity to the official model.
 - The local identity service implements the ThunderID contract for development; replace it with the official identity provider before external deployment.
 - The Flutter driver shell is optional; the responsive React PWA is the supported required client. Maps and Datathon forecast imports are outside current implementation scope.
 - A public URL, DNS zone, TLS certificate, production cluster, durable DB/object storage, and production secret store have not been supplied. Kubernetes files are deployment inputs and need target-specific release configuration.

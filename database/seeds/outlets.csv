@@ -1,121 +1,121 @@
 outlet_id,brand,name,district,depot,dock_type,parking_constraint,mall_window,window_open_time,window_close_time
-OUT034,Fresh,Waypoint Fresh OUT034,Colombo,DEPOT_NORTH,normal,normal,false,06:30,08:00
-OUT021,Style,Waypoint Style OUT021,Gampaha,DEPOT_NORTH,normal,normal,false,09:00,17:00
-OUT088,Tech,Waypoint Tech OUT088,Kandy,DEPOT_SOUTH,mall_dock,van_only,true,10:00,16:00
-OUT001,Fresh,Waypoint Fresh OUT001,Galle,DEPOT_SOUTH,normal,normal,false,06:30,08:00
-OUT002,Style,Waypoint Style OUT002,Negombo,DEPOT_NORTH,normal,normal,false,09:00,17:00
-OUT003,Tech,Waypoint Tech OUT003,Kalutara,DEPOT_SOUTH,normal,normal,false,10:00,18:00
-OUT004,Fresh,Waypoint Fresh OUT004,Matara,DEPOT_NORTH,normal,normal,false,06:30,08:00
-OUT005,Style,Waypoint Style OUT005,Kurunegala,DEPOT_SOUTH,normal,normal,false,09:00,17:00
-OUT006,Tech,Waypoint Tech OUT006,Colombo,DEPOT_NORTH,normal,normal,false,10:00,18:00
-OUT007,Fresh,Waypoint Fresh OUT007,Gampaha,DEPOT_SOUTH,normal,normal,false,06:30,08:00
-OUT008,Style,Waypoint Style OUT008,Kandy,DEPOT_NORTH,normal,normal,false,09:00,17:00
-OUT009,Tech,Waypoint Tech OUT009,Galle,DEPOT_SOUTH,normal,van_only,false,10:00,18:00
-OUT010,Fresh,Waypoint Fresh OUT010,Negombo,DEPOT_NORTH,normal,normal,false,06:30,08:00
-OUT011,Style,Waypoint Style OUT011,Kalutara,DEPOT_SOUTH,mall_dock,normal,true,09:00,17:00
-OUT012,Tech,Waypoint Tech OUT012,Matara,DEPOT_NORTH,normal,normal,false,10:00,18:00
-OUT013,Fresh,Waypoint Fresh OUT013,Kurunegala,DEPOT_SOUTH,normal,normal,false,06:30,08:00
-OUT014,Style,Waypoint Style OUT014,Colombo,DEPOT_NORTH,normal,normal,false,09:00,17:00
-OUT015,Tech,Waypoint Tech OUT015,Gampaha,DEPOT_SOUTH,normal,normal,false,10:00,18:00
-OUT016,Fresh,Waypoint Fresh OUT016,Kandy,DEPOT_NORTH,normal,normal,false,06:30,08:00
-OUT017,Style,Waypoint Style OUT017,Galle,DEPOT_SOUTH,normal,normal,false,09:00,17:00
-OUT018,Tech,Waypoint Tech OUT018,Negombo,DEPOT_NORTH,normal,normal,false,10:00,18:00
-OUT019,Fresh,Waypoint Fresh OUT019,Kalutara,DEPOT_SOUTH,normal,normal,false,06:30,08:00
-OUT020,Style,Waypoint Style OUT020,Matara,DEPOT_NORTH,normal,van_only,false,09:00,17:00
-OUT022,Tech,Waypoint Tech OUT022,Kurunegala,DEPOT_SOUTH,normal,normal,false,10:00,18:00
-OUT023,Fresh,Waypoint Fresh OUT023,Colombo,DEPOT_NORTH,normal,normal,false,06:30,08:00
-OUT024,Style,Waypoint Style OUT024,Gampaha,DEPOT_SOUTH,normal,normal,false,09:00,17:00
-OUT025,Tech,Waypoint Tech OUT025,Kandy,DEPOT_NORTH,mall_dock,normal,true,10:00,18:00
-OUT026,Fresh,Waypoint Fresh OUT026,Galle,DEPOT_SOUTH,normal,normal,false,06:30,08:00
-OUT027,Style,Waypoint Style OUT027,Negombo,DEPOT_NORTH,normal,normal,false,09:00,17:00
-OUT028,Tech,Waypoint Tech OUT028,Kalutara,DEPOT_SOUTH,normal,normal,false,10:00,18:00
-OUT029,Fresh,Waypoint Fresh OUT029,Matara,DEPOT_NORTH,normal,normal,false,06:30,08:00
-OUT030,Style,Waypoint Style OUT030,Kurunegala,DEPOT_SOUTH,normal,normal,false,09:00,17:00
-OUT031,Tech,Waypoint Tech OUT031,Colombo,DEPOT_NORTH,normal,normal,false,10:00,18:00
-OUT032,Fresh,Waypoint Fresh OUT032,Gampaha,DEPOT_SOUTH,normal,van_only,false,06:30,08:00
-OUT033,Style,Waypoint Style OUT033,Kandy,DEPOT_NORTH,normal,normal,false,09:00,17:00
-OUT035,Tech,Waypoint Tech OUT035,Galle,DEPOT_SOUTH,normal,normal,false,10:00,18:00
-OUT036,Fresh,Waypoint Fresh OUT036,Negombo,DEPOT_NORTH,normal,normal,false,06:30,08:00
-OUT037,Style,Waypoint Style OUT037,Kalutara,DEPOT_SOUTH,normal,normal,false,09:00,17:00
-OUT038,Tech,Waypoint Tech OUT038,Matara,DEPOT_NORTH,normal,normal,false,10:00,18:00
-OUT039,Fresh,Waypoint Fresh OUT039,Kurunegala,DEPOT_SOUTH,mall_dock,normal,true,06:30,08:00
-OUT040,Style,Waypoint Style OUT040,Colombo,DEPOT_NORTH,normal,normal,false,09:00,17:00
-OUT041,Tech,Waypoint Tech OUT041,Gampaha,DEPOT_SOUTH,normal,normal,false,10:00,18:00
-OUT042,Fresh,Waypoint Fresh OUT042,Kandy,DEPOT_NORTH,normal,normal,false,06:30,08:00
-OUT043,Style,Waypoint Style OUT043,Galle,DEPOT_SOUTH,normal,normal,false,09:00,17:00
-OUT044,Tech,Waypoint Tech OUT044,Negombo,DEPOT_NORTH,normal,van_only,false,10:00,18:00
-OUT045,Fresh,Waypoint Fresh OUT045,Kalutara,DEPOT_SOUTH,normal,normal,false,06:30,08:00
-OUT046,Style,Waypoint Style OUT046,Matara,DEPOT_NORTH,normal,normal,false,09:00,17:00
-OUT047,Tech,Waypoint Tech OUT047,Kurunegala,DEPOT_SOUTH,normal,normal,false,10:00,18:00
-OUT048,Fresh,Waypoint Fresh OUT048,Colombo,DEPOT_NORTH,normal,normal,false,06:30,08:00
-OUT049,Style,Waypoint Style OUT049,Gampaha,DEPOT_SOUTH,normal,normal,false,09:00,17:00
-OUT050,Tech,Waypoint Tech OUT050,Kandy,DEPOT_NORTH,normal,normal,false,10:00,18:00
-OUT051,Fresh,Waypoint Fresh OUT051,Galle,DEPOT_SOUTH,normal,normal,false,06:30,08:00
-OUT052,Style,Waypoint Style OUT052,Negombo,DEPOT_NORTH,mall_dock,normal,true,09:00,17:00
-OUT053,Tech,Waypoint Tech OUT053,Kalutara,DEPOT_SOUTH,normal,normal,false,10:00,18:00
-OUT054,Fresh,Waypoint Fresh OUT054,Matara,DEPOT_NORTH,normal,normal,false,06:30,08:00
-OUT055,Style,Waypoint Style OUT055,Kurunegala,DEPOT_SOUTH,normal,van_only,false,09:00,17:00
-OUT056,Tech,Waypoint Tech OUT056,Colombo,DEPOT_NORTH,normal,normal,false,10:00,18:00
-OUT057,Fresh,Waypoint Fresh OUT057,Gampaha,DEPOT_SOUTH,normal,normal,false,06:30,08:00
-OUT058,Style,Waypoint Style OUT058,Kandy,DEPOT_NORTH,normal,normal,false,09:00,17:00
-OUT059,Tech,Waypoint Tech OUT059,Galle,DEPOT_SOUTH,normal,normal,false,10:00,18:00
-OUT060,Fresh,Waypoint Fresh OUT060,Negombo,DEPOT_NORTH,normal,normal,false,06:30,08:00
-OUT061,Style,Waypoint Style OUT061,Kalutara,DEPOT_SOUTH,normal,normal,false,09:00,17:00
-OUT062,Tech,Waypoint Tech OUT062,Matara,DEPOT_NORTH,normal,normal,false,10:00,18:00
-OUT063,Fresh,Waypoint Fresh OUT063,Kurunegala,DEPOT_SOUTH,normal,normal,false,06:30,08:00
-OUT064,Style,Waypoint Style OUT064,Colombo,DEPOT_NORTH,normal,normal,false,09:00,17:00
-OUT065,Tech,Waypoint Tech OUT065,Gampaha,DEPOT_SOUTH,mall_dock,normal,true,10:00,18:00
-OUT066,Fresh,Waypoint Fresh OUT066,Kandy,DEPOT_NORTH,normal,van_only,false,06:30,08:00
-OUT067,Style,Waypoint Style OUT067,Galle,DEPOT_SOUTH,normal,normal,false,09:00,17:00
-OUT068,Tech,Waypoint Tech OUT068,Negombo,DEPOT_NORTH,normal,normal,false,10:00,18:00
-OUT069,Fresh,Waypoint Fresh OUT069,Kalutara,DEPOT_SOUTH,normal,normal,false,06:30,08:00
-OUT070,Style,Waypoint Style OUT070,Matara,DEPOT_NORTH,normal,normal,false,09:00,17:00
-OUT071,Tech,Waypoint Tech OUT071,Kurunegala,DEPOT_SOUTH,normal,normal,false,10:00,18:00
-OUT072,Fresh,Waypoint Fresh OUT072,Colombo,DEPOT_NORTH,normal,normal,false,06:30,08:00
-OUT073,Style,Waypoint Style OUT073,Gampaha,DEPOT_SOUTH,normal,normal,false,09:00,17:00
-OUT074,Tech,Waypoint Tech OUT074,Kandy,DEPOT_NORTH,normal,normal,false,10:00,18:00
-OUT075,Fresh,Waypoint Fresh OUT075,Galle,DEPOT_SOUTH,normal,normal,false,06:30,08:00
-OUT076,Style,Waypoint Style OUT076,Negombo,DEPOT_NORTH,normal,normal,false,09:00,17:00
-OUT077,Tech,Waypoint Tech OUT077,Kalutara,DEPOT_SOUTH,normal,van_only,false,10:00,18:00
-OUT078,Fresh,Waypoint Fresh OUT078,Matara,DEPOT_NORTH,mall_dock,normal,true,06:30,08:00
-OUT079,Style,Waypoint Style OUT079,Kurunegala,DEPOT_SOUTH,normal,normal,false,09:00,17:00
-OUT080,Tech,Waypoint Tech OUT080,Colombo,DEPOT_NORTH,normal,normal,false,10:00,18:00
-OUT081,Fresh,Waypoint Fresh OUT081,Gampaha,DEPOT_SOUTH,normal,normal,false,06:30,08:00
-OUT082,Style,Waypoint Style OUT082,Kandy,DEPOT_NORTH,normal,normal,false,09:00,17:00
-OUT083,Tech,Waypoint Tech OUT083,Galle,DEPOT_SOUTH,normal,normal,false,10:00,18:00
-OUT084,Fresh,Waypoint Fresh OUT084,Negombo,DEPOT_NORTH,normal,normal,false,06:30,08:00
-OUT085,Style,Waypoint Style OUT085,Kalutara,DEPOT_SOUTH,normal,normal,false,09:00,17:00
-OUT086,Tech,Waypoint Tech OUT086,Matara,DEPOT_NORTH,normal,normal,false,10:00,18:00
-OUT087,Fresh,Waypoint Fresh OUT087,Kurunegala,DEPOT_SOUTH,normal,normal,false,06:30,08:00
-OUT089,Style,Waypoint Style OUT089,Colombo,DEPOT_NORTH,normal,van_only,false,09:00,17:00
-OUT090,Tech,Waypoint Tech OUT090,Gampaha,DEPOT_SOUTH,normal,normal,false,10:00,18:00
-OUT091,Fresh,Waypoint Fresh OUT091,Kandy,DEPOT_NORTH,normal,normal,false,06:30,08:00
-OUT092,Style,Waypoint Style OUT092,Galle,DEPOT_SOUTH,mall_dock,normal,true,09:00,17:00
-OUT093,Tech,Waypoint Tech OUT093,Negombo,DEPOT_NORTH,normal,normal,false,10:00,18:00
-OUT094,Fresh,Waypoint Fresh OUT094,Kalutara,DEPOT_SOUTH,normal,normal,false,06:30,08:00
-OUT095,Style,Waypoint Style OUT095,Matara,DEPOT_NORTH,normal,normal,false,09:00,17:00
-OUT096,Tech,Waypoint Tech OUT096,Kurunegala,DEPOT_SOUTH,normal,normal,false,10:00,18:00
-OUT097,Fresh,Waypoint Fresh OUT097,Colombo,DEPOT_NORTH,normal,normal,false,06:30,08:00
-OUT098,Style,Waypoint Style OUT098,Gampaha,DEPOT_SOUTH,normal,normal,false,09:00,17:00
-OUT099,Tech,Waypoint Tech OUT099,Kandy,DEPOT_NORTH,normal,normal,false,10:00,18:00
-OUT100,Fresh,Waypoint Fresh OUT100,Galle,DEPOT_SOUTH,normal,van_only,false,06:30,08:00
-OUT101,Style,Waypoint Style OUT101,Negombo,DEPOT_NORTH,normal,normal,false,09:00,17:00
-OUT102,Tech,Waypoint Tech OUT102,Kalutara,DEPOT_SOUTH,normal,normal,false,10:00,18:00
-OUT103,Fresh,Waypoint Fresh OUT103,Matara,DEPOT_NORTH,normal,normal,false,06:30,08:00
-OUT104,Style,Waypoint Style OUT104,Kurunegala,DEPOT_SOUTH,normal,normal,false,09:00,17:00
-OUT105,Tech,Waypoint Tech OUT105,Colombo,DEPOT_NORTH,mall_dock,normal,true,10:00,18:00
-OUT106,Fresh,Waypoint Fresh OUT106,Gampaha,DEPOT_SOUTH,normal,normal,false,06:30,08:00
-OUT107,Style,Waypoint Style OUT107,Kandy,DEPOT_NORTH,normal,normal,false,09:00,17:00
-OUT108,Tech,Waypoint Tech OUT108,Galle,DEPOT_SOUTH,normal,normal,false,10:00,18:00
-OUT109,Fresh,Waypoint Fresh OUT109,Negombo,DEPOT_NORTH,normal,normal,false,06:30,08:00
-OUT110,Style,Waypoint Style OUT110,Kalutara,DEPOT_SOUTH,normal,normal,false,09:00,17:00
-OUT111,Tech,Waypoint Tech OUT111,Matara,DEPOT_NORTH,normal,van_only,false,10:00,18:00
-OUT112,Fresh,Waypoint Fresh OUT112,Kurunegala,DEPOT_SOUTH,normal,normal,false,06:30,08:00
-OUT113,Style,Waypoint Style OUT113,Colombo,DEPOT_NORTH,normal,normal,false,09:00,17:00
-OUT114,Tech,Waypoint Tech OUT114,Gampaha,DEPOT_SOUTH,normal,normal,false,10:00,18:00
-OUT115,Fresh,Waypoint Fresh OUT115,Kandy,DEPOT_NORTH,normal,normal,false,06:30,08:00
-OUT116,Style,Waypoint Style OUT116,Galle,DEPOT_SOUTH,normal,normal,false,09:00,17:00
-OUT117,Tech,Waypoint Tech OUT117,Negombo,DEPOT_NORTH,normal,normal,false,10:00,18:00
-OUT118,Fresh,Waypoint Fresh OUT118,Kalutara,DEPOT_SOUTH,mall_dock,normal,true,06:30,08:00
-OUT119,Style,Waypoint Style OUT119,Matara,DEPOT_NORTH,normal,normal,false,09:00,17:00
-OUT120,Tech,Waypoint Tech OUT120,Kurunegala,DEPOT_SOUTH,normal,normal,false,10:00,18:00
+OUT001,Fresh,,Colombo,Peliyagoda,street,van_only,,05:00,07:30
+OUT002,Fresh,,Colombo,Peliyagoda,street,van_only,,05:30,08:00
+OUT003,Fresh,,Colombo,Peliyagoda,street,van_only,,05:00,07:30
+OUT004,Fresh,,Colombo,Peliyagoda,street,normal,,05:30,08:00
+OUT005,Fresh,,Colombo,Peliyagoda,rear_dock,normal,,04:00,07:45
+OUT006,Fresh,,Colombo,Peliyagoda,street,normal,,03:00,08:00
+OUT007,Fresh,,Colombo,Peliyagoda,street,normal,,05:30,08:00
+OUT008,Fresh,,Colombo,Peliyagoda,rear_dock,normal,,05:00,07:30
+OUT009,Fresh,,Colombo,Peliyagoda,rear_dock,normal,,04:00,07:45
+OUT010,Fresh,,Colombo,Peliyagoda,rear_dock,normal,,05:00,07:30
+OUT011,Fresh,,Colombo,Peliyagoda,rear_dock,normal,,03:00,08:00
+OUT012,Fresh,,Colombo,Peliyagoda,rear_dock,normal,,05:30,08:00
+OUT013,Fresh,,Colombo,Peliyagoda,rear_dock,normal,,05:00,07:30
+OUT014,Fresh,,Colombo,Peliyagoda,street,normal,,05:30,08:00
+OUT015,Style,,Colombo,Peliyagoda,mall_bay,mall_dock,09:00-11:00,09:00,11:00
+OUT016,Style,,Colombo,Peliyagoda,mall_bay,mall_dock,09:00-11:00,09:00,11:00
+OUT017,Style,,Colombo,Peliyagoda,mall_bay,mall_dock,10:30-12:30,10:30,12:30
+OUT018,Style,,Colombo,Peliyagoda,mall_bay,mall_dock,10:30-12:30,10:30,12:30
+OUT019,Style,,Colombo,Peliyagoda,rear_dock,normal,,09:00,17:00
+OUT020,Style,,Colombo,Peliyagoda,street,normal,,09:00,17:00
+OUT021,Tech,,Colombo,Peliyagoda,mall_bay,mall_dock,10:30-12:30,10:30,12:30
+OUT022,Tech,,Colombo,Peliyagoda,mall_bay,mall_dock,10:00-12:00,10:00,12:00
+OUT023,Tech,,Colombo,Peliyagoda,street,normal,,09:00,17:00
+OUT024,Tech,,Colombo,Peliyagoda,rear_dock,normal,,09:00,17:00
+OUT025,Fresh,,Gampaha,Peliyagoda,rear_dock,normal,,05:30,08:00
+OUT026,Fresh,,Gampaha,Peliyagoda,rear_dock,normal,,03:00,08:00
+OUT027,Fresh,,Gampaha,Peliyagoda,street,normal,,05:00,07:30
+OUT028,Fresh,,Gampaha,Peliyagoda,street,normal,,03:00,08:00
+OUT029,Fresh,,Gampaha,Peliyagoda,rear_dock,normal,,05:30,08:00
+OUT030,Fresh,,Gampaha,Peliyagoda,rear_dock,normal,,03:00,08:00
+OUT031,Fresh,,Gampaha,Peliyagoda,rear_dock,normal,,03:00,08:00
+OUT032,Fresh,,Gampaha,Peliyagoda,rear_dock,normal,,04:00,07:45
+OUT033,Fresh,,Gampaha,Peliyagoda,rear_dock,normal,,05:30,08:00
+OUT034,Fresh,,Gampaha,Peliyagoda,rear_dock,normal,,05:00,07:30
+OUT035,Style,,Gampaha,Peliyagoda,mall_bay,mall_dock,10:30-12:30,10:30,12:30
+OUT036,Style,,Gampaha,Peliyagoda,mall_bay,mall_dock,10:30-12:30,10:30,12:30
+OUT037,Style,,Gampaha,Peliyagoda,street,normal,,09:00,17:00
+OUT038,Tech,,Gampaha,Peliyagoda,street,normal,,09:00,17:00
+OUT039,Tech,,Gampaha,Peliyagoda,rear_dock,normal,,09:00,17:00
+OUT040,Fresh,,Kalutara,Peliyagoda,street,normal,,03:00,08:00
+OUT041,Fresh,,Kalutara,Peliyagoda,rear_dock,normal,,05:00,07:30
+OUT042,Fresh,,Kalutara,Peliyagoda,rear_dock,normal,,03:00,08:00
+OUT043,Fresh,,Kalutara,Peliyagoda,street,normal,,05:00,07:30
+OUT044,Fresh,,Kalutara,Peliyagoda,rear_dock,normal,,03:00,08:00
+OUT045,Fresh,,Kalutara,Peliyagoda,rear_dock,normal,,03:00,08:00
+OUT046,Fresh,,Kalutara,Peliyagoda,rear_dock,normal,,05:00,07:30
+OUT047,Style,,Kalutara,Peliyagoda,street,normal,,09:00,17:00
+OUT048,Style,,Kalutara,Peliyagoda,rear_dock,normal,,09:00,17:00
+OUT049,Tech,,Kalutara,Peliyagoda,street,normal,,09:00,17:00
+OUT050,Fresh,,Galle,Peliyagoda,rear_dock,normal,,05:30,08:00
+OUT051,Fresh,,Galle,Peliyagoda,street,normal,,03:00,08:00
+OUT052,Fresh,,Galle,Peliyagoda,street,normal,,05:00,07:30
+OUT053,Fresh,,Galle,Peliyagoda,street,normal,,03:00,08:00
+OUT054,Fresh,,Galle,Peliyagoda,rear_dock,normal,,05:00,07:30
+OUT055,Fresh,,Galle,Peliyagoda,street,normal,,05:00,07:30
+OUT056,Style,,Galle,Peliyagoda,mall_bay,mall_dock,10:00-12:00,10:00,12:00
+OUT057,Style,,Galle,Peliyagoda,street,normal,,09:00,17:00
+OUT058,Tech,,Galle,Peliyagoda,rear_dock,normal,,09:00,17:00
+OUT059,Fresh,,Matara,Peliyagoda,rear_dock,normal,,04:00,07:45
+OUT060,Fresh,,Matara,Peliyagoda,rear_dock,normal,,03:00,08:00
+OUT061,Fresh,,Matara,Peliyagoda,rear_dock,normal,,05:00,07:30
+OUT062,Fresh,,Matara,Peliyagoda,rear_dock,normal,,05:30,08:00
+OUT063,Style,,Matara,Peliyagoda,street,normal,,09:00,17:00
+OUT064,Tech,,Matara,Peliyagoda,rear_dock,normal,,09:00,17:00
+OUT065,Fresh,,Kurunegala,Peliyagoda,rear_dock,normal,,05:30,08:00
+OUT066,Fresh,,Kurunegala,Peliyagoda,rear_dock,normal,,04:00,07:45
+OUT067,Fresh,,Kurunegala,Peliyagoda,rear_dock,normal,,05:00,07:30
+OUT068,Fresh,,Kurunegala,Peliyagoda,rear_dock,normal,,03:00,08:00
+OUT069,Fresh,,Kurunegala,Peliyagoda,rear_dock,normal,,05:30,08:00
+OUT070,Style,,Kurunegala,Peliyagoda,rear_dock,normal,,09:00,17:00
+OUT071,Style,,Kurunegala,Peliyagoda,street,normal,,09:00,17:00
+OUT072,Tech,,Kurunegala,Peliyagoda,rear_dock,normal,,09:00,17:00
+OUT073,Fresh,,Puttalam,Peliyagoda,rear_dock,normal,,03:00,08:00
+OUT074,Fresh,,Puttalam,Peliyagoda,rear_dock,normal,,05:30,08:00
+OUT075,Fresh,,Puttalam,Peliyagoda,rear_dock,normal,,03:00,08:00
+OUT076,Fresh,,Kandy,Kandy,street,van_only,,03:00,08:00
+OUT077,Fresh,,Kandy,Kandy,street,van_only,,05:00,07:30
+OUT078,Fresh,,Kandy,Kandy,street,van_only,,03:00,08:00
+OUT079,Fresh,,Kandy,Kandy,street,van_only,,04:00,07:45
+OUT080,Fresh,,Kandy,Kandy,street,van_only,,05:30,08:00
+OUT081,Fresh,,Kandy,Kandy,street,van_only,,03:00,08:00
+OUT082,Fresh,,Kandy,Kandy,street,van_only,,03:00,08:00
+OUT083,Fresh,,Kandy,Kandy,street,van_only,,04:00,07:45
+OUT084,Fresh,,Kandy,Kandy,rear_dock,normal,,05:30,08:00
+OUT085,Fresh,,Kandy,Kandy,rear_dock,normal,,05:00,07:30
+OUT086,Fresh,,Kandy,Kandy,rear_dock,normal,,03:00,08:00
+OUT087,Fresh,,Kandy,Kandy,rear_dock,normal,,03:00,08:00
+OUT088,Style,,Kandy,Kandy,street,van_only,,09:00,17:00
+OUT089,Style,,Kandy,Kandy,mall_bay,mall_dock,10:30-12:30,10:30,12:30
+OUT090,Style,,Kandy,Kandy,mall_bay,mall_dock,10:30-12:30,10:30,12:30
+OUT091,Style,,Kandy,Kandy,street,normal,,09:00,17:00
+OUT092,Style,,Kandy,Kandy,street,normal,,09:00,17:00
+OUT093,Tech,,Kandy,Kandy,street,van_only,,09:00,17:00
+OUT094,Tech,,Kandy,Kandy,mall_bay,mall_dock,09:00-11:00,09:00,11:00
+OUT095,Tech,,Kandy,Kandy,rear_dock,normal,,09:00,17:00
+OUT096,Fresh,,Matale,Kandy,rear_dock,normal,,05:30,08:00
+OUT097,Fresh,,Matale,Kandy,street,normal,,03:00,08:00
+OUT098,Fresh,,Matale,Kandy,rear_dock,normal,,03:00,08:00
+OUT099,Fresh,,Matale,Kandy,rear_dock,normal,,05:00,07:30
+OUT100,Fresh,,Matale,Kandy,rear_dock,normal,,03:00,08:00
+OUT101,Fresh,,Matale,Kandy,rear_dock,normal,,05:00,07:30
+OUT102,Style,,Matale,Kandy,street,normal,,09:00,17:00
+OUT103,Tech,,Matale,Kandy,rear_dock,normal,,09:00,17:00
+OUT104,Fresh,,Nuwara Eliya,Kandy,rear_dock,normal,,03:00,08:00
+OUT105,Fresh,,Nuwara Eliya,Kandy,rear_dock,normal,,05:00,07:30
+OUT106,Fresh,,Nuwara Eliya,Kandy,rear_dock,normal,,05:30,08:00
+OUT107,Fresh,,Nuwara Eliya,Kandy,rear_dock,normal,,03:00,08:00
+OUT108,Fresh,,Nuwara Eliya,Kandy,rear_dock,normal,,04:00,07:45
+OUT109,Style,,Nuwara Eliya,Kandy,rear_dock,normal,,09:00,17:00
+OUT110,Fresh,,Badulla,Kandy,rear_dock,normal,,03:00,08:00
+OUT111,Fresh,,Badulla,Kandy,rear_dock,normal,,03:00,08:00
+OUT112,Fresh,,Badulla,Kandy,rear_dock,normal,,04:00,07:45
+OUT113,Fresh,,Badulla,Kandy,rear_dock,normal,,05:30,08:00
+OUT114,Style,,Badulla,Kandy,rear_dock,normal,,09:00,17:00
+OUT115,Tech,,Badulla,Kandy,street,normal,,09:00,17:00
+OUT116,Fresh,,Kegalle,Kandy,rear_dock,normal,,05:00,07:30
+OUT117,Fresh,,Kegalle,Kandy,rear_dock,normal,,04:00,07:45
+OUT118,Fresh,,Kegalle,Kandy,street,normal,,04:00,07:45
+OUT119,Fresh,,Kegalle,Kandy,rear_dock,normal,,03:00,08:00
+OUT120,Style,,Kegalle,Kandy,rear_dock,normal,,09:00,17:00
