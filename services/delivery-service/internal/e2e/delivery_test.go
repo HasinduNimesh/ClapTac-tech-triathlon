@@ -226,6 +226,7 @@ func TestDeliveryWorkflow(t *testing.T) {
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0034_delivery_planned_arrival_snapshot.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0030_outlet_access_instructions.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0031_cold_chain_readings.sql"))
+	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0038_delivery_proof_receiver_name.sql"))
 
 	peers := httptest.NewServer(peerStub())
 	t.Cleanup(peers.Close)
@@ -480,8 +481,8 @@ func TestDeliveryWorkflow(t *testing.T) {
 		t.Fatalf("sync before proof %d %s", syncBeforeProof.status, syncBeforeProof.body)
 	}
 
-	pr := uploadProof(t, srv, "trip-north", stopID, "usr-driver", "proof-1", "SIGNATURE")
-	if pr.status != http.StatusCreated {
+	pr := uploadProofWithReceiver(t, srv, "trip-north", stopID, "usr-driver", "proof-1", "SIGNATURE", "Nimal Perera")
+	if pr.status != http.StatusCreated || !strings.Contains(pr.body, `"receiverName":"Nimal Perera"`) {
 		t.Fatalf("proof %d %s", pr.status, pr.body)
 	}
 	replayProof := uploadProof(t, srv, "trip-north", stopID, "usr-driver", "proof-1", "PHOTO")
@@ -519,12 +520,15 @@ func TestDeliveryWorkflow(t *testing.T) {
 	if tempUnconfigured.status != http.StatusOK || !strings.Contains(tempUnconfigured.body, `"LIMITS_UNCONFIGURED"`) {
 		t.Fatalf("unconfigured temperature limits must prompt review, not claim safe: %d %s", tempUnconfigured.status, tempUnconfigured.body)
 	}
-	if code := uploadProof(t, srv, "trip-north", stop2, "usr-driver", "proof-2", "PHOTO").status; code != http.StatusCreated {
+	if code := uploadProofWithReceiver(t, srv, "trip-north", stop2, "usr-driver", "proof-2", "PHOTO", "Kamal Silva").status; code != http.StatusCreated {
 		t.Fatalf("photo 2")
 	}
 	proofTracking := do(t, srv, http.MethodGet, "/api/v1/delivery/internal/orders/ord-2", "svc-order", nil, "")
 	if proofTracking.status != http.StatusOK || !strings.Contains(proofTracking.body, `"operationId":"proof-2"`) || !strings.Contains(proofTracking.body, `"type":"PHOTO"`) {
 		t.Fatalf("internal order view did not expose uploaded photo identity: %d %s", proofTracking.status, proofTracking.body)
+	}
+	if !strings.Contains(proofTracking.body, `"receiverName":"Kamal Silva"`) {
+		t.Fatalf("FR-25: internal order view did not expose the proof's recipient name: %s", proofTracking.body)
 	}
 	partial := do(t, srv, http.MethodPost, "/api/v1/delivery/sync", "usr-driver", []byte(`{"operations":[{"operationId":"out-2","type":"STOP_OUTCOME","tripId":"trip-north","stopId":"`+stop2+`","dependsOnOperationId":"proof-2","payload":{"code":"PARTIAL","occurredAt":"2026-09-29T09:10:00Z"}}]}`), "")
 	if partial.status != http.StatusOK || !strings.Contains(partial.body, `"APPLIED"`) {
@@ -701,10 +705,18 @@ func peerStub() http.Handler {
 
 func uploadProof(t *testing.T, srv *httptest.Server, tripID, stopID, subject, key, typ string) resp {
 	t.Helper()
+	return uploadProofWithReceiver(t, srv, tripID, stopID, subject, key, typ, "")
+}
+
+func uploadProofWithReceiver(t *testing.T, srv *httptest.Server, tripID, stopID, subject, key, typ, receiverName string) resp {
+	t.Helper()
 	var buf bytes.Buffer
 	w := multipart.NewWriter(&buf)
 	_ = w.WriteField("type", typ)
 	_ = w.WriteField("mimeType", "image/png")
+	if receiverName != "" {
+		_ = w.WriteField("receiverName", receiverName)
+	}
 	fw, err := w.CreateFormFile("file", "proof.png")
 	if err != nil {
 		t.Fatal(err)
