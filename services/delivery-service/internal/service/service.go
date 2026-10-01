@@ -393,7 +393,7 @@ func validNonDeliveryReason(reason string) bool {
 	}
 }
 
-func (s Service) UploadProof(ctx context.Context, profile *authorization.Profile, tripID, stopID, opID, proofType, mime string, body []byte, captured string) (domain.Proof, error) {
+func (s Service) UploadProof(ctx context.Context, profile *authorization.Profile, tripID, stopID, opID, proofType, mime string, body []byte, captured, receiverName string) (domain.Proof, error) {
 	if opID == "" {
 		return domain.Proof{}, fmt.Errorf("invalid: Idempotency-Key required")
 	}
@@ -425,6 +425,10 @@ func (s Service) UploadProof(ctx context.Context, profile *authorization.Profile
 	if len(body) == 0 || len(body) > max {
 		return domain.Proof{}, fmt.Errorf("invalid: proof size")
 	}
+	receiverName = strings.TrimSpace(receiverName)
+	if len(receiverName) > 120 {
+		return domain.Proof{}, fmt.Errorf("invalid: receiverName")
+	}
 	if existing, err := s.Repo.GetProofByKey(ctx, opID); err == nil {
 		if !existing.Pending {
 			return existing, nil
@@ -440,7 +444,7 @@ func (s Service) UploadProof(ctx context.Context, profile *authorization.Profile
 	}
 	pr, err := s.Repo.InsertProof(ctx, domain.Proof{
 		StopID: stop.ID, ProofType: proofType, ObjectKey: placeholder, MimeType: mime,
-		SHA256: hex.EncodeToString(sum[:]), CapturedAt: capturedAt, CreatedBy: actor(profile), IdempotencyKey: opID,
+		SHA256: hex.EncodeToString(sum[:]), CapturedAt: capturedAt, CreatedBy: actor(profile), IdempotencyKey: opID, ReceiverName: receiverName,
 	})
 	if err != nil {
 		if existing, e2 := s.Repo.GetProofByKey(ctx, opID); e2 == nil {

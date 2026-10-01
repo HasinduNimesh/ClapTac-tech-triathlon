@@ -216,11 +216,12 @@ type DeliveryTracking struct {
 }
 
 type ProofSummary struct {
-	OperationID string     `json:"operationId,omitempty"`
-	Type        string     `json:"type"`
-	MimeType    string     `json:"mimeType"`
-	UploadedAt  *time.Time `json:"uploadedAt,omitempty"`
-	Pending     bool       `json:"pending"`
+	OperationID  string     `json:"operationId,omitempty"`
+	Type         string     `json:"type"`
+	MimeType     string     `json:"mimeType"`
+	UploadedAt   *time.Time `json:"uploadedAt,omitempty"`
+	Pending      bool       `json:"pending"`
+	ReceiverName string     `json:"receiverName,omitempty"`
 }
 
 type Tracking struct {

@@ -99,6 +99,7 @@ paths:
                 mimeType: { type: string }
                 capturedAt: { type: string, format: date-time }
                 operationId: { type: string }
+                receiverName: { type: string, maxLength: 120, description: "Who accepted the delivery (FR-25); optional." }
       responses:
         "201": { description: Proof stored }
         "400": { description: Invalid type, mime, or size }

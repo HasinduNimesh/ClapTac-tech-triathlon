@@ -137,6 +137,9 @@ type Proof struct {
 	CreatedBy      string     `json:"createdBy"`
 	IdempotencyKey string     `json:"idempotencyKey"`
 	Pending        bool       `json:"pending"`
+	// ReceiverName is who accepted the delivery (FR-25), as reported by the
+	// Driver. Optional: not every proof capture has a named recipient.
+	ReceiverName string `json:"receiverName,omitempty"`
 }
 
 type OrderTracking struct {
@@ -159,11 +162,12 @@ type OutletLastServed struct {
 }
 
 type ProofSummary struct {
-	OperationID string     `json:"operationId,omitempty"`
-	Type        string     `json:"type"`
-	MimeType    string     `json:"mimeType"`
-	UploadedAt  *time.Time `json:"uploadedAt,omitempty"`
-	Pending     bool       `json:"pending"`
+	OperationID  string     `json:"operationId,omitempty"`
+	Type         string     `json:"type"`
+	MimeType     string     `json:"mimeType"`
+	UploadedAt   *time.Time `json:"uploadedAt,omitempty"`
+	Pending      bool       `json:"pending"`
+	ReceiverName string     `json:"receiverName,omitempty"`
 }
 
 type SyncOp struct {

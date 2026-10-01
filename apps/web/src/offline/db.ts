@@ -16,6 +16,7 @@ export type QueueItem = {
   blob?: Blob;
   mimeType?: string;
   proofType?: string;
+  receiverName?: string;
   createdAt: string;
 };
 

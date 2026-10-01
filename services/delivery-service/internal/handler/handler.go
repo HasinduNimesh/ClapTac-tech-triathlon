@@ -26,7 +26,7 @@ type Driver interface {
 	Start(ctx context.Context, profile *authorization.Profile, tripID, opID string) (map[string]any, error)
 	Arrive(ctx context.Context, profile *authorization.Profile, tripID, stopID, opID, occurred string) (map[string]any, error)
 	Outcome(ctx context.Context, profile *authorization.Profile, tripID, stopID, opID, depends, code, reason, note, occurred string) (map[string]any, error)
-	UploadProof(ctx context.Context, profile *authorization.Profile, tripID, stopID, opID, proofType, mime string, body []byte, captured string) (domain.Proof, error)
+	UploadProof(ctx context.Context, profile *authorization.Profile, tripID, stopID, opID, proofType, mime string, body []byte, captured, receiverName string) (domain.Proof, error)
 	Complete(ctx context.Context, profile *authorization.Profile, tripID, opID, occurred string) (map[string]any, error)
 	Sync(ctx context.Context, profile *authorization.Profile, req domain.SyncRequest) []map[string]any
 	InternalOrder(ctx context.Context, orderID string) (domain.OrderTracking, error)
@@ -259,7 +259,7 @@ func (h Handler) proof(w http.ResponseWriter, r *http.Request) {
 		mime = r.FormValue("mimeType")
 	}
 	opID := first(r.Header.Get("Idempotency-Key"), r.FormValue("operationId"))
-	pr, err := h.Service.UploadProof(r.Context(), h.profile(r), chi.URLParam(r, "tripId"), chi.URLParam(r, "stopId"), opID, r.FormValue("type"), mime, body, r.FormValue("capturedAt"))
+	pr, err := h.Service.UploadProof(r.Context(), h.profile(r), chi.URLParam(r, "tripId"), chi.URLParam(r, "stopId"), opID, r.FormValue("type"), mime, body, r.FormValue("capturedAt"), r.FormValue("receiverName"))
 	if writeErr(w, err) {
 		return
 	}

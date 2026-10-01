@@ -77,7 +77,7 @@ func (s *stubDriver) Arrive(context.Context, *authorization.Profile, string, str
 func (s *stubDriver) Outcome(context.Context, *authorization.Profile, string, string, string, string, string, string, string, string) (map[string]any, error) {
 	return s.detail, s.mutErr
 }
-func (s *stubDriver) UploadProof(context.Context, *authorization.Profile, string, string, string, string, string, []byte, string) (domain.Proof, error) {
+func (s *stubDriver) UploadProof(context.Context, *authorization.Profile, string, string, string, string, string, []byte, string, string) (domain.Proof, error) {
 	return s.proof, s.mutErr
 }
 func (s *stubDriver) Complete(context.Context, *authorization.Profile, string, string, string) (map[string]any, error) {

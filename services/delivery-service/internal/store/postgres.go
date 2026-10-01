@@ -432,7 +432,7 @@ func (p Postgres) OrderTracking(ctx context.Context, orderID string) (domain.Ord
 	if t.LoadingShortfallSummary == nil {
 		t.LoadingShortfallSummary = []any{}
 	}
-	rows, err := p.Pool.Query(ctx, `SELECT idempotency_key,proof_type,mime_type,uploaded_at,pending FROM proofs WHERE stop_id=$1::uuid ORDER BY created_at`, t.StopID)
+	rows, err := p.Pool.Query(ctx, `SELECT idempotency_key,proof_type,mime_type,uploaded_at,pending,COALESCE(receiver_name,'') FROM proofs WHERE stop_id=$1::uuid ORDER BY created_at`, t.StopID)
 	if err != nil {
 		return t, err
 	}
@@ -440,7 +440,7 @@ func (p Postgres) OrderTracking(ctx context.Context, orderID string) (domain.Ord
 	t.Proofs = []domain.ProofSummary{}
 	for rows.Next() {
 		var pr domain.ProofSummary
-		if err := rows.Scan(&pr.OperationID, &pr.Type, &pr.MimeType, &pr.UploadedAt, &pr.Pending); err != nil {
+		if err := rows.Scan(&pr.OperationID, &pr.Type, &pr.MimeType, &pr.UploadedAt, &pr.Pending, &pr.ReceiverName); err != nil {
 			return t, err
 		}
 		t.Proofs = append(t.Proofs, pr)
@@ -557,16 +557,16 @@ func (p Postgres) InsertOp(ctx context.Context, op domain.SyncOp) error {
 
 func (p Postgres) InsertProof(ctx context.Context, pr domain.Proof) (domain.Proof, error) {
 	row := p.Pool.QueryRow(ctx, `
-		INSERT INTO proofs (stop_id, proof_type, object_key, mime_type, sha256, captured_at, created_by, idempotency_key, pending)
-		VALUES ($1::uuid,$2,$3,$4,$5,$6,$7,$8,true)
-		RETURNING id::text, stop_id::text, proof_type, object_key, mime_type, COALESCE(sha256,''), captured_at, uploaded_at, created_by, idempotency_key, pending
-	`, pr.StopID, pr.ProofType, pr.ObjectKey, pr.MimeType, pr.SHA256, pr.CapturedAt, pr.CreatedBy, pr.IdempotencyKey)
+		INSERT INTO proofs (stop_id, proof_type, object_key, mime_type, sha256, captured_at, created_by, idempotency_key, pending, receiver_name)
+		VALUES ($1::uuid,$2,$3,$4,$5,$6,$7,$8,true,$9)
+		RETURNING id::text, stop_id::text, proof_type, object_key, mime_type, COALESCE(sha256,''), captured_at, uploaded_at, created_by, idempotency_key, pending, COALESCE(receiver_name,'')
+	`, pr.StopID, pr.ProofType, pr.ObjectKey, pr.MimeType, pr.SHA256, pr.CapturedAt, pr.CreatedBy, pr.IdempotencyKey, nullIfEmpty(pr.ReceiverName))
 	return scanProof(row)
 }
 
 func (p Postgres) GetProofByKey(ctx context.Context, key string) (domain.Proof, error) {
 	row := p.Pool.QueryRow(ctx, `
-		SELECT id::text, stop_id::text, proof_type, object_key, mime_type, COALESCE(sha256,''), captured_at, uploaded_at, created_by, idempotency_key, pending
+		SELECT id::text, stop_id::text, proof_type, object_key, mime_type, COALESCE(sha256,''), captured_at, uploaded_at, created_by, idempotency_key, pending, COALESCE(receiver_name,'')
 		FROM proofs WHERE idempotency_key = $1`, key)
 	return scanProof(row)
 }
@@ -718,7 +718,7 @@ func scanStop(row scanner) (domain.Stop, error) {
 
 func scanProof(row scanner) (domain.Proof, error) {
 	var p domain.Proof
-	err := row.Scan(&p.ID, &p.StopID, &p.ProofType, &p.ObjectKey, &p.MimeType, &p.SHA256, &p.CapturedAt, &p.UploadedAt, &p.CreatedBy, &p.IdempotencyKey, &p.Pending)
+	err := row.Scan(&p.ID, &p.StopID, &p.ProofType, &p.ObjectKey, &p.MimeType, &p.SHA256, &p.CapturedAt, &p.UploadedAt, &p.CreatedBy, &p.IdempotencyKey, &p.Pending, &p.ReceiverName)
 	if err == pgx.ErrNoRows {
 		return p, fmt.Errorf("not found")
 	}

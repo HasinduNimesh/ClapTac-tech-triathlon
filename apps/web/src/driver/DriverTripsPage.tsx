@@ -38,6 +38,7 @@ export function DriverTripsPage() {
   const [techCustody, setTechCustody] = useState<Record<string,{sealId:string;serials:string;condition:string}>>({});
   const [proofIds, setProofIds] = useState<Record<string, string>>({});
   const [photoProofIds, setPhotoProofIds] = useState<Record<string,string>>({});
+  const [receiverName, setReceiverName] = useState("");
   const [queueCount, setQueueCount] = useState(0);
   const [privacyNotice, setPrivacyNotice] = useState("");
   const [queueRetention, setQueueRetention] = useState<ReturnType<typeof queueRetentionWarning>>(null);
@@ -335,6 +336,7 @@ export function DriverTripsPage() {
       blob,
       mimeType,
       proofType,
+      receiverName: receiverName.trim() || undefined,
       createdAt: new Date().toISOString(),
     });
     setProofIds((prev) => ({ ...prev, [stop.id]: operationId }));
@@ -675,6 +677,7 @@ export function DriverTripsPage() {
               {stop.temperatureRequirement === "chilled" && <section aria-label={t("Chilled goods temperature")}><h4>{t("Chilled goods temperature")}</h4><p className="muted">{t("Use a calibrated manual thermometer at the outlet. This records evidence; configured outlet limits determine whether it is in range.")}</p><label>{t("Temperature (°C)")}<input type="number" min="-40" max="100" step="0.1" inputMode="decimal" value={temperatureC} onChange={(e)=>setTemperatureC(e.target.value)} /></label><button type="button" className="tap" onClick={recordTemperature}>{t("Record temperature")}</button><ul aria-live="polite">{(stop.temperatureReadings||[]).map((reading)=><li key={reading.operationId} className={reading.evaluation==="OUT_OF_RANGE"?"status-bad":""} role={reading.evaluation==="OUT_OF_RANGE"?"alert":"status"}>{reading.valueC.toFixed(1)} °C · {t(reading.evaluation)} · {new Date(reading.occurredAt).toLocaleString("en-LK",{timeZone:"Asia/Colombo"})} {reading.actorId&&`· ${reading.actorId}`}</li>)}</ul></section>}
           <p className="muted">{t("Capture proof for delivered or partial orders. PNG/JPEG only. Not delivered requires a reason.")}</p>
               {proofIds[stop.id] && <p className={queueCount ? "muted" : "status-ok"} role="status">{queueCount ? t("Proof saved on this device · waiting to sync") : t("Proof synced")}</p>}
+              <label>{t("Recipient name (optional)")}<input type="text" maxLength={120} value={receiverName} onChange={(e) => setReceiverName(e.target.value)} disabled={!safeStopped} /></label>
               <canvas
                 ref={canvasRef}
                 className="sig"
