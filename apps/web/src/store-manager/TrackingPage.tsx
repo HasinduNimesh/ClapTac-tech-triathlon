@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { apiJSON, Order } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { useLocale } from "../i18n";
+import { deferralExplanation } from "./deferralMessage.mjs";
 
 type ReceiptIssue = { id:string; issueType:string; affectedUnits:number; note?:string };
 type Receipt = { id:string; expectedUnits:number; receivedUnits:number; status:string; confirmedAt:string };
@@ -74,7 +75,7 @@ export function TrackingPage({receiptsOnly=false}:{receiptsOnly?:boolean}){
     </article>):items.map(row=><article className="card" key={row.order.id}>
       <h3>{row.order.orderRef} · {row.order.brand}</h3><p>{t("Requested")} {row.order.requestedDeliveryDate} · {row.order.orderUnits} {t("units")} · {t(row.stage.replace(/_/g," "))}</p>
       {row.planning.plannedArrivalAt&&<p>{t("Planned arrival")}: {new Date(row.planning.plannedArrivalAt).toLocaleString()}</p>}
-      {row.planning.reasonCode&&<p>{t("Deferred")}: {t(row.planning.reasonCode)}{row.planning.reasonComment?` · ${row.planning.reasonComment}`:""}</p>}
+      {row.planning.reasonCode&&(()=>{const why=deferralExplanation(row.planning.reasonCode);return <div className="status-bad" role="status"><p><strong>{t("Deferred")}</strong>: {t(why.message)}{row.planning.reasonComment?` · ${row.planning.reasonComment}`:""}</p><p>{t("What happens next")}: {t(why.nextAction)}</p></div>;})()}
       {(row.custody||[]).length>0&&<section className="card"><h4>{t("Tech chain of custody")}</h4><ol>{row.custody!.map(event=><li key={event.id}>{t(event.stage)} · {t("Seal ID")} {event.sealId} · {event.serialNumbers.join(", ")} · {event.condition} · {event.recordedBy} · {new Date(event.recordedAt).toLocaleString()}{event.receiverName?` · ${event.receiverName}`:""}{event.evidenceRef?` · ${t("Evidence reference")} ${event.evidenceRef}`:""}</li>)}</ol></section>}
       {row.delivery&&<p>{t("Driver outcome")}: {t(row.delivery.outcome||row.delivery.runStatus)}{row.delivery.reason?` · ${t(row.delivery.reason)}`:""} · {row.delivery.proofs?.length||0} {t("proof item(s)")}</p>}
       {(row.delivery?.loadingShortfallSummary?.length||0)>0&&<p className="status-bad">{t("Loading shortfall")}: {JSON.stringify(row.delivery?.loadingShortfallSummary)}</p>}

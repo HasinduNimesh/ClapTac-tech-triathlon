@@ -29,10 +29,20 @@ export type Deferral = {
   comment?: string;
 };
 
+export type OtherLimitingFactor = {
+  reasonCode: string;
+  vehicleTripsBlocked: number;
+};
+
 export type Unallocated = {
   orderId: string;
   orderRef?: string;
   reasonCode: string;
+  details?: {
+    otherLimitingFactors?: OtherLimitingFactor[];
+    vehicleTripsEvaluated?: number;
+    primaryBlockedVehicleTrips?: number;
+  };
 };
 
 export type PlanVehicle = {

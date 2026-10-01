@@ -172,6 +172,16 @@ type ConstraintFailure struct {
 	Details    map[string]any `json:"details,omitempty"`
 }
 
+// UnallocatedReason is the persisted form of a ConstraintFailure: the allocator's
+// explanation for one order on one plan, kept so it survives past the generate
+// response and still explains the order if the Dispatcher reopens the plan later.
+type UnallocatedReason struct {
+	PlanID     string         `json:"planId"`
+	OrderID    string         `json:"orderId"`
+	ReasonCode string         `json:"reasonCode"`
+	Details    map[string]any `json:"details,omitempty"`
+}
+
 type GenerateResult struct {
 	Allocated               int                 `json:"allocated"`
 	Unallocated             int                 `json:"unallocated"`

@@ -84,6 +84,18 @@ make verify
 
 `make verify` runs uncached Go unit and PostgreSQL-backed end-to-end tests, Go build/vet, the agent database-import guard, all web tests and the production PWA build, and backup/load Python checks. Docker must be available for the Testcontainers-backed PostgreSQL suites. On Node 18, the PWA build enables the global Web Crypto compatibility flag. Use `make test` for the Go tests alone. The actual clean-start and browser checks are recorded in [submission evidence](docs/submission.md).
 
+## Significant departures from the Designathon design
+
+The Hackathon build follows the Designathon workflow (order → plan/allocate/defer → load → deliver offline with proof → receipt → dispatcher visibility). Implementation-level departures from the original design are:
+
+- **Identity:** a local ThunderID-compatible OIDC shim (`tools/dev-oidc`) stands in for the production identity provider; the contract (Authorization Code + PKCE, JWKS, `sub` → `shared.users`) is unchanged.
+- **Planner:** deterministic greedy allocation with hard constraints enforced server-side. Deferral priority is a transparent score (prior deferrals, days unserved, small chilled/Fresh consequence weights) that never overrides a hard constraint. Each unallocated order reports a primary reason plus the other limiting factors that blocked other vehicles.
+- **Store Manager deferral notices:** solver reason codes are translated into plain-language messages with a next action (English, Sinhala, Tamil).
+- **Driver client:** the responsive React PWA is the supported driver client; the Flutter shell is an optional, unverified scaffold.
+- **Assistant approvals:** pending approvals are held in bounded process memory (5-minute expiry) instead of Redis; the approval interface allows a shared store later.
+- **Data:** the checked-in seeds are competition-shaped development fixtures, not the official dataset; replace them with `make seed-competition-data`.
+- **Out of scope for now:** maps, live Datathon model integration, live SMS delivery, GPS tracking, and a public production deployment.
+
 ## Limitations and deviations
 
 - No official competition CSV source was included in this checkout; the current reference CSVs are development fixtures. The seed importer supports replacement CSVs and `validate-seeds.py` checks consistency.

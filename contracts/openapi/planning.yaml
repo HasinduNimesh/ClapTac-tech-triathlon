@@ -88,11 +88,12 @@ paths:
           application/json:
             schema:
               type: object
-              required: [orderId, vehicleId, tripNumber]
+              required: [orderId, vehicleId, tripNumber, reason]
               properties:
                 orderId: { type: string }
                 vehicleId: { type: string }
                 tripNumber: { type: integer, enum: [1, 2] }
+                reason: { type: string, minLength: 3, maxLength: 500, description: "Why this order is being manually assigned (FR-54)." }
       responses:
         "201": { description: Allocated }
         "409": { description: Constraint failure }
@@ -110,10 +111,11 @@ paths:
           application/json:
             schema:
               type: object
-              required: [vehicleId, tripNumber]
+              required: [vehicleId, tripNumber, reason]
               properties:
                 vehicleId: { type: string }
                 tripNumber: { type: integer, enum: [1, 2] }
+                reason: { type: string, minLength: 3, maxLength: 500, description: "Why this order is being manually reassigned (FR-54)." }
       responses:
         "200": { description: Reassigned }
         "409": { description: Constraint failure }
