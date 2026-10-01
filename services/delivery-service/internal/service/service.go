@@ -595,6 +595,14 @@ func (s Service) syncOne(ctx context.Context, profile *authorization.Profile, op
 	case domain.OpRouteCompleted:
 		_, err := s.applyComplete(ctx, profile, tripOf(ctx, s, op), op.OperationID, op.DependsOnOperationID, op.OccurredAt)
 		return syncResult(op.OperationID, err)
+	case domain.OpIncidentReport:
+		category, _ := op.Payload["category"].(string)
+		description, _ := op.Payload["description"].(string)
+		item, err := s.recordIncident(ctx, profile, tripOf(ctx, s, op), op.StopID, op.OperationID, category, description, op.OccurredAt)
+		if err != nil {
+			return syncResult(op.OperationID, err)
+		}
+		return map[string]any{"operationId": op.OperationID, "status": domain.ResultApplied, "payload": map[string]any{"incident": item}}
 	default:
 		telemetry.DeliverySyncOps.WithLabelValues(domain.ResultRejected).Inc()
 		return map[string]any{"operationId": op.OperationID, "status": domain.ResultRejected, "detail": "unknown type"}
@@ -631,6 +639,40 @@ func (s Service) recordTemperature(ctx context.Context, profile *authorization.P
 		s.Peers.Publish(ctx, audit.ActionDeliveryTemperatureException, actor(profile), "STOP", stop.ID, payload)
 	}
 	return reading, nil
+}
+
+var validIncidentCategories = map[string]bool{
+	domain.IncidentVehicle: true, domain.IncidentRoad: true, domain.IncidentOutlet: true,
+	domain.IncidentGoods: true, domain.IncidentSafety: true, domain.IncidentOther: true,
+}
+
+// recordIncident is FR-22: a Driver-reported field incident categorised as
+// vehicle, road, outlet, goods, safety, or other. Unlike a temperature
+// reading, it is not tied to an arrived stop - a road or vehicle problem can
+// happen between stops - so stopID may be empty.
+func (s Service) recordIncident(ctx context.Context, profile *authorization.Profile, tripID, stopID, opID, category, description, occurred string) (domain.DriverIncident, error) {
+	category = strings.ToUpper(strings.TrimSpace(category))
+	description = strings.TrimSpace(description)
+	if opID == "" || !validIncidentCategories[category] || description == "" || len([]rune(description)) > 1000 {
+		return domain.DriverIncident{}, fmt.Errorf("invalid: incident category must be one of vehicle/road/outlet/goods/safety/other, with a 1-1000 character description")
+	}
+	var run domain.Run
+	var err error
+	if stopID != "" {
+		run, _, err = s.mutableStop(ctx, profile, tripID, stopID)
+	} else {
+		run, err = s.mutableRun(ctx, profile, tripID)
+	}
+	if err != nil {
+		return domain.DriverIncident{}, err
+	}
+	at := parseTime(occurred)
+	item, err := s.Repo.InsertDriverIncident(ctx, run.ID, stopID, opID, category, description, actor(profile), at)
+	if err != nil {
+		return domain.DriverIncident{}, err
+	}
+	s.Peers.Publish(ctx, audit.ActionDeliveryIncidentReported, actor(profile), "RUN", run.ID, map[string]any{"category": item.Category, "description": item.Description, "stopId": item.StopID, "tripId": tripID})
+	return item, nil
 }
 
 func tripOf(ctx context.Context, s Service, op domain.SyncOperation) string {
@@ -729,6 +771,19 @@ func (s Service) mutableStop(ctx context.Context, profile *authorization.Profile
 		return run, stop, fmt.Errorf("not found")
 	}
 	return run, stop, nil
+}
+
+// mutableRun resolves and authorizes a trip's run without requiring a stop,
+// for driver actions (FR-22's incident report) that are not tied to one.
+func (s Service) mutableRun(ctx context.Context, profile *authorization.Profile, tripID string) (domain.Run, error) {
+	run, err := s.Repo.GetByTrip(ctx, tripID)
+	if err != nil {
+		return domain.Run{}, fmt.Errorf("not found")
+	}
+	if err := s.guardVehicle(profile, run.VehicleID); err != nil {
+		return run, err
+	}
+	return run, nil
 }
 
 func (s Service) guardVehicle(profile *authorization.Profile, vehicleID string) error {

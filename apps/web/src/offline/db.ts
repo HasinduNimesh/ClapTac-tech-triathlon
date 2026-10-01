@@ -7,7 +7,7 @@ import { bindSingleOwner } from "./singleOwner.mjs";
 export type QueueItem = {
   id?: number;
   operationId: string;
-  type: "START" | "ARRIVED" | "PROOF_UPLOAD" | "STOP_OUTCOME" | "ROUTE_COMPLETED" | "TEMPERATURE_READING" | "CUSTODY_RECORD";
+  type: "START" | "ARRIVED" | "PROOF_UPLOAD" | "STOP_OUTCOME" | "ROUTE_COMPLETED" | "TEMPERATURE_READING" | "CUSTODY_RECORD" | "INCIDENT_REPORT";
   tripId: string;
   stopId?: string;
   orderId?: string;
