@@ -159,6 +159,7 @@ paths:
                     - VEHICLE_UNAVAILABLE
                     - MANUAL_DISPATCHER_DEFERRAL
                 comment: { type: string }
+                nextRunTarget: { type: string, format: date, description: "Expected retry date (FR-53); optional, must be after this plan's delivery date." }
       responses:
         "201": { description: Deferred }
         "400": { description: Invalid reason }

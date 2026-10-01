@@ -361,7 +361,7 @@ func (s Service) Remove(ctx context.Context, profile *authorization.Profile, pla
 	return nil
 }
 
-func (s Service) Defer(ctx context.Context, profile *authorization.Profile, planID, orderID, code, comment string) error {
+func (s Service) Defer(ctx context.Context, profile *authorization.Profile, planID, orderID, code, comment, nextRunTarget string) error {
 	pl, err := s.Repo.Get(ctx, planID)
 	if err != nil {
 		return fmt.Errorf("not found")
@@ -371,6 +371,19 @@ func (s Service) Defer(ctx context.Context, profile *authorization.Profile, plan
 	}
 	if !validReasons[code] {
 		return fmt.Errorf("invalid: reasonCode")
+	}
+	// FR-53: the next-run target is optional (not every deferral has a known
+	// retry date yet), but when given it must be a real date after this plan's
+	// own delivery date - a "next run" that is today or earlier is meaningless.
+	if nextRunTarget != "" {
+		target, parseErr := time.Parse("2006-01-02", nextRunTarget)
+		if parseErr != nil {
+			return fmt.Errorf("invalid: nextRunTarget")
+		}
+		planDate, _ := time.Parse("2006-01-02", pl.DeliveryDate)
+		if !target.After(planDate) {
+			return fmt.Errorf("invalid: nextRunTarget")
+		}
 	}
 	allocs, _ := s.Repo.ListAllocations(ctx, pl.ID)
 	for _, a := range allocs {
@@ -399,7 +412,7 @@ func (s Service) Defer(ctx context.Context, profile *authorization.Profile, plan
 	}
 	if err := s.Repo.InsertDeferral(ctx, domain.Deferral{
 		PlanID: pl.ID, OrderID: orderID, OutletID: outletID, ReasonCode: code,
-		Comment: comment, DeferredBy: actorID(profile),
+		Comment: comment, DeferredBy: actorID(profile), NextRunTarget: nextRunTarget,
 	}); err != nil {
 		return err
 	}
@@ -881,6 +894,13 @@ func (s Service) loadWorld(ctx context.Context, pl domain.Plan) (allocate.Input,
 	}
 	counts, countsErr := s.Repo.OutletDeferralCounts(ctx)
 	lastServed, lastServedErr := s.Peers.OutletLastServed(ctx)
+	lastDeferralByOutlet, lastDeferralErr := s.Repo.LatestDeferralsByOutlet(ctx, pl.DeliveryDate)
+	if lastDeferralErr != nil {
+		lastDeferralByOutlet = map[string]string{}
+		if s.Peers.Logger != nil {
+			s.Peers.Logger.Warn("repeat_deferral_signal_unavailable", "error", lastDeferralErr)
+		}
+	}
 	policy, policyErr := s.Peers.PlanningPolicy(ctx)
 	policySignalAvailable := policyErr == nil
 	if policyErr != nil {
@@ -889,7 +909,7 @@ func (s Service) loadWorld(ctx context.Context, pl domain.Plan) (allocate.Input,
 			s.Peers.Logger.Warn("planning_policy_unavailable_using_safe_defaults", "error", policyErr)
 		}
 	}
-	fairnessSignalAvailable, err := applyFairnessHistory(orders, counts, countsErr, lastServed, lastServedErr, schedule.PlanDate(pl.DeliveryDate), policy)
+	fairnessSignalAvailable, err := applyFairnessHistory(orders, counts, countsErr, lastServed, lastServedErr, schedule.PlanDate(pl.DeliveryDate), policy, lastDeferralByOutlet)
 	if err != nil {
 		return allocate.Input{}, err
 	}

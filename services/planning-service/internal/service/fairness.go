@@ -12,12 +12,16 @@ import (
 // policy. Missing delivery history degrades to deferral-only scoring, but a
 // failed deferral query is fatal because otherwise we would hide a required
 // fairness signal while claiming the score is complete.
-func applyFairnessHistory(orders []domain.Order, deferralCounts map[string]int, deferralErr error, lastServed map[string]time.Time, lastServedErr error, asOf time.Time, policy domain.PlanningPolicy) (bool, error) {
+func applyFairnessHistory(orders []domain.Order, deferralCounts map[string]int, deferralErr error, lastServed map[string]time.Time, lastServedErr error, asOf time.Time, policy domain.PlanningPolicy, lastDeferralByOutlet map[string]string) (bool, error) {
 	if deferralErr != nil {
 		return false, fmt.Errorf("load outlet deferral history: %w", deferralErr)
 	}
 	for i := range orders {
 		orders[i].OutletDeferralCount = deferralCounts[orders[i].OutletID]
+		if date, ok := lastDeferralByOutlet[orders[i].OutletID]; ok {
+			orders[i].DeferredLastRun = true
+			orders[i].LastDeferralDate = date
+		}
 		if lastServedErr == nil {
 			if servedAt, ok := lastServed[orders[i].OutletID]; ok {
 				orders[i].LastServedAt = &servedAt

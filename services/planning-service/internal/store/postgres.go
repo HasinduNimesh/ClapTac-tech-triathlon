@@ -459,17 +459,21 @@ func (p Postgres) ListTrips(ctx context.Context, planID string) ([]domain.Trip, 
 
 func (p Postgres) InsertDeferral(ctx context.Context, d domain.Deferral) error {
 	detail, _ := json.Marshal(d.ReasonDetail)
+	var nextRun *string
+	if d.NextRunTarget != "" {
+		nextRun = &d.NextRunTarget
+	}
 	_, err := p.Pool.Exec(ctx, `
-		INSERT INTO deferrals (plan_id, order_id, outlet_id, reason_code, reason_detail, comment, deferred_by)
-		VALUES ($1::uuid, $2, $3, $4, $5, $6, $7)
-		ON CONFLICT (plan_id, order_id) DO UPDATE SET reason_code = EXCLUDED.reason_code, reason_detail = EXCLUDED.reason_detail, comment = EXCLUDED.comment
-	`, d.PlanID, d.OrderID, d.OutletID, d.ReasonCode, detail, d.Comment, d.DeferredBy)
+		INSERT INTO deferrals (plan_id, order_id, outlet_id, reason_code, reason_detail, comment, deferred_by, next_run_target)
+		VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8::date)
+		ON CONFLICT (plan_id, order_id) DO UPDATE SET reason_code = EXCLUDED.reason_code, reason_detail = EXCLUDED.reason_detail, comment = EXCLUDED.comment, next_run_target = EXCLUDED.next_run_target
+	`, d.PlanID, d.OrderID, d.OutletID, d.ReasonCode, detail, d.Comment, d.DeferredBy, nextRun)
 	return err
 }
 
 func (p Postgres) ListDeferrals(ctx context.Context, planID string) ([]domain.Deferral, error) {
 	rows, err := p.Pool.Query(ctx, `
-		SELECT id::text, plan_id::text, order_id, COALESCE(outlet_id,''), reason_code, COALESCE(reason_detail,'{}'), COALESCE(comment,''), deferred_by
+		SELECT id::text, plan_id::text, order_id, COALESCE(outlet_id,''), reason_code, COALESCE(reason_detail,'{}'), COALESCE(comment,''), deferred_by, COALESCE(next_run_target::text,'')
 		FROM deferrals WHERE plan_id::text = $1
 	`, planID)
 	if err != nil {
@@ -480,7 +484,7 @@ func (p Postgres) ListDeferrals(ctx context.Context, planID string) ([]domain.De
 	for rows.Next() {
 		var d domain.Deferral
 		var raw []byte
-		if err := rows.Scan(&d.ID, &d.PlanID, &d.OrderID, &d.OutletID, &d.ReasonCode, &raw, &d.Comment, &d.DeferredBy); err != nil {
+		if err := rows.Scan(&d.ID, &d.PlanID, &d.OrderID, &d.OutletID, &d.ReasonCode, &raw, &d.Comment, &d.DeferredBy, &d.NextRunTarget); err != nil {
 			return nil, err
 		}
 		_ = json.Unmarshal(raw, &d.ReasonDetail)
@@ -537,6 +541,33 @@ func (p Postgres) ListUnallocatedReasons(ctx context.Context, planID string) (ma
 		_ = json.Unmarshal(raw, &r.Details)
 		r.PlanID = planID
 		out[r.OrderID] = r
+	}
+	return out, rows.Err()
+}
+
+// LatestDeferralsByOutlet returns, for every outlet with a deferral on a plan
+// strictly before beforeDate, the most recent such plan's delivery date. Since
+// planning.plans.delivery_date is unique, this is unambiguous: FR-53 uses it to
+// warn the Dispatcher when an outlet was already deferred on its last run.
+func (p Postgres) LatestDeferralsByOutlet(ctx context.Context, beforeDate string) (map[string]string, error) {
+	rows, err := p.Pool.Query(ctx, `
+		SELECT DISTINCT ON (d.outlet_id) d.outlet_id, pl.delivery_date::text
+		FROM deferrals d
+		JOIN planning.plans pl ON pl.id = d.plan_id
+		WHERE d.outlet_id IS NOT NULL AND d.outlet_id <> '' AND pl.delivery_date < $1::date
+		ORDER BY d.outlet_id, pl.delivery_date DESC
+	`, beforeDate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]string{}
+	for rows.Next() {
+		var outletID, date string
+		if err := rows.Scan(&outletID, &date); err != nil {
+			return nil, err
+		}
+		out[outletID] = date
 	}
 	return out, rows.Err()
 }

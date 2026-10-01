@@ -43,6 +43,15 @@ function loadBarClass(usedPct: number) {
   return usedPct > 100 ? "status-bad" : "status-ok";
 }
 
+// FR-53: the next-run target must be strictly after the plan's own delivery
+// date (enforced server-side too), so the date picker's minimum is the day
+// after, not the plan date itself.
+function dayAfter(dateStr: string) {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
 export function PlanningPage() {
   const { user } = useAuth();
   const { t } = useLocale();
@@ -54,6 +63,7 @@ export function PlanningPage() {
   const [assignOrderId, setAssignOrderId] = useState("");
   const [assignReason, setAssignReason] = useState("");
   const [deferOrderId, setDeferOrderId] = useState("");
+  const [nextRunTarget, setNextRunTarget] = useState("");
   const [vehicleId, setVehicleId] = useState("");
   const [tripNumber, setTripNumber] = useState("1");
   const [reason, setReason] = useState("MANUAL_DISPATCHER_DEFERRAL");
@@ -167,10 +177,11 @@ export function PlanningPage() {
     await run("Deferred", async () => {
       await apiJSON(`/planning/plans/${detail.plan.id}/deferrals`, token, {
         method: "POST",
-        body: JSON.stringify({ orderId: deferOrderId, reasonCode: reason, comment }),
+        body: JSON.stringify({ orderId: deferOrderId, reasonCode: reason, comment, nextRunTarget: nextRunTarget || undefined }),
       });
       await refresh(detail.plan.id);
       setDeferOrderId("");
+      setNextRunTarget("");
     });
   }
 
@@ -449,6 +460,14 @@ export function PlanningPage() {
           </form>
 
           <h3>{t("Defer")}</h3>
+          {(() => {
+            const selected = detail.orders.find((o) => o.id === deferOrderId);
+            return selected?.deferredLastRun ? (
+              <p className="status-bad" role="status">
+                {t("Warning: this outlet was already deferred on its last run")}{selected.lastDeferralDate ? ` (${selected.lastDeferralDate})` : ""}.
+              </p>
+            ) : null;
+          })()}
           <form onSubmit={deferOrder} className="row">
             <select aria-label={t("Order to defer")} value={deferOrderId} onChange={(e) => setDeferOrderId(e.target.value)} required disabled={confirmed || !detail.unallocated?.length}>
               <option value="">{t("Select unallocated order")}</option>
@@ -462,6 +481,7 @@ export function PlanningPage() {
               ))}
             </select>
             <input aria-label={t("Deferral comment")} placeholder={t("Comment")} value={comment} onChange={(e) => setComment(e.target.value)} />
+            <input aria-label={t("Expected next-run date")} type="date" value={nextRunTarget} onChange={(e) => setNextRunTarget(e.target.value)} min={dayAfter(detail.plan.deliveryDate)} />
             <button type="submit" disabled={confirmed || !detail.unallocated?.length}>
               {t("Defer")}
             </button>
