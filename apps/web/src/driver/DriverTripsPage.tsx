@@ -55,6 +55,13 @@ export function DriverTripsPage() {
   const queueHealthReport = useRef({ ownerId: "", attemptedAt: 0, inFlight: false });
   detailRef.current = detail;
 
+  // FR-25 review fix: receiverName is proof metadata for whichever stop is
+  // currently open. Without this, switching stops after typing a name for
+  // stop A silently attributes that name to stop B's proof too.
+  useEffect(() => {
+    setReceiverName("");
+  }, [stop?.id]);
+
   useEffect(() => {
     let active = true;
     setOwnerState("loading");
