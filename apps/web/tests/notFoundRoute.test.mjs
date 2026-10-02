@@ -12,3 +12,8 @@ test("unknown URLs render the not-found page, in the workspace for store-manager
 test("the store-manager catch-all comes after the specific workspace routes", () => {
   assert.ok(app.indexOf('path="/store-manager/notifications"') < app.indexOf('path="/store-manager/*"'));
 });
+
+test("Help & Guide is a real workspace route placed before the catch-all", () => {
+  assert.match(app, /path="\/store-manager\/help" element=\{<StoreManagerHelpPage \/>\}/);
+  assert.ok(app.indexOf('path="/store-manager/help"') < app.indexOf('path="/store-manager/*"'));
+});

@@ -412,11 +412,12 @@ td {
 }
 
 .sm-sidebar-logo {
-  height: 40px;
-  width: auto;
+  width: 160px;
+  height: 56px;
   align-self: flex-start;
-  margin: 18px 20px 0;
-  object-fit: contain;
+  margin: 12px 20px 0;
+  object-fit: cover;
+  object-position: left center;
 }
 
 .sm-nav-item.active .sm-nav-icon img {
@@ -497,9 +498,6 @@ td {
   box-shadow: 0 2px 2px rgba(138, 146, 166, 0.3);
 }
 
-.sm-nav-item--static {
-  cursor: default;
-}
 
 .sm-nav--secondary {
   padding: 0 12px;
@@ -1602,6 +1600,36 @@ td {
   text-decoration: none;
 }
 
+.sm-help-actions {
+  margin-bottom: 24px;
+}
+
+.sm-help-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.sm-help-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+}
+
+.sm-help-steps {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.sm-help-steps li {
+  margin-bottom: 8px;
+}
+
+.sm-help-text {
+  margin: 0 0 8px;
+  font-size: 0.9375rem;
+}
+
 .sm-notif-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1701,7 +1729,8 @@ td {
     padding: 24px 20px;
   }
   .sm-order-form-grid,
-  .sm-order-detail-grid {
+  .sm-order-detail-grid,
+  .sm-help-grid {
     grid-template-columns: 1fr;
   }
   .sm-review-card {

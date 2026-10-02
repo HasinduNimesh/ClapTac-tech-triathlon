@@ -23,6 +23,7 @@ const NewOrderPage = lazy(() => import("./store-manager/NewOrderPage").then((m) 
 const OrderListPage = lazy(() => import("./store-manager/OrderListPage").then((m) => ({ default: m.OrderListPage })));
 const StoreManagerDashboardPage = lazy(() => import("./store-manager/StoreManagerDashboardPage").then((m) => ({ default: m.StoreManagerDashboardPage })));
 const StoreManagerNotificationsPage = lazy(() => import("./store-manager/StoreManagerNotificationsPage").then((m) => ({ default: m.StoreManagerNotificationsPage })));
+const StoreManagerHelpPage = lazy(() => import("./store-manager/StoreManagerHelpPage").then((m) => ({ default: m.StoreManagerHelpPage })));
 const TrackingPage = lazy(() => import("./store-manager/TrackingPage").then((m) => ({ default: m.TrackingPage })));
 const StoreManagerLayout = lazy(() => import("./store-manager/StoreManagerLayout").then((m) => ({ default: m.StoreManagerLayout })));
 
@@ -39,6 +40,7 @@ function AppRoutes() {
           <Route path="/store-manager/tracking" element={<TrackingPage />} />
           <Route path="/store-manager/receipts" element={<TrackingPage receiptsOnly />} />
           <Route path="/store-manager/notifications" element={<StoreManagerNotificationsPage />} />
+          <Route path="/store-manager/help" element={<StoreManagerHelpPage />} />
           <Route path="/store-manager/*" element={<NotFoundPage inWorkspace />} />
         </Route>
         <Route element={<Layout />}>
