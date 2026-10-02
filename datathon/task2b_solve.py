@@ -148,7 +148,13 @@ def solve(scn_path, fleet_path, vehicles_path, travel_path, allowance_path):
 
     rows = []
     for scenario, scn_group in scn.groupby("scenario"):
-        avail_ids = set(fleet[(fleet.scenario == scenario) & (fleet.status == "available")].vehicle_id)
+        # Sorted, not just a set: Python's set iteration order for strings is
+        # not stable across processes, and the later weight-capacity sort is
+        # stable, so an unsorted input order here would let ties among
+        # equal-capacity vehicles resolve differently on every run, rewriting
+        # the checked-in submission with different (but equally feasible)
+        # vehicle assignments.
+        avail_ids = sorted(fleet[(fleet.scenario == scenario) & (fleet.status == "available")].vehicle_id)
         vehicles = [
             VehicleState(vid, veh_df.loc[vid, "type"], veh_df.loc[vid, "temp"],
                          veh_df.loc[vid, "weight_cap_kg"], veh_df.loc[vid, "volume_cap_m3"],
