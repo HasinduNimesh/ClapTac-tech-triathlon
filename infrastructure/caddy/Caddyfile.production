@@ -1,0 +1,15 @@
+# Caddy terminates public TLS. The app and ThunderID bind only to loopback.
+waypoint.claptac.dev {
+  encode zstd gzip
+  reverse_proxy 127.0.0.1:8080
+}
+
+id.waypoint.claptac.dev {
+  @public_identity path /.well-known/* /oauth2/* /gate/* /flow/execute /flow/execute/* /flow/meta
+  handle @public_identity {
+    reverse_proxy 127.0.0.1:8091
+  }
+  handle {
+    respond 404
+  }
+}

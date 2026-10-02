@@ -45,12 +45,13 @@ func (m *Memory) Delete(_ context.Context, key string) error {
 }
 
 type S3 struct {
-	Endpoint  string
-	Bucket    string
-	AccessKey string
-	SecretKey string
-	Region    string
-	HTTP      *http.Client
+	Endpoint         string
+	Bucket           string
+	AccessKey        string
+	SecretKey        string
+	Region           string
+	AutoCreateBucket bool
+	HTTP             *http.Client
 }
 
 func (s S3) http() *http.Client {
@@ -61,8 +62,10 @@ func (s S3) http() *http.Client {
 }
 
 func (s S3) Put(ctx context.Context, key, contentType string, body []byte) error {
-	if err := s.ensureBucket(ctx); err != nil {
-		return err
+	if s.AutoCreateBucket {
+		if err := s.ensureBucket(ctx); err != nil {
+			return err
+		}
 	}
 	return s.do(ctx, http.MethodPut, key, contentType, body)
 }

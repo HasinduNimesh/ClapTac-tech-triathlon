@@ -1,0 +1,136 @@
+# Apply after provisioning a real OIDC issuer and a private R2 bucket.
+# docker compose -f docker-compose.yml -f docker-compose.production.yml up -d --build
+x-production-auth: &production-auth
+  ENVIRONMENT: production
+  AUTH_DISABLED: "false"
+  DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL for the existing Postgres database}
+  OIDC_ISSUER: ${OIDC_ISSUER:?Set the HTTPS ThunderID issuer}
+  OIDC_JWKS_URL: ${OIDC_JWKS_URL:?Set the HTTPS JWKS URL}
+  OIDC_AUDIENCE: ${OIDC_AUDIENCE:?Set the API audience}
+  OIDC_TOKEN_URL: ${OIDC_TOKEN_URL:?Set the HTTPS token URL}
+
+services:
+  # These services contain demo accounts, seed data, or ephemeral object storage.
+  seed:
+    profiles: [local-only]
+  bootstrap:
+    profiles: [local-only]
+  thunderid:
+    profiles: [local-only]
+  minio:
+    profiles: [local-only]
+
+  postgres:
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set the existing Postgres role password}
+
+  thunderid-prod:
+    image: ghcr.io/thunder-id/thunderid:1.0.1
+    container_name: waypoint-thunderid-prod
+    restart: unless-stopped
+    env_file:
+      - ${THUNDERID_PRIVATE_DIR:?Set the private ThunderID configuration directory}/container.env
+    ports:
+      - "127.0.0.1:8091:8090"
+    volumes:
+      - ${THUNDERID_PRIVATE_DIR}/deployment.yaml:/opt/thunderid/deployment.yaml:ro
+      - ${THUNDERID_PRIVATE_DIR}/certs:/opt/thunderid/config/certs:ro
+      - ${THUNDERID_PRIVATE_DIR}/secrets:/opt/thunderid/config/secrets:ro
+      - ${THUNDERID_PRIVATE_DIR}/resources/server_configs/cors.yaml:/opt/thunderid/config/resources/server_configs/cors.yaml:ro
+      - ${THUNDERID_PRIVATE_DIR}/resources/applications:/opt/thunderid/config/resources/applications:ro
+      - ${THUNDERID_PRIVATE_DIR}/resources/resource_servers:/opt/thunderid/config/resources/resource_servers:ro
+      - ${THUNDERID_PRIVATE_DIR}/resources/roles:/opt/thunderid/config/resources/roles:ro
+      - ${THUNDERID_PRIVATE_DIR}/resources/users:/opt/thunderid/config/resources/users:ro
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8090/health/readiness"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+    logging:
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+  migrate:
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL for the existing Postgres database}
+
+  order-service:
+    environment:
+      <<: *production-auth
+      M2M_CLIENT_SECRET: ${ORDER_M2M_CLIENT_SECRET:?Set the order service secret}
+    depends_on: !override
+      shared-service: { condition: service_healthy }
+
+  planning-service:
+    environment:
+      <<: *production-auth
+      M2M_CLIENT_SECRET: ${PLANNING_M2M_CLIENT_SECRET:?Set the planning service secret}
+    depends_on: !override
+      order-service: { condition: service_healthy }
+      fleet-service: { condition: service_healthy }
+      shared-service: { condition: service_healthy }
+
+  fleet-service:
+    environment:
+      <<: *production-auth
+      M2M_CLIENT_SECRET: ${FLEET_M2M_CLIENT_SECRET:?Set the fleet service secret}
+    depends_on: !override
+      shared-service: { condition: service_healthy }
+
+  loading-service:
+    environment:
+      <<: *production-auth
+      M2M_CLIENT_SECRET: ${LOADING_M2M_CLIENT_SECRET:?Set the loading service secret}
+    depends_on: !override
+      planning-service: { condition: service_healthy }
+      order-service: { condition: service_healthy }
+      shared-service: { condition: service_healthy }
+
+  delivery-service:
+    environment:
+      <<: *production-auth
+      M2M_CLIENT_SECRET: ${DELIVERY_M2M_CLIENT_SECRET:?Set the delivery service secret}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:?Set the R2 S3 endpoint}
+      MINIO_BUCKET: ${MINIO_BUCKET:?Set the private R2 bucket}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:?Set the R2 bucket access key}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?Set the R2 bucket secret key}
+      MINIO_REGION: auto
+      MINIO_AUTO_CREATE_BUCKET: "false"
+    depends_on: !override
+      loading-service: { condition: service_healthy }
+      shared-service: { condition: service_healthy }
+
+  shared-service:
+    environment:
+      <<: *production-auth
+      M2M_CLIENT_SECRET: ${SHARED_M2M_CLIENT_SECRET:?Set the shared service secret}
+    depends_on: !override
+      integration-service: { condition: service_healthy }
+
+  integration-service:
+    environment:
+      <<: *production-auth
+      M2M_CLIENT_SECRET: ${INTEGRATION_M2M_CLIENT_SECRET:?Set the integration service secret}
+
+  agent-orchestrator:
+    environment:
+      <<: *production-auth
+
+  web:
+    build:
+      args:
+        VITE_OIDC_ISSUER: ${OIDC_ISSUER:?Set the HTTPS ThunderID issuer}
+        VITE_OIDC_CLIENT_ID: ${WEB_OIDC_CLIENT_ID:?Set the registered browser client ID}
+        VITE_OIDC_REDIRECT_URI: ${WEB_OIDC_REDIRECT_URI:?Set the HTTPS callback URL}
+        VITE_OIDC_AUDIENCE: ${OIDC_AUDIENCE:?Set the API resource identifier}
+        VITE_API_BASE_URL: /api/v1
+
+  nginx:
+    ports: !override
+      - "127.0.0.1:8080:80"
+    volumes: !override
+      - ./infrastructure/nginx/nginx.production.conf:/etc/nginx/nginx.conf:ro

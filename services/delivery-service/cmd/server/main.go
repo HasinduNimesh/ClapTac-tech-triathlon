@@ -41,14 +41,16 @@ func main() {
 			ClientID:     os.Getenv("M2M_CLIENT_ID"),
 			ClientSecret: os.Getenv("M2M_CLIENT_SECRET"),
 			Scope:        "loading:read-internal outlets:read-internal audit:write",
+			Resource:     getenv("OIDC_AUDIENCE", "waypoint-api"),
 		},
 	}
 	objects := objectstore.Store(objectstore.S3{
-		Endpoint:  os.Getenv("MINIO_ENDPOINT"),
-		Bucket:    getenv("MINIO_BUCKET", "waypoint-proof"),
-		AccessKey: getenv("MINIO_ACCESS_KEY", "s3mock"),
-		SecretKey: getenv("MINIO_SECRET_KEY", "s3mock"),
-		Region:    getenv("MINIO_REGION", "us-east-1"),
+		Endpoint:         os.Getenv("MINIO_ENDPOINT"),
+		Bucket:           getenv("MINIO_BUCKET", "waypoint-proof"),
+		AccessKey:        getenv("MINIO_ACCESS_KEY", "s3mock"),
+		SecretKey:        getenv("MINIO_SECRET_KEY", "s3mock"),
+		Region:           getenv("MINIO_REGION", "us-east-1"),
+		AutoCreateBucket: getenv("MINIO_AUTO_CREATE_BUCKET", "true") == "true",
 	})
 	if os.Getenv("MINIO_ENDPOINT") == "" {
 		objects = &objectstore.Memory{}

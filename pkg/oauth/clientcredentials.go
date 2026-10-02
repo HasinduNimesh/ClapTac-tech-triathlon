@@ -17,6 +17,7 @@ type TokenSource struct {
 	ClientID     string
 	ClientSecret string
 	Scope        string
+	Resource     string
 	HTTP         *http.Client
 
 	mu    sync.Mutex
@@ -37,6 +38,9 @@ func (s *TokenSource) Token(ctx context.Context) (string, error) {
 	}
 	if s.Scope != "" {
 		form.Set("scope", s.Scope)
+	}
+	if s.Resource != "" {
+		form.Set("resource", s.Resource)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.TokenURL, strings.NewReader(form.Encode()))
 	if err != nil {
