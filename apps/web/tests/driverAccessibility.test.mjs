@@ -96,6 +96,56 @@ test("shared text, status, guidance, and action colors meet WCAG AA contrast aga
     assert.ok(contrast(foreground, background) >= 4.5, `${label} contrast is below 4.5:1`);
   }
 
+  // These two selectors are preceded by a comment, so rule() cannot find them; pass literals directly.
+  const smHeroBg = color("background: #1060d0;", "background");
+  const smSidebarBg = color("background: #ffffff;", "background");
+  const smNavItemHoverBg = color(rule(".sm-nav-item:hover"), "background");
+  const smNavItemActiveBg = color(rule(".sm-nav-item.active"), "background");
+  const smBtnPlaceOrderBg = color(rule(".sm-btn-place-order"), "background");
+  const smBadgeOnRouteBg = color(rule(".sm-badge--on-route"), "background");
+  const smBadgeDeferredBg = color(rule(".sm-badge--deferred"), "background");
+  const smBadgeDeliveredBg = color(rule(".sm-badge--delivered"), "background");
+  const smBadgeDefaultBg = color(rule(".sm-badge--default"), "background");
+  const smNoticeBadgeBg = color(rule(".sm-notice-badge"), "background");
+  const smTableHeadBg = color(rule(".sm-table thead tr"), "background");
+  const smNotifReceiptBg = color(rule(".sm-notif-badge--receipt"), "background");
+  const smNotifEtaBg = color(rule(".sm-notif-badge--eta"), "background");
+  const smNotifDeferredBg = color(rule(".sm-notif-badge--deferred"), "background");
+  const smNotifActionBg = color(rule(".sm-notif-action.tap"), "background");
+  const smInfoBannerBg = color(rule(".sm-info-banner"), "background");
+  const smPairs = [
+    ["sm-nav-label", color(rule(".sm-nav-label"), "color"), smSidebarBg],
+    ["sm-nav-item", color(rule(".sm-nav-item"), "color"), smSidebarBg],
+    ["sm-nav-item:hover", color(rule(".sm-nav-item:hover"), "color"), smNavItemHoverBg],
+    ["sm-nav-item.active", color(rule(".sm-nav-item.active"), "color"), smNavItemActiveBg],
+    ["sm-hero-title", color(rule(".sm-hero-title"), "color"), smHeroBg],
+    ["sm-hero-sub", color(rule(".sm-hero-sub"), "color"), smHeroBg],
+    ["sm-dashboard-picker-label", color(rule(".sm-dashboard-picker-label"), "color"), pageBackground],
+    ["sm-btn-outline", color(rule(".sm-btn-outline"), "color"), smHeroBg],
+    ["sm-btn-place-order", color(rule(".sm-btn-place-order"), "color"), smBtnPlaceOrderBg],
+    ["sm-stat-label", color(rule(".sm-stat-label"), "color"), pageBackground],
+    ["sm-stat-sub--orange", color(rule(".sm-stat-sub--orange"), "color"), pageBackground],
+    ["sm-stat-sub--green", color(rule(".sm-stat-sub--green"), "color"), pageBackground],
+    ["sm-panel-link", color(rule(".sm-panel-link"), "color"), pageBackground],
+    ["sm-track-link", color(rule(".sm-track-link"), "color"), pageBackground],
+    ["sm-badge--on-route", color(rule(".sm-badge--on-route"), "color"), smBadgeOnRouteBg],
+    ["sm-badge--deferred", color(rule(".sm-badge--deferred"), "color"), smBadgeDeferredBg],
+    ["sm-badge--delivered", color(rule(".sm-badge--delivered"), "color"), smBadgeDeliveredBg],
+    ["sm-badge--default", color(rule(".sm-badge--default"), "color"), smBadgeDefaultBg],
+    ["sm-notice-badge", color(rule(".sm-notice-badge"), "color"), smNoticeBadgeBg],
+    ["sm-alert-action", color(rule(".sm-alert-action"), "color"), pageBackground],
+    ["sm-create-order-link", color(rule(".sm-create-order-link"), "color"), pageBackground],
+    ["sm-table th", color(rule(".sm-table th"), "color"), smTableHeadBg],
+    ["sm-notif-badge--receipt", color(rule(".sm-notif-badge--receipt"), "color"), smNotifReceiptBg],
+    ["sm-notif-badge--eta", color(rule(".sm-notif-badge--eta"), "color"), smNotifEtaBg],
+    ["sm-notif-badge--deferred", color(rule(".sm-notif-badge--deferred"), "color"), smNotifDeferredBg],
+    ["sm-notif-action.tap", color(rule(".sm-notif-action.tap"), "color"), smNotifActionBg],
+    ["sm-info-banner-title", color(rule(".sm-info-banner-title"), "color"), smInfoBannerBg],
+  ];
+  for (const [label, foreground, background] of smPairs) {
+    assert.ok(contrast(foreground, background) >= 4.5, `${label} contrast is below 4.5:1`);
+  }
+
   const explicitForegroundSelectors = [...css.matchAll(/(^|\n)([^{}]+)\{([^}]*)\}/g)]
     .filter(([, , , declarations]) => /(?:^|;)\s*color\s*:/.test(declarations))
     .flatMap(([, , selectors]) => selectors.split(",").map((selector) => selector.trim()));
@@ -103,6 +153,16 @@ test("shared text, status, guidance, and action colors meet WCAG AA contrast aga
     ":root", ".skip-link", "a", ".status-ok", ".status-bad", ".status-syncing",
     ".stop-guidance dt", ".muted", ".linkish", ".tap.primary",
     ".login-badge", ".login-footnote-link",
+    ".sm-nav-label", ".sm-nav-item", ".sm-nav-item:hover", ".sm-nav-item.active",
+    ".sm-hero-title", ".sm-hero-sub", ".sm-dashboard-picker-label",
+    ".sm-btn-outline", ".sm-btn-place-order",
+    ".sm-stat-label", ".sm-stat-sub--orange", ".sm-stat-sub--green",
+    ".sm-panel-link", ".sm-track-link",
+    ".sm-badge--on-route", ".sm-badge--deferred", ".sm-badge--delivered", ".sm-badge--default",
+    ".sm-notice-badge", ".sm-alert-action", ".sm-create-order-link",
+    ".sm-table th",
+    ".sm-notif-badge--receipt", ".sm-notif-badge--eta", ".sm-notif-badge--deferred",
+    ".sm-notif-action.tap", ".sm-info-banner-title",
   ]);
   assert.deepEqual(
     explicitForegroundSelectors.filter((selector) => !testedForegroundSelectors.has(selector)),
