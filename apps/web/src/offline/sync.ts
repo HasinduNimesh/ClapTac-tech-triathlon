@@ -47,6 +47,7 @@ async function drainQueueSerial(token: string, ownerId: string): Promise<SyncBan
         form.append("type", item.proofType || "PHOTO");
         form.append("file", item.blob || new Blob(), item.proofType === "SIGNATURE" ? "signature.png" : "photo.jpg");
         if (item.mimeType) form.append("mimeType", item.mimeType);
+        if (item.receiverName) form.append("receiverName", item.receiverName);
         const res = await fetch(`${base}/delivery/trips/${item.tripId}/stops/${item.stopId}/proofs`, {
           method: "POST",
           headers: authHeaders(token, { "Idempotency-Key": item.operationId }),
