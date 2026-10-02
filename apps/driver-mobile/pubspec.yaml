@@ -1,7 +1,7 @@
 name: waypoint_driver
-description: Waypoint driver app with offline-first route execution.
+description: Waypoint field app — offline-first driver route execution and loader dock workflow (phone and tablet).
 publish_to: "none"
-version: 0.1.0
+version: 0.2.0
 
 environment:
   sdk: ">=3.4.0 <4.0.0"
@@ -9,6 +9,10 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  http: ^1.2.2
+  shared_preferences: ^2.3.2
+  image_picker: ^1.1.2
+  url_launcher: ^6.3.0
 
 dev_dependencies:
   flutter_test:
@@ -17,3 +21,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/waypoint-logo.png
