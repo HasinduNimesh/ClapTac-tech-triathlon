@@ -56,3 +56,26 @@ retrieve the password over SSH, then change it through the identity system once
 sign-in is confirmed. Public self-registration and email-based recovery are
 disabled until SMTP, registration policy, and account lifecycle are configured.
 Automated off-VM backups and monitoring still need to be set up.
+
+## Create a user
+
+On the VM, run `scripts/production/create_user.py` from the deployed checkout as
+`azureuser`, without `sudo`. It creates the ThunderID login, matching Waypoint
+user and role profile, then restarts ThunderID. It generates a random initial
+password and saves it to a mode-600 file under
+`~/.config/waypoint/new-user-credentials/`; it never prints the password or
+puts it in Git. An existing email is rejected.
+
+```sh
+cd ~/ClapTac-tech-triathlon
+python3 scripts/production/create_user.py --email person@example.com \
+  --name "Person Name" --role DISPATCHER
+```
+
+For `STORE_MANAGER`, also pass `--outlet-id` with an existing outlet ID. For
+`LOADER`, pass `--depot`. For `DRIVER`, pass `--vehicle-id` with an existing
+vehicle ID. The script prints the path of the initial credential file. Read it
+on the VM, deliver the password privately, and remove that file after delivery.
+The protected ThunderID user definition remains the source of the credential.
+Public registration and email recovery are disabled; users cannot create their
+own accounts in the web app.
