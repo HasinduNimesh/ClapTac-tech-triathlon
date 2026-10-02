@@ -29,7 +29,14 @@ Usage:
     datathon/task2b_solve.py [--data DIR] [--out FILE]
 
 Defaults: --data "Tech-Triathlon 2026 - Datasets/data"
-          --out  "Tech-Triathlon 2026 - Datasets/data/Submission Templates/submission_task2b.csv"
+          --out  "datathon/output/submission_task2b.csv"
+
+The output path is deliberately outside Tech-Triathlon 2026 - Datasets/:
+that directory is the official, checked-in competition release and must
+stay byte-identical to what was given, never overwritten by a generated
+artifact. Validate the generated file against the official checker with
+its path explicit, e.g.:
+    python3 "Tech-Triathlon 2026 - Datasets/check_allocation.py" datathon/output/submission_task2b.csv
 """
 import argparse
 import csv
@@ -205,9 +212,11 @@ def solve(scn_path, fleet_path, vehicles_path, travel_path, allowance_path):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", default=str(CHECKER_DIR / "data"))
-    ap.add_argument("--out", default=str(CHECKER_DIR / "data" / "Submission Templates" / "submission_task2b.csv"))
+    ap.add_argument("--out", default=str(ROOT / "datathon" / "output" / "submission_task2b.csv"))
     args = ap.parse_args()
     data = Path(args.data)
+    out_path = Path(args.out)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
 
     out = solve(
         data / "Test Data" / "task2b_peak_day_scenarios.csv",
@@ -216,7 +225,7 @@ def main():
         data / "General Data" / "district_travel.csv",
         data / "General Data" / "service_allowance.csv",
     )
-    out.to_csv(args.out, index=False)
+    out.to_csv(out_path, index=False)
     served = (out.decision == "served").sum()
     print(f"wrote {len(out)} rows to {args.out}: {served} served, {len(out) - served} deferred")
 

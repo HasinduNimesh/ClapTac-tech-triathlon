@@ -20,13 +20,16 @@ vans prioritized for their van-only orders — respecting weight/volume
 capacity and the two shared per-vehicle time budgets (270 min pre-dawn for
 Fresh, 480 min daytime for everything else).
 
-Run it, then validate with the official checker:
+Run it, then validate with the official checker. The generated submission is
+written to `datathon/output/` and checked in there as the produced artifact,
+never into `Tech-Triathlon 2026 - Datasets/` — that directory is the official,
+checked-in competition release and must stay byte-identical to what was given:
 
 ```bash
 python3 -m venv /tmp/datathon-venv && /tmp/datathon-venv/bin/pip install pandas
 /tmp/datathon-venv/bin/python3 datathon/task2b_solve.py
-cd "Tech-Triathlon 2026 - Datasets" && /tmp/datathon-venv/bin/python3 check_allocation.py \
-  "data/Submission Templates/submission_task2b.csv"
+/tmp/datathon-venv/bin/python3 "Tech-Triathlon 2026 - Datasets/check_allocation.py" \
+  datathon/output/submission_task2b.csv
 ```
 
 Current result on the one scenario (S1, 85 orders): **73 served, 12 deferred,
