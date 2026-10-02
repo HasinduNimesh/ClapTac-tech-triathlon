@@ -15,17 +15,20 @@ function planTime(value?: string) {
   return value ? new Date(value).toLocaleTimeString("en-LK", { timeZone: "Asia/Colombo", hour: "2-digit", minute: "2-digit", hour12: false }) : "—";
 }
 
-// FR-51: sums what is actually loaded on each vehicle from the plan's own
+// FR-51: sums what is actually loaded on one trip from the plan's own
 // allocations and orders, so the load meter always matches what was assigned
-// rather than depending on a separate backend aggregate.
-function vehicleLoad(detail: PlanDetail, vehicleId: string) {
+// rather than depending on a separate backend aggregate. Scoped by tripId,
+// not vehicleId: a vehicle can run two sequential trips, each with its own
+// capacity, so summing across both trips before comparing to one trip's
+// capacity would overstate the load (two 70%-full trips reading as 140%).
+function tripLoad(detail: PlanDetail, tripId: string) {
   const ordersById = new Map(detail.orders.map((o) => [o.id, o]));
   let weightKg = 0;
   let volumeM3 = 0;
   let chilledOrders = 0;
   let orderCount = 0;
   for (const a of detail.allocations) {
-    if (a.vehicleId !== vehicleId) continue;
+    if (a.tripId !== tripId) continue;
     const order = ordersById.get(a.orderId);
     if (!order) continue;
     weightKg += order.orderWeightKg;
@@ -286,23 +289,25 @@ export function PlanningPage() {
           </table>
 
           <h3>{t("Vehicle load")}</h3>
-          <p className="muted">{t("What this plan has loaded onto each vehicle so far, against its capacity.")}</p>
-          {(detail.vehicles || []).map((vehicle) => {
-            const load = vehicleLoad(detail, vehicle.id);
+          <p className="muted">{t("What this plan has loaded onto each vehicle trip so far, against its capacity.")}</p>
+          {(detail.trips || []).map((trip) => {
+            const vehicle = (detail.vehicles || []).find((v) => v.id === trip.vehicleId);
+            if (!vehicle) return null;
+            const load = tripLoad(detail, trip.id);
             const weightPct = vehicle.weightCapacityKg > 0 ? Math.round((load.weightKg / vehicle.weightCapacityKg) * 100) : 0;
             const volumePct = vehicle.volumeCapacityM3 > 0 ? Math.round((load.volumeM3 / vehicle.volumeCapacityM3) * 100) : 0;
             return (
-              <article className="card" key={vehicle.id}>
-                <p><strong>{vehicle.id}</strong> · {vehicle.type}/{vehicle.temp} · {load.orderCount} {t("order(s) loaded")}
+              <article className="card" key={trip.id}>
+                <p><strong>{vehicle.id}</strong> · {t("Trip")} {trip.tripNumber} · {vehicle.type}/{vehicle.temp} · {load.orderCount} {t("order(s) loaded")}
                   {load.chilledOrders > 0 && <span> · ❄ {t("Chilled")} ({load.chilledOrders})</span>}
                 </p>
                 <p className={loadBarClass(weightPct)}>
                   {t("Weight")}: {load.weightKg.toFixed(0)} / {vehicle.weightCapacityKg.toFixed(0)}{" "}kg{" "}({weightPct}%)
-                  <progress max={100} value={Math.min(weightPct, 100)} aria-label={`${t("Weight")} ${vehicle.id}`} />
+                  <progress max={100} value={Math.min(weightPct, 100)} aria-label={`${t("Weight")} ${vehicle.id} ${t("Trip")} ${trip.tripNumber}`} />
                 </p>
                 <p className={loadBarClass(volumePct)}>
                   {t("Volume")}: {load.volumeM3.toFixed(2)} / {vehicle.volumeCapacityM3.toFixed(2)} m³ ({volumePct}%)
-                  <progress max={100} value={Math.min(volumePct, 100)} aria-label={`${t("Volume")} ${vehicle.id}`} />
+                  <progress max={100} value={Math.min(volumePct, 100)} aria-label={`${t("Volume")} ${vehicle.id} ${t("Trip")} ${trip.tripNumber}`} />
                 </p>
               </article>
             );
