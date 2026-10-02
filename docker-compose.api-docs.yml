@@ -1,0 +1,12 @@
+services:
+  swagger-ui:
+    image: docker.swagger.io/swaggerapi/swagger-ui:v5.33.1
+    environment:
+      URLS: '[{"url":"/openapi/agents.yaml","name":"Agent"},{"url":"/openapi/delivery.yaml","name":"Delivery"},{"url":"/openapi/fleet.yaml","name":"Fleet"},{"url":"/openapi/integration.yaml","name":"Integrations"},{"url":"/openapi/loading.yaml","name":"Loading"},{"url":"/openapi/orders.yaml","name":"Orders"},{"url":"/openapi/planning.yaml","name":"Planning"},{"url":"/openapi/shared.yaml","name":"Shared"}]'
+      URLS_PRIMARY_NAME: Orders
+      SUPPORTED_SUBMIT_METHODS: "[]"
+    ports:
+      - "127.0.0.1:8092:8080"
+    volumes:
+      - ./contracts/openapi:/usr/share/nginx/html/openapi:ro
+    restart: unless-stopped
