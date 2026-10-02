@@ -46,7 +46,7 @@ export function StoreManagerDashboardPage() {
     try {
       const body = await apiJSON<{ items: Order[] }>("/orders", token);
       const rows = await Promise.all(
-        (body.items || []).slice(0, 10).map(async (order) => {
+        (body.items || []).map(async (order) => {
           const res = await apiJSON<{ tracking: Tracking }>(`/orders/${order.id}/tracking`, token);
           return res.tracking;
         })
@@ -60,10 +60,12 @@ export function StoreManagerDashboardPage() {
   useEffect(() => { void load(); }, [load]);
 
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Colombo" }); // "YYYY-MM-DD"
+  const toColombDate = (iso: string) =>
+    new Date(iso).toLocaleDateString("en-CA", { timeZone: "Asia/Colombo" });
   const inTransit = trackings
     .filter(t => {
       if (t.stage !== "IN_TRANSIT" && t.stage !== "ON_ROUTE") return false;
-      const arrivalDate = t.planning.plannedArrivalAt?.slice(0, 10);
+      const arrivalDate = t.planning.plannedArrivalAt ? toColombDate(t.planning.plannedArrivalAt) : null;
       return arrivalDate === today || t.order.requestedDeliveryDate === today;
     })
     .sort((a, b) => (a.planning.plannedArrivalAt ?? "").localeCompare(b.planning.plannedArrivalAt ?? ""));
@@ -236,7 +238,7 @@ export function StoreManagerDashboardPage() {
               </tr>
             </thead>
             <tbody>
-              {trackings.map((row) => (
+              {trackings.slice(0, 10).map((row) => (
                 <tr key={row.order.id}>
                   <td>{row.order.orderRef}</td>
                   <td>{row.order.temperatureRequirement === "chilled" ? t("Chilled") : t("Ambient")} · {row.order.orderUnits} {t("items")}</td>
