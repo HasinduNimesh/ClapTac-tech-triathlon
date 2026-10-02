@@ -18,18 +18,37 @@ func applyFairnessHistory(orders []domain.Order, deferralCounts map[string]int, 
 	}
 	for i := range orders {
 		orders[i].OutletDeferralCount = deferralCounts[orders[i].OutletID]
-		if date, ok := lastDeferralByOutlet[orders[i].OutletID]; ok {
-			orders[i].DeferredLastRun = true
-			orders[i].LastDeferralDate = date
-		}
+		var servedAt time.Time
+		var served bool
 		if lastServedErr == nil {
-			if servedAt, ok := lastServed[orders[i].OutletID]; ok {
-				orders[i].LastServedAt = &servedAt
-				orders[i].DaysSinceLastServed = allocate.DaysSinceLastServed(asOf, servedAt)
+			if at, ok := lastServed[orders[i].OutletID]; ok {
+				servedAt, served = at, true
+				orders[i].LastServedAt = &at
+				orders[i].DaysSinceLastServed = allocate.DaysSinceLastServed(asOf, at)
 			} else {
 				// No successful delivery exists for this outlet yet; treat it as
 				// unserved for the configured maximum age.
 				orders[i].DaysSinceLastServed = policy.MaxUnservedDays
+			}
+		}
+		if date, ok := lastDeferralByOutlet[orders[i].OutletID]; ok {
+			// A later successful delivery means this outlet was actually
+			// served since that deferral, so it was not deferred "last run" -
+			// without this check, a single historical deferral would warn on
+			// every later plan forever, even after the outlet was served.
+			supersededByService := false
+			if served {
+				if deferralDate, err := time.ParseInLocation("2006-01-02", date, asOf.Location()); err == nil {
+					servedLocal := servedAt.In(asOf.Location())
+					servedDay := time.Date(servedLocal.Year(), servedLocal.Month(), servedLocal.Day(), 0, 0, 0, 0, asOf.Location())
+					if servedDay.After(deferralDate) {
+						supersededByService = true
+					}
+				}
+			}
+			if !supersededByService {
+				orders[i].DeferredLastRun = true
+				orders[i].LastDeferralDate = date
 			}
 		}
 		orders[i].FairnessScore = allocate.FairnessScoreWithPolicy(orders[i], policy)

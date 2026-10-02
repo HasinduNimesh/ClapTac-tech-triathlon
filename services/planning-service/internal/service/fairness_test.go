@@ -33,6 +33,25 @@ func TestApplyFairnessHistoryCombinesInputsAndClampsUnknownServiceAge(t *testing
 	}
 }
 
+func TestApplyFairnessHistoryClearsRepeatDeferralWarningAfterLaterService(t *testing.T) {
+	loc := time.FixedZone("Asia/Colombo", 5*60*60+30*60)
+	asOf := time.Date(2026, time.September, 30, 0, 0, 0, 0, loc)
+	// Deferred on 2026-09-20, then actually served on 2026-09-25: a plan on
+	// 2026-09-30 must not warn that the outlet was deferred "last run" when
+	// the last run actually succeeded.
+	servedAfterDeferral := time.Date(2026, time.September, 25, 10, 0, 0, 0, time.UTC)
+	orders := []domain.Order{{ID: "recovered", OutletID: "OUT-1"}}
+	policy := domain.PlanningPolicy{DeferralWeightPoints: 10, MaxDeferralCount: 3, MaxUnservedDays: 45}
+
+	_, err := applyFairnessHistory(orders, map[string]int{"OUT-1": 1}, nil, map[string]time.Time{"OUT-1": servedAfterDeferral}, nil, asOf, policy, map[string]string{"OUT-1": "2026-09-20"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if orders[0].DeferredLastRun {
+		t.Fatalf("FR-53 review fix: a deferral superseded by a later successful delivery must not warn: %+v", orders[0])
+	}
+}
+
 func TestApplyFairnessHistoryFallsBackExplicitlyWhenDeliveryHistoryFails(t *testing.T) {
 	orders := []domain.Order{{ID: "deferred", OutletID: "OUT-1"}}
 	policy := domain.PlanningPolicy{DeferralWeightPoints: 10, MaxDeferralCount: 3, MaxUnservedDays: 45}
