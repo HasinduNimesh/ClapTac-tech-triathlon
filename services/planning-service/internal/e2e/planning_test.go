@@ -89,6 +89,7 @@ func TestPlanningGenerateConfirm(t *testing.T) {
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0020_planning_publications.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0035_planning_disruption_risks.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0036_planning_unallocated_reasons.sql"))
+	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0037_planning_deferral_next_run.sql"))
 
 	peers := httptest.NewServer(peerStub())
 	t.Cleanup(peers.Close)
@@ -455,6 +456,7 @@ func TestPlanningUnallocatedReasonPersists(t *testing.T) {
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0020_planning_publications.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0035_planning_disruption_risks.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0036_planning_unallocated_reasons.sql"))
+	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0037_planning_deferral_next_run.sql"))
 
 	peers := httptest.NewServer(overweightOrderPeerStub())
 	t.Cleanup(peers.Close)
@@ -627,6 +629,177 @@ func TestPlanningUnallocatedReasonPersists(t *testing.T) {
 	rowAfterDrop, _ := unallocAfterDrop[0].(map[string]any)
 	if rowAfterDrop["reasonCode"] != "REASON_UNAVAILABLE" {
 		t.Fatalf("expected an explicit unavailable reason, not a misleading placeholder: %#v", rowAfterDrop)
+	}
+}
+
+// TestPlanningDeferralNextRunAndRepeatWarning proves FR-53: a deferral records
+// the Dispatcher's expected next-run date, and a later plan for the same
+// outlet is warned that it was deferred on its last run.
+func TestPlanningDeferralNextRunAndRepeatWarning(t *testing.T) {
+	ctx := context.Background()
+	req := testcontainers.ContainerRequest{
+		Image:        "postgres:16-alpine",
+		ExposedPorts: []string{"5432/tcp"},
+		Env: map[string]string{
+			"POSTGRES_USER": "waypoint", "POSTGRES_PASSWORD": "waypoint", "POSTGRES_DB": "waypoint",
+		},
+		WaitingFor: wait.ForLog("database system is ready to accept connections").WithOccurrence(2).WithStartupTimeout(60 * time.Second),
+	}
+	pg, err := startPostgresContainer(ctx, testcontainers.GenericContainerRequest{ContainerRequest: req, Started: true})
+	if err != nil {
+		t.Skipf("testcontainers postgres:16-alpine unavailable: %v", err)
+	}
+	t.Cleanup(func() { _ = pg.Terminate(ctx) })
+	host, err := pg.Host(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	port, err := pg.MappedPort(ctx, "5432")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dsn := "postgres://waypoint:waypoint@" + host + ":" + port.Port() + "/waypoint?sslmode=disable"
+	root := repoRoot(t)
+	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0001_init.sql"))
+	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0007_planning.sql"))
+	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0013_planning_stop_times.sql"))
+	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0020_planning_publications.sql"))
+	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0035_planning_disruption_risks.sql"))
+	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0036_planning_unallocated_reasons.sql"))
+	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0037_planning_deferral_next_run.sql"))
+
+	peers := httptest.NewServer(peerStub())
+	t.Cleanup(peers.Close)
+
+	planPool, err := db.Open(ctx, dsn, "planning")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(planPool.Close)
+	client := planclient.Peers{
+		OrdersURL: peers.URL, FleetURL: peers.URL, SharedURL: peers.URL, DeliveryURL: peers.URL,
+		M2M: staticToken("svc-planning"),
+	}
+	planH := planhandler.Handler{
+		Authn:    bearerAuth{},
+		Profiles: staticProfiles{},
+		Service:  planservice.Service{Repo: planstore.Postgres{Pool: planPool}, Peers: client},
+	}
+	planR := chi.NewRouter()
+	planH.Routes(planR)
+	planSrv := httptest.NewServer(planR)
+	t.Cleanup(planSrv.Close)
+
+	createPlanA, _ := http.NewRequest(http.MethodPost, planSrv.URL+"/api/v1/planning/plans", bytes.NewReader([]byte(`{"deliveryDate":"2026-09-29"}`)))
+	createPlanA.Header.Set("Authorization", "Bearer usr-dispatcher")
+	createPlanA.Header.Set("Content-Type", "application/json")
+	presA, err := http.DefaultClient.Do(createPlanA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer presA.Body.Close()
+	if presA.StatusCode != http.StatusCreated {
+		t.Fatalf("create plan A %d %s", presA.StatusCode, readBody(presA))
+	}
+	var createdA struct {
+		Plan struct {
+			ID string `json:"id"`
+		} `json:"plan"`
+	}
+	if err := json.NewDecoder(presA.Body).Decode(&createdA); err != nil {
+		t.Fatal(err)
+	}
+
+	// An out-of-range next-run target (not after this plan's own date) is rejected.
+	badDefer, _ := http.NewRequest(http.MethodPost, planSrv.URL+"/api/v1/planning/plans/"+createdA.Plan.ID+"/deferrals", strings.NewReader(`{"orderId":"ord-1","reasonCode":"NO_ELIGIBLE_VEHICLE","nextRunTarget":"2026-09-29"}`))
+	badDefer.Header.Set("Authorization", "Bearer usr-dispatcher")
+	badDefer.Header.Set("Content-Type", "application/json")
+	badDeferRes, err := http.DefaultClient.Do(badDefer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	badDeferBody := readBody(badDeferRes)
+	badDeferRes.Body.Close()
+	if badDeferRes.StatusCode != http.StatusBadRequest {
+		t.Fatalf("a next-run target on or before the plan date should be rejected 400, got %d: %s", badDeferRes.StatusCode, badDeferBody)
+	}
+
+	deferReq, _ := http.NewRequest(http.MethodPost, planSrv.URL+"/api/v1/planning/plans/"+createdA.Plan.ID+"/deferrals", strings.NewReader(`{"orderId":"ord-1","reasonCode":"NO_ELIGIBLE_VEHICLE","comment":"No reefer free today","nextRunTarget":"2026-09-30"}`))
+	deferReq.Header.Set("Authorization", "Bearer usr-dispatcher")
+	deferReq.Header.Set("Content-Type", "application/json")
+	deferRes, err := http.DefaultClient.Do(deferReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deferBody := readBody(deferRes)
+	deferRes.Body.Close()
+	if deferRes.StatusCode != http.StatusCreated {
+		t.Fatalf("defer with a valid next-run target %d: %s", deferRes.StatusCode, deferBody)
+	}
+
+	getPlanA, _ := http.NewRequest(http.MethodGet, planSrv.URL+"/api/v1/planning/plans/"+createdA.Plan.ID, nil)
+	getPlanA.Header.Set("Authorization", "Bearer usr-dispatcher")
+	planARes, err := http.DefaultClient.Do(getPlanA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var planADetail struct {
+		Deferrals []struct {
+			OrderID       string `json:"orderId"`
+			NextRunTarget string `json:"nextRunTarget"`
+		} `json:"deferrals"`
+	}
+	if err := json.NewDecoder(planARes.Body).Decode(&planADetail); err != nil {
+		planARes.Body.Close()
+		t.Fatal(err)
+	}
+	planARes.Body.Close()
+	if len(planADetail.Deferrals) != 1 || planADetail.Deferrals[0].NextRunTarget != "2026-09-30" {
+		t.Fatalf("next-run target was not persisted: %+v", planADetail.Deferrals)
+	}
+
+	// A later plan for the same outlet (OUT034, carried by ord-1 in peerStub)
+	// must now see the repeat-deferral warning from plan A.
+	createPlanB, _ := http.NewRequest(http.MethodPost, planSrv.URL+"/api/v1/planning/plans", bytes.NewReader([]byte(`{"deliveryDate":"2026-09-30"}`)))
+	createPlanB.Header.Set("Authorization", "Bearer usr-dispatcher")
+	createPlanB.Header.Set("Content-Type", "application/json")
+	presB, err := http.DefaultClient.Do(createPlanB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer presB.Body.Close()
+	if presB.StatusCode != http.StatusCreated {
+		t.Fatalf("create plan B %d %s", presB.StatusCode, readBody(presB))
+	}
+	var createdB struct {
+		Plan struct {
+			ID string `json:"id"`
+		} `json:"plan"`
+	}
+	if err := json.NewDecoder(presB.Body).Decode(&createdB); err != nil {
+		t.Fatal(err)
+	}
+
+	getPlanB, _ := http.NewRequest(http.MethodGet, planSrv.URL+"/api/v1/planning/plans/"+createdB.Plan.ID, nil)
+	getPlanB.Header.Set("Authorization", "Bearer usr-dispatcher")
+	planBRes, err := http.DefaultClient.Do(getPlanB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var planBDetail struct {
+		Orders []struct {
+			OutletID         string `json:"outletId"`
+			DeferredLastRun  bool   `json:"deferredLastRun"`
+			LastDeferralDate string `json:"lastDeferralDate"`
+		} `json:"orders"`
+	}
+	if err := json.NewDecoder(planBRes.Body).Decode(&planBDetail); err != nil {
+		planBRes.Body.Close()
+		t.Fatal(err)
+	}
+	planBRes.Body.Close()
+	if len(planBDetail.Orders) != 1 || !planBDetail.Orders[0].DeferredLastRun || planBDetail.Orders[0].LastDeferralDate != "2026-09-29" {
+		t.Fatalf("plan B should warn that OUT034 was deferred last run (2026-09-29): %+v", planBDetail.Orders)
 	}
 }
 

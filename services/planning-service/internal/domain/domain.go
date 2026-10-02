@@ -54,6 +54,11 @@ type Order struct {
 	DaysSinceLastServed int        `json:"daysSinceLastServed"`
 	LastServedAt        *time.Time `json:"lastServedAt,omitempty"`
 	FairnessScore       int        `json:"fairnessScore"`
+	// DeferredLastRun and LastDeferralDate are FR-53's repeat-deferral warning:
+	// whether this outlet's most recent earlier plan deferred it, so the
+	// Dispatcher can see a pattern before deferring it again.
+	DeferredLastRun bool   `json:"deferredLastRun,omitempty"`
+	LastDeferralDate string `json:"lastDeferralDate,omitempty"`
 }
 
 type Vehicle struct {
@@ -160,14 +165,17 @@ type Allocation struct {
 }
 
 type Deferral struct {
-	ID           string         `json:"id"`
-	PlanID       string         `json:"planId"`
-	OrderID      string         `json:"orderId"`
-	OutletID     string         `json:"outletId"`
-	ReasonCode   string         `json:"reasonCode"`
-	Comment      string         `json:"comment,omitempty"`
-	DeferredBy   string         `json:"deferredBy"`
-	ReasonDetail map[string]any `json:"reasonDetail,omitempty"`
+	ID            string         `json:"id"`
+	PlanID        string         `json:"planId"`
+	OrderID       string         `json:"orderId"`
+	OutletID      string         `json:"outletId"`
+	ReasonCode    string         `json:"reasonCode"`
+	Comment       string         `json:"comment,omitempty"`
+	DeferredBy    string         `json:"deferredBy"`
+	ReasonDetail  map[string]any `json:"reasonDetail,omitempty"`
+	// NextRunTarget is the delivery date (YYYY-MM-DD) the Dispatcher expects to
+	// retry this order on. Optional: not every deferral has a known next run.
+	NextRunTarget string `json:"nextRunTarget,omitempty"`
 }
 
 type ConstraintFailure struct {

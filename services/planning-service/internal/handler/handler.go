@@ -26,7 +26,7 @@ type Planner interface {
 	Assign(ctx context.Context, profile *authorization.Profile, planID, orderID, vehicleID string, tripNo int, reason string) (domain.Allocation, []domain.Result, error)
 	Reassign(ctx context.Context, profile *authorization.Profile, planID, allocID, vehicleID string, tripNo int, reason string) ([]domain.Result, error)
 	Remove(ctx context.Context, profile *authorization.Profile, planID, allocID string) error
-	Defer(ctx context.Context, profile *authorization.Profile, planID, orderID, code, comment string) error
+	Defer(ctx context.Context, profile *authorization.Profile, planID, orderID, code, comment, nextRunTarget string) error
 	Confirm(ctx context.Context, profile *authorization.Profile, id string) error
 	InternalTrips(ctx context.Context, date, depot string) ([]domain.InternalTrip, error)
 	InternalTrip(ctx context.Context, tripID string) (domain.InternalTrip, error)
@@ -288,15 +288,16 @@ func (h Handler) remove(w http.ResponseWriter, r *http.Request) {
 
 func (h Handler) deferOrder(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		OrderID    string `json:"orderId"`
-		ReasonCode string `json:"reasonCode"`
-		Comment    string `json:"comment"`
+		OrderID       string `json:"orderId"`
+		ReasonCode    string `json:"reasonCode"`
+		Comment       string `json:"comment"`
+		NextRunTarget string `json:"nextRunTarget"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		apierrors.BadRequest(w, "invalid JSON")
 		return
 	}
-	if writeErr(w, h.Service.Defer(r.Context(), h.profile(r), chi.URLParam(r, "id"), body.OrderID, body.ReasonCode, body.Comment)) {
+	if writeErr(w, h.Service.Defer(r.Context(), h.profile(r), chi.URLParam(r, "id"), body.OrderID, body.ReasonCode, body.Comment, body.NextRunTarget)) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"status": "deferred"})

@@ -158,6 +158,16 @@ type OutletLastServed struct {
 	LastServedAt time.Time `json:"lastServedAt"`
 }
 
+// OutletLastAttempted is distinct from OutletLastServed: it covers every
+// terminal delivery outcome (DELIVERED, PARTIAL, NOT_DELIVERED, REFUSED),
+// not just successful ones. FR-53's repeat-deferral warning needs this - an
+// outlet whose last run was an attempted-but-failed delivery was not
+// deferred on that run, even though it was not successfully served either.
+type OutletLastAttempted struct {
+	OutletID        string    `json:"outletId"`
+	LastAttemptedAt time.Time `json:"lastAttemptedAt"`
+}
+
 type ProofSummary struct {
 	OperationID string     `json:"operationId,omitempty"`
 	Type        string     `json:"type"`

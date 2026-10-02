@@ -104,7 +104,7 @@ func (s *stubPlanner) Reassign(context.Context, *authorization.Profile, string, 
 func (s *stubPlanner) Remove(context.Context, *authorization.Profile, string, string) error {
 	return nil
 }
-func (s *stubPlanner) Defer(context.Context, *authorization.Profile, string, string, string, string) error {
+func (s *stubPlanner) Defer(context.Context, *authorization.Profile, string, string, string, string, string) error {
 	return nil
 }
 func (s *stubPlanner) Confirm(context.Context, *authorization.Profile, string) error {

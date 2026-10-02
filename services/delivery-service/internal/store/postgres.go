@@ -472,6 +472,45 @@ func (p Postgres) OutletLastServed(ctx context.Context) ([]domain.OutletLastServ
 	return items, rows.Err()
 }
 
+// OutletLastAttempted covers every terminal outcome (DELIVERED, PARTIAL,
+// NOT_DELIVERED, FAILED, REFUSED) via "outcome_code is set" rather than an
+// explicit list, so a future outcome code is still picked up automatically.
+// beforeDate scopes it to attempts strictly before that date - required so
+// reopening an older plan is judged by what had actually happened as of
+// that plan's date, not contaminated by attempts recorded since.
+//
+// outcome_at/outcome_received_at are timestamptz; beforeDate is a plain
+// calendar date in Asia/Colombo (NFR-20). Comparing a timestamptz directly
+// against ::date lets Postgres cast using the session/DB timezone (UTC by
+// default here), which is the wrong midnight - an outcome at 19:00Z the day
+// before is already past midnight in Colombo (+5:30) and must count as
+// "that day", not "before it". AT TIME ZONE 'Asia/Colombo' anchors the
+// cutoff explicitly, matching the existing pattern in LatenessHistory below.
+func (p Postgres) OutletLastAttempted(ctx context.Context, beforeDate string) ([]domain.OutletLastAttempted, error) {
+	rows, err := p.Pool.Query(ctx, `
+		SELECT outlet_id, MAX(COALESCE(outcome_at, outcome_received_at))
+		FROM stops
+		WHERE outlet_id IS NOT NULL AND outlet_id <> ''
+		  AND outcome_code IS NOT NULL AND outcome_code <> ''
+		  AND COALESCE(outcome_at, outcome_received_at) < ($1::date::timestamp AT TIME ZONE 'Asia/Colombo')
+		GROUP BY outlet_id
+		ORDER BY outlet_id
+	`, beforeDate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]domain.OutletLastAttempted, 0)
+	for rows.Next() {
+		var item domain.OutletLastAttempted
+		if err := rows.Scan(&item.OutletID, &item.LastAttemptedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
 func (p Postgres) MarkArrived(ctx context.Context, stopID string, occurredAt time.Time) error {
 	tag, err := p.Pool.Exec(ctx, `
 		UPDATE stops SET status = $2, arrived_at = $3, arrived_received_at = now(), updated_at = now(), version = version + 1
