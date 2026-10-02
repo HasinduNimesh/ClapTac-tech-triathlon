@@ -51,10 +51,17 @@ def convert_outlets(src, dst):
     rows = read_rows(src / "outlets.csv")
     out = []
     for r in rows:
+        # The official file's mall_window is a time range ("10:00-12:30") or
+        # blank, not a boolean. database/import.sh only recognises
+        # '1'/'true'/'t'/'yes' as true, so passing the range through as-is
+        # would make every mall outlet false here. The range itself is
+        # dropped; window_open_time/window_close_time already carry the
+        # actual times and are copied through unchanged below.
         out.append({
             "outlet_id": r["outlet_id"], "brand": r["brand"], "name": "",
             "district": r["district"], "depot": r["depot"], "dock_type": r["dock_type"],
-            "parking_constraint": r["parking_constraint"], "mall_window": r.get("mall_window", ""),
+            "parking_constraint": r["parking_constraint"],
+            "mall_window": "true" if r.get("mall_window", "").strip() else "false",
             "window_open_time": r["window_open_time"], "window_close_time": r["window_close_time"],
         })
     write_rows(dst / "outlets.csv", ["outlet_id", "brand", "name", "district", "depot",
