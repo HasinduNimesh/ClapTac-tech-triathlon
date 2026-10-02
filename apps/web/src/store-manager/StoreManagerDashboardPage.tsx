@@ -59,7 +59,14 @@ export function StoreManagerDashboardPage() {
 
   useEffect(() => { void load(); }, [load]);
 
-  const inTransit = trackings.filter(t => t.stage === "IN_TRANSIT" || t.stage === "ON_ROUTE");
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Colombo" }); // "YYYY-MM-DD"
+  const inTransit = trackings
+    .filter(t => {
+      if (t.stage !== "IN_TRANSIT" && t.stage !== "ON_ROUTE") return false;
+      const arrivalDate = t.planning.plannedArrivalAt?.slice(0, 10);
+      return arrivalDate === today || t.order.requestedDeliveryDate === today;
+    })
+    .sort((a, b) => (a.planning.plannedArrivalAt ?? "").localeCompare(b.planning.plannedArrivalAt ?? ""));
   const deferred = trackings.filter(t => t.stage === "DEFERRED" || t.stage === "PLANNING_DEFERRED");
   const needsReceipt = trackings.filter(t => t.delivery?.outcome === "DELIVERED" && !t.stage.includes("RECEIPT"));
   const attentionCount = deferred.length + needsReceipt.length;
@@ -85,10 +92,6 @@ export function StoreManagerDashboardPage() {
             </div>
             <img src={iconChev} alt="" aria-hidden="true" width={14} height={14} className="sm-chev-down" />
           </div>
-          <Link to="/store-manager/orders/new" className="sm-btn-outline">
-            <img src={iconPlus} alt="" aria-hidden="true" width={16} height={16} />
-            {t("Create new dashboard")}
-          </Link>
           <Link to="/store-manager/orders/new" className="sm-btn-place-order">
             <img src={iconPlus} alt="" aria-hidden="true" width={18} height={18} />
             {t("Place Order")}

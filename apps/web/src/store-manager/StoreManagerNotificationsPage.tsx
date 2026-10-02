@@ -22,13 +22,15 @@ export function StoreManagerNotificationsPage() {
   const [trackings, setTrackings] = useState<Tracking[]>([]);
   const [error, setError] = useState("");
 
+  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+
   const load = useCallback(async () => {
     if (!token) return;
     setError("");
     try {
       const body = await apiJSON<{ items: Order[] }>("/orders", token);
       const rows = await Promise.all(
-        (body.items || []).slice(0, 10).map(async (order) => {
+        (body.items || []).map(async (order) => {
           const res = await apiJSON<{ tracking: Tracking }>(`/orders/${order.id}/tracking`, token);
           return res.tracking;
         })
@@ -42,10 +44,11 @@ export function StoreManagerNotificationsPage() {
   useEffect(() => { void load(); }, [load]);
 
   const needsReceipt = trackings.filter(t => t.delivery?.outcome === "DELIVERED" && t.receipt?.status !== "CONFIRMED");
-  const deferred = trackings.filter(t => t.stage === "DEFERRED" || t.stage === "PLANNING_DEFERRED");
-  const etaChanged = trackings.filter(t => t.stage === "IN_TRANSIT" && t.planning.plannedArrivalAt);
+  const deferred = trackings.filter(t =>
+    (t.stage === "DEFERRED" || t.stage === "PLANNING_DEFERRED") && !dismissed.has(t.order.id)
+  );
 
-  const noticeCount = needsReceipt.length + deferred.length + etaChanged.length;
+  const noticeCount = needsReceipt.length + deferred.length;
 
   return (
     <>
@@ -92,26 +95,6 @@ export function StoreManagerNotificationsPage() {
             </div>
           ))}
 
-          {etaChanged.map((row) => (
-            <div key={row.order.id} className="sm-notification-item">
-              <div className="sm-notification-meta">
-                <span className="sm-notif-badge sm-notif-badge--eta">{t("ETA CHANGE")}</span>
-              </div>
-              <div className="sm-notification-body">
-                <h3 className="sm-notification-title">{row.order.orderRef} · {t("arrival time updated")}</h3>
-                <p className="sm-notification-desc muted">
-                  {t("New expected arrival")}:{" "}
-                  {row.planning.plannedArrivalAt
-                    ? new Date(row.planning.plannedArrivalAt).toLocaleTimeString("en-LK", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Colombo" })
-                    : "—"}
-                </p>
-              </div>
-              <Link to="/store-manager/tracking" className="tap sm-notif-action sm-notif-action--outline">
-                {t("View order")}
-              </Link>
-            </div>
-          ))}
-
           {deferred.map((row) => (
             <div key={row.order.id} className="sm-notification-item">
               <div className="sm-notification-meta">
@@ -123,7 +106,11 @@ export function StoreManagerNotificationsPage() {
                   {row.planning.reasonComment || t("Capacity was fully allocated. Proposed run pending confirmation.")}
                 </p>
               </div>
-              <button type="button" className="tap sm-notif-action sm-notif-action--outline" onClick={() => void load()}>
+              <button
+                type="button"
+                className="tap sm-notif-action sm-notif-action--outline"
+                onClick={() => setDismissed(prev => new Set([...prev, row.order.id]))}
+              >
                 {t("Acknowledge update")}
               </button>
             </div>

@@ -678,9 +678,10 @@ const storeManagerDashboardLabels = {
     "Settings": "සැකසීම්",
     "Help & Guide": "උදව් සහ මාර්ගෝපදේශය",
     "Secondary": "ද්විතීයික",
-    "Switch sample outlet": "නියැදි අලෙවිසැල මාරු කරන්න",
     "Skip to main content": "ප්‍රධාන අන්තර්ගතයට යන්න",
     "orders": "ඇණවුම්",
+    "No outlet assigned": "අලෙවිසැලක් පවරා නොමැත",
+    "Open navigation": "සංනිවේදනය විවෘත කරන්න",
   },
   ta: {
     "Your Deliveries": "உங்கள் விநியோகங்கள்",
@@ -749,9 +750,10 @@ const storeManagerDashboardLabels = {
     "Settings": "அமைப்புகள்",
     "Help & Guide": "உதவி மற்றும் வழிகாட்டி",
     "Secondary": "இரண்டாம் நிலை",
-    "Switch sample outlet": "மாதிரி கடையை மாற்றவும்",
     "Skip to main content": "முக்கிய உள்ளடக்கத்திற்கு செல்லவும்",
     "orders": "ஆர்டர்கள்",
+    "No outlet assigned": "கடை ஒதுக்கப்படவில்லை",
+    "Open navigation": "வழிசெலுத்தலைத் திற",
   },
 };
 

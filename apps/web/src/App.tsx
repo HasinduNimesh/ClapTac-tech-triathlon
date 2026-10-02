@@ -38,7 +38,6 @@ function AppRoutes() {
           <Route path="/store-manager/tracking" element={<TrackingPage />} />
           <Route path="/store-manager/receipts" element={<TrackingPage receiptsOnly />} />
           <Route path="/store-manager/notifications" element={<StoreManagerNotificationsPage />} />
-          <Route path="/store-manager/settings" element={<StoreManagerDashboardPage />} />
         </Route>
         <Route element={<Layout />}>
           <Route path="/" element={<HomePage />} />
