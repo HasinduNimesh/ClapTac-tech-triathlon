@@ -28,9 +28,9 @@ function AppRoutes() {
   return (
     <Suspense fallback={<p role="status">{t("Loading screen…")}</p>}>
       <Routes>
+        <Route path="/login" element={<LoginPage />} />
         <Route element={<Layout />}>
           <Route path="/" element={<HomePage />} />
-          <Route path="/login" element={<LoginPage />} />
           <Route path="/auth/callback" element={<CallbackPage />} />
           <Route path="/store-manager" element={<RoleGate role="STORE_MANAGER"><StoreManagerPage /></RoleGate>} />
           <Route path="/store-manager/orders" element={<RoleGate role="STORE_MANAGER"><OrderListPage /></RoleGate>} />
