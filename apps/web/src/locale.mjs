@@ -47,6 +47,22 @@ Object.assign(labels.ta, {
   "Last confirmed": "கடைசியாக உறுதிப்படுத்தியது",
   "Not yet confirmed": "இன்னும் உறுதிப்படுத்தப்படவில்லை"
 });
+Object.assign(labels.si, {
+  "One sign-in for every Waypoint role. We open the right workspace for you.": "සෑම Waypoint භූමිකාවක් සඳහාම එක් පිවිසුමක්. අපි ඔබට නිවැරදි කාර්යක්ෂේත්‍රය විවෘත කරමු.",
+  "Your workspace opens by role": "ඔබේ කාර්යක්ෂේත්‍රය භූමිකාව අනුව විවෘත වේ",
+  "Dispatcher": "යැවීම් නිලධාරී",
+  "Store manager": "වෙළඳසැල් කළමනාකරු",
+  "No account yet?": "තවම ගිණුමක් නැද්ද?",
+  "Ask your depot supervisor to add you.": "ඔබව එක් කිරීමට ඔබේ ඩිපෝ අධීක්ෂකගෙන් ඉල්ලන්න."
+});
+Object.assign(labels.ta, {
+  "One sign-in for every Waypoint role. We open the right workspace for you.": "ஒவ்வொரு Waypoint பாத்திரத்திற்கும் ஒரே உள்நுழைவு. சரியான பணியிடத்தை நாங்கள் திறக்கிறோம்.",
+  "Your workspace opens by role": "உங்கள் பணியிடம் பாத்திரத்தின் அடிப்படையில் திறக்கும்",
+  "Dispatcher": "அனுப்புநர்",
+  "Store manager": "கடை மேலாளர்",
+  "No account yet?": "இன்னும் கணக்கு இல்லையா?",
+  "Ask your depot supervisor to add you.": "உங்களைச் சேர்க்க உங்கள் கிடங்கு மேற்பார்வையாளரிடம் கேளுங்கள்."
+});
 const loaderLabels = {
   si: { Loader: "පැටවුම්කරු", "Depot from profile": "පැතිකඩේ ඩිපෝව", "Suggested Load Order is last-out first-in guidance.": "යෝජිත පැටවීමේ අනුපිළිවෙළ අවසන් බෙදාහැරීම පළමුව පැටවීමට මඟ පෙන්වයි.", "Start loading": "පැටවීම ආරම්භ කරන්න", "Barcode or QR verification": "බාර්කෝඩ් හෝ QR පරීක්ෂාව", "Scan the order label, type a scanned code, or use the per-order Loaded button below.": "ඇණවුම් ලේබලය පරිලෝකනය කරන්න, කේතය ඇතුළත් කරන්න, නැතහොත් පහත පැටවූ බොත්තම භාවිතා කරන්න.", "Close camera": "කැමරාව වසන්න", "Scan with camera": "කැමරාවෙන් පරිලෝකනය කරන්න", "Order barcode / QR value": "ඇණවුම් බාර්කෝඩ් / QR අගය", "Verify and mark loaded": "පරීක්ෂා කර පැටවූ ලෙස සලකුණු කරන්න", "Suggested Load Order": "යෝජිත පැටවීමේ අනුපිළිවෙළ", Loaded: "පැටවා ඇත", Clear: "ඉවත් කරන්න", "Record shortfall": "හිඟය සටහන් කරන්න", Order: "ඇණවුම", MISSING: "නැතිවී ඇත", DAMAGED: "හානි වී ඇත", "Shortfall note": "හිඟය පිළිබඳ සටහන", Note: "සටහන", "Record issue": "ගැටලුව සටහන් කරන්න", "Ready for departure": "පිටත්වීමට සූදානම්", "Trip is ready for departure.": "ගමන පිටත්වීමට සූදානම්.", "Order with shortfall": "හිඟයක් ඇති ඇණවුම", "Shortfall type": "හිඟයේ වර්ගය", "Affected units": "බලපෑමට ලක් වූ ඒකක ගණන", "Trips loaded": "ගමන් පූරණය විය", "Loading started": "පැටවීම ආරම්භ විය", "Order loaded": "ඇණවුම පැටවීය", "Issue recorded": "ගැටලුව සටහන් විය", "Issue removed": "ගැටලුව ඉවත් කළා", "Ready for departure": "පිටත්වීමට සූදානම්", "Current plan acknowledged": "වත්මන් සැලැස්ම පිළිගත්තා" },
   ta: { Loader: "ஏற்றுபவர்", "Depot from profile": "சுயவிவரக் கிடங்கு", "Suggested Load Order is last-out first-in guidance.": "பரிந்துரைக்கப்பட்ட ஏற்ற வரிசை கடைசியாக விநியோகிப்பதை முதலில் ஏற்ற வழிகாட்டுகிறது.", "Start loading": "ஏற்றுதலைத் தொடங்கு", "Barcode or QR verification": "பார்கோடு அல்லது QR சரிபார்ப்பு", "Scan the order label, type a scanned code, or use the per-order Loaded button below.": "ஆர்டர் லேபிளை ஸ்கேன் செய்யவும், குறியீட்டை உள்ளிடவும் அல்லது கீழே உள்ள ஏற்றப்பட்ட பொத்தானைப் பயன்படுத்தவும்.", "Close camera": "கேமராவை மூடு", "Scan with camera": "கேமராவில் ஸ்கேன் செய்", "Order barcode / QR value": "ஆர்டர் பார்கோடு / QR மதிப்பு", "Verify and mark loaded": "சரிபார்த்து ஏற்றப்பட்டதாகக் குறி", "Suggested Load Order": "பரிந்துரைக்கப்பட்ட ஏற்ற வரிசை", Loaded: "ஏற்றப்பட்டது", Clear: "நீக்கு", "Record shortfall": "குறைவைப் பதிவு செய்", Order: "ஆர்டர்", MISSING: "காணவில்லை", DAMAGED: "சேதமடைந்தது", "Shortfall note": "குறைவு குறிப்பு", Note: "குறிப்பு", "Record issue": "சிக்கலைப் பதிவு செய்", "Ready for departure": "புறப்படத் தயார்", "Trip is ready for departure.": "பயணம் புறப்படத் தயார்.", "Order with shortfall": "குறைவு உள்ள ஆர்டர்", "Shortfall type": "குறைவு வகை", "Affected units": "பாதிக்கப்பட்ட அலகுகள்", "Trips loaded": "பயணங்கள் ஏற்றப்பட்டன", "Loading started": "ஏற்றுதல் தொடங்கியது", "Order loaded": "ஆர்டர் ஏற்றப்பட்டது", "Issue recorded": "சிக்கல் பதிவு செய்யப்பட்டது", "Issue removed": "சிக்கல் நீக்கப்பட்டது", "Current plan acknowledged": "தற்போதைய திட்டம் ஏற்கப்பட்டது" },

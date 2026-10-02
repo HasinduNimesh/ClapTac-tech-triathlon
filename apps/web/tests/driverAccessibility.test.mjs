@@ -68,6 +68,8 @@ test("shared text, status, guidance, and action colors meet WCAG AA contrast aga
   const guidanceBackground = color(rule(".stop-guidance"), "background");
   const nextStopBackground = color(rule(".next-stop"), "background");
   const tripCardBackground = color(rule(".load-item"), "background");
+  const loginPaneBackground = color(rule(".login-pane"), "background");
+  const loginBadgeBackground = color(rule(".login-badge"), "background");
   const pairs = [
     ["body text", pageText, pageBackground],
     ["body text on cards", pageText, cardBackground],
@@ -87,6 +89,8 @@ test("shared text, status, guidance, and action colors meet WCAG AA contrast aga
     ["link-style action text", color(rule(".linkish"), "color"), cardBackground],
     ["primary button", color(rule(".tap.primary"), "color"), color(rule(".tap.primary"), "background")],
     ["skip link", color(rule(".skip-link"), "color"), color(rule(".skip-link"), "background")],
+    ["login role badge text", color(rule(".login-badge"), "color"), loginBadgeBackground],
+    ["login footnote link", color(rule(".login-footnote-link"), "color"), loginPaneBackground],
   ];
   for (const [label, foreground, background] of pairs) {
     assert.ok(contrast(foreground, background) >= 4.5, `${label} contrast is below 4.5:1`);
@@ -98,6 +102,7 @@ test("shared text, status, guidance, and action colors meet WCAG AA contrast aga
   const testedForegroundSelectors = new Set([
     ":root", ".skip-link", "a", ".status-ok", ".status-bad", ".status-syncing",
     ".stop-guidance dt", ".muted", ".linkish", ".tap.primary",
+    ".login-badge", ".login-footnote-link",
   ]);
   assert.deepEqual(
     explicitForegroundSelectors.filter((selector) => !testedForegroundSelectors.has(selector)),
