@@ -20,8 +20,10 @@ const LoadingPage = lazy(() => import("./loader/LoadingPage").then((m) => ({ def
 const LoaderPage = lazy(() => import("./loader/LoaderPage").then((m) => ({ default: m.LoaderPage })));
 const NewOrderPage = lazy(() => import("./store-manager/NewOrderPage").then((m) => ({ default: m.NewOrderPage })));
 const OrderListPage = lazy(() => import("./store-manager/OrderListPage").then((m) => ({ default: m.OrderListPage })));
-const StoreManagerPage = lazy(() => import("./store-manager/StoreManagerPage").then((m) => ({ default: m.StoreManagerPage })));
+const StoreManagerDashboardPage = lazy(() => import("./store-manager/StoreManagerDashboardPage").then((m) => ({ default: m.StoreManagerDashboardPage })));
+const StoreManagerNotificationsPage = lazy(() => import("./store-manager/StoreManagerNotificationsPage").then((m) => ({ default: m.StoreManagerNotificationsPage })));
 const TrackingPage = lazy(() => import("./store-manager/TrackingPage").then((m) => ({ default: m.TrackingPage })));
+const StoreManagerLayout = lazy(() => import("./store-manager/StoreManagerLayout").then((m) => ({ default: m.StoreManagerLayout })));
 
 function AppRoutes() {
   const { t } = useLocale();
@@ -29,14 +31,18 @@ function AppRoutes() {
     <Suspense fallback={<p role="status">{t("Loading screen…")}</p>}>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route element={<RoleGate role="STORE_MANAGER"><StoreManagerLayout /></RoleGate>}>
+          <Route path="/store-manager" element={<StoreManagerDashboardPage />} />
+          <Route path="/store-manager/orders" element={<OrderListPage />} />
+          <Route path="/store-manager/orders/new" element={<NewOrderPage />} />
+          <Route path="/store-manager/tracking" element={<TrackingPage />} />
+          <Route path="/store-manager/receipts" element={<TrackingPage receiptsOnly />} />
+          <Route path="/store-manager/notifications" element={<StoreManagerNotificationsPage />} />
+          <Route path="/store-manager/settings" element={<StoreManagerDashboardPage />} />
+        </Route>
         <Route element={<Layout />}>
           <Route path="/" element={<HomePage />} />
           <Route path="/auth/callback" element={<CallbackPage />} />
-          <Route path="/store-manager" element={<RoleGate role="STORE_MANAGER"><StoreManagerPage /></RoleGate>} />
-          <Route path="/store-manager/orders" element={<RoleGate role="STORE_MANAGER"><OrderListPage /></RoleGate>} />
-          <Route path="/store-manager/orders/new" element={<RoleGate role="STORE_MANAGER"><NewOrderPage /></RoleGate>} />
-          <Route path="/store-manager/tracking" element={<RoleGate role="STORE_MANAGER"><TrackingPage /></RoleGate>} />
-          <Route path="/store-manager/receipts" element={<RoleGate role="STORE_MANAGER"><TrackingPage receiptsOnly /></RoleGate>} />
           <Route path="/dispatcher" element={<RoleGate role="DISPATCHER"><DispatcherPage /></RoleGate>} />
           <Route path="/dispatcher/orders" element={<RoleGate role="DISPATCHER"><OrderQueuePage /></RoleGate>} />
           <Route path="/dispatcher/planning" element={<RoleGate role="DISPATCHER"><PlanningPage /></RoleGate>} />
