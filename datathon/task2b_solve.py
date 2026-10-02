@@ -188,13 +188,18 @@ def solve(scn_path, fleet_path, vehicles_path, travel_path, allowance_path):
             ref = o["order_ref"]
             if ref in assigned:
                 vid, trip_id = assigned[ref]
-                rows.append({"scenario": scenario, "order_ref": ref, "decision": "served",
-                             "vehicle_id": vid, "trip_id": trip_id})
+                rows.append({"scenario": scenario, "order_ref": ref, "outlet_id": o["outlet_id"],
+                             "decision": "served", "vehicle_id": vid, "trip_id": trip_id})
             else:
-                rows.append({"scenario": scenario, "order_ref": ref, "decision": "deferred",
-                             "vehicle_id": "", "trip_id": ""})
+                rows.append({"scenario": scenario, "order_ref": ref, "outlet_id": o["outlet_id"],
+                             "decision": "deferred", "vehicle_id": "", "trip_id": ""})
 
-    return pd.DataFrame(rows, columns=["scenario", "order_ref", "decision", "vehicle_id", "trip_id"])
+    # Matches the official template's column set exactly (scenario, order_ref,
+    # outlet_id, decision, vehicle_id, trip_id) - check_allocation.py doesn't
+    # require outlet_id (it re-derives it from the scenario file by
+    # order_ref), but dropping a column the official template shipped with
+    # would be sloppy regardless of what the checker tolerates.
+    return pd.DataFrame(rows, columns=["scenario", "order_ref", "outlet_id", "decision", "vehicle_id", "trip_id"])
 
 
 def main():
