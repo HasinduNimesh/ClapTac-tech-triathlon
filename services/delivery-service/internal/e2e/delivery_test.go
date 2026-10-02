@@ -227,6 +227,7 @@ func TestDeliveryWorkflow(t *testing.T) {
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0030_outlet_access_instructions.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0031_cold_chain_readings.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0038_delivery_proof_receiver_name.sql"))
+	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0039_delivery_driver_incidents.sql"))
 
 	peers := httptest.NewServer(peerStub())
 	t.Cleanup(peers.Close)
@@ -541,6 +542,32 @@ func TestDeliveryWorkflow(t *testing.T) {
 	ambientTemp := do(t, srv, http.MethodPost, "/api/v1/delivery/sync", "usr-driver", []byte(`{"operations":[{"operationId":"temp-ambient","type":"TEMPERATURE_READING","tripId":"trip-north","stopId":"`+stop3+`","payload":{"valueC":2.0}}]}`), "")
 	if ambientTemp.status != http.StatusOK || !strings.Contains(ambientTemp.body, `"REJECTED"`) {
 		t.Fatalf("ambient stop must reject cold-chain reading %d %s", ambientTemp.status, ambientTemp.body)
+	}
+
+	// FR-22: a Driver-reported incident tied to a stop (a goods issue found on arrival).
+	incidentAtStop := do(t, srv, http.MethodPost, "/api/v1/delivery/sync", "usr-driver", []byte(`{"operations":[{"operationId":"incident-goods","type":"INCIDENT_REPORT","tripId":"trip-north","stopId":"`+stop3+`","payload":{"category":"goods","description":"Carton for this order arrived crushed."}}]}`), "")
+	if incidentAtStop.status != http.StatusOK || !strings.Contains(incidentAtStop.body, `"APPLIED"`) {
+		t.Fatalf("stop-scoped incident report %d %s", incidentAtStop.status, incidentAtStop.body)
+	}
+	// An incident with no stop (a road closure between stops) must still be accepted.
+	incidentNoStop := do(t, srv, http.MethodPost, "/api/v1/delivery/sync", "usr-driver", []byte(`{"operations":[{"operationId":"incident-road","type":"INCIDENT_REPORT","tripId":"trip-north","payload":{"category":"ROAD","description":"Road closed near the Kelani bridge; took the Peliyagoda detour."}}]}`), "")
+	if incidentNoStop.status != http.StatusOK || !strings.Contains(incidentNoStop.body, `"APPLIED"`) {
+		t.Fatalf("trip-scoped incident report without a stop %d %s", incidentNoStop.status, incidentNoStop.body)
+	}
+	// An unrecognised category is rejected rather than silently stored as OTHER.
+	badIncident := do(t, srv, http.MethodPost, "/api/v1/delivery/sync", "usr-driver", []byte(`{"operations":[{"operationId":"incident-bad","type":"INCIDENT_REPORT","tripId":"trip-north","payload":{"category":"WEATHER","description":"Heavy rain."}}]}`), "")
+	if badIncident.status != http.StatusOK || !strings.Contains(badIncident.body, `"REJECTED"`) {
+		t.Fatalf("unrecognised incident category must be rejected %d %s", badIncident.status, badIncident.body)
+	}
+	// A different vehicle's driver cannot report an incident against this trip.
+	incidentWrongVehicle := do(t, srv, http.MethodPost, "/api/v1/delivery/sync", "usr-driver-other", []byte(`{"operations":[{"operationId":"incident-forbidden","type":"INCIDENT_REPORT","tripId":"trip-north","payload":{"category":"SAFETY","description":"Should not be accepted from another driver."}}]}`), "")
+	if incidentWrongVehicle.status != http.StatusOK || !strings.Contains(incidentWrongVehicle.body, `"REJECTED"`) {
+		t.Fatalf("incident report from an unassigned vehicle must be rejected %d %s", incidentWrongVehicle.status, incidentWrongVehicle.body)
+	}
+	// Idempotent replay of the same operationId does not create a duplicate record.
+	incidentReplay := do(t, srv, http.MethodPost, "/api/v1/delivery/sync", "usr-driver", []byte(`{"operations":[{"operationId":"incident-goods","type":"INCIDENT_REPORT","tripId":"trip-north","stopId":"`+stop3+`","payload":{"category":"goods","description":"Carton for this order arrived crushed."}}]}`), "")
+	if incidentReplay.status != http.StatusOK || !strings.Contains(incidentReplay.body, `"DUPLICATE"`) {
+		t.Fatalf("replayed incident report should report duplicate, not re-apply %d %s", incidentReplay.status, incidentReplay.body)
 	}
 	missingReason := do(t, srv, http.MethodPost, "/api/v1/delivery/trips/trip-north/stops/"+stop3+"/outcome", "usr-driver", []byte(`{"code":"NOT_DELIVERED"}`), "out-3-no-reason")
 	if missingReason.status != http.StatusBadRequest {
