@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { useLocale } from "../i18n";
@@ -7,7 +7,9 @@ import iconPlus from "../assets/store-manager/icon-plus.svg";
 import { deferralExplanation } from "./deferralMessage.mjs";
 import { isDeferred, needsReceipt } from "./orderStage.mjs";
 import { StoreManagerHero } from "./StoreManagerHero";
-import { useOrderTrackings } from "./useOrderTrackings";
+import { Tracking, useOrderTrackings } from "./useOrderTrackings";
+
+const deferralKey = (row: Tracking) => `${row.order.id}|${row.planning.planRef ?? ""}|${row.planning.reasonCode ?? ""}`;
 
 const storageKey = (userId: string) => `sm-acknowledged-deferrals:${userId}`;
 
@@ -36,11 +38,21 @@ export function StoreManagerNotificationsPage() {
   const [acknowledged, setAcknowledged] = useState<Set<string>>(() => readAcknowledged(userId));
 
   const receipts = rows.filter((row) => needsReceipt(row.stage));
-  const deferred = rows.filter((row) => isDeferred(row.stage) && !acknowledged.has(row.order.id));
+  const deferred = rows.filter((row) => isDeferred(row.stage) && !acknowledged.has(deferralKey(row)));
   const noticeCount = receipts.length + deferred.length;
 
-  function acknowledge(orderId: string) {
-    const next = new Set(acknowledged).add(orderId);
+  useEffect(() => {
+    if (loading || loadFailed || skipped > 0) return;
+    const current = new Set(rows.filter((row) => isDeferred(row.stage)).map(deferralKey));
+    const kept = [...acknowledged].filter((key) => current.has(key));
+    if (kept.length === acknowledged.size) return;
+    const next = new Set(kept);
+    setAcknowledged(next);
+    saveAcknowledged(userId, next);
+  }, [rows, loading, loadFailed, skipped, acknowledged, userId]);
+
+  function acknowledge(row: Tracking) {
+    const next = new Set(acknowledged).add(deferralKey(row));
     setAcknowledged(next);
     saveAcknowledged(userId, next);
   }
@@ -98,7 +110,7 @@ export function StoreManagerNotificationsPage() {
                 </div>
                 <div className="sm-notif-actions">
                   <Link to={`/store-manager/orders?order=${encodeURIComponent(row.order.id)}`} className="sm-notif-action sm-notif-action--outline">{t("View order")}</Link>
-                  <button type="button" className="sm-notif-action sm-notif-action--outline" onClick={() => acknowledge(row.order.id)}>{t("Acknowledge update")}</button>
+                  <button type="button" className="sm-notif-action sm-notif-action--outline" onClick={() => acknowledge(row)}>{t("Acknowledge update")}</button>
                 </div>
               </div>
             );
