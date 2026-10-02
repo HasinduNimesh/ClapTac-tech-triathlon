@@ -612,6 +612,9 @@ const deferralLabels = {
 
 const storeManagerDashboardLabels = {
   si: {
+    "Page not found": "පිටුව හමු නොවීය",
+    "The page you are looking for doesn't exist or has moved.": "ඔබ සොයන පිටුව නොපවතී, නැතහොත් ගෙන ගොස් ඇත.",
+    "Go to the home page": "මුල් පිටුවට යන්න",
     "Your Deliveries": "ඔබේ බෙදාහැරීම්",
     "See what is arriving, what needs attention and when to order next.": "ලැබෙන ඇණවුම්, අවධානය අවශ්‍ය දේ සහ ඊළඟ ඇණවුම් කිරීමේ වේලාව බලන්න.",
     "Place Order": "ඇණවුම් දෙන්න",
@@ -751,6 +754,9 @@ const storeManagerDashboardLabels = {
     "Store confirms the quantity received": "අලෙවිසැල ලැබුණු ප්‍රමාණය තහවුරු කරයි",
   },
   ta: {
+    "Page not found": "பக்கம் கிடைக்கவில்லை",
+    "The page you are looking for doesn't exist or has moved.": "நீங்கள் தேடும் பக்கம் இல்லை அல்லது நகர்த்தப்பட்டுள்ளது.",
+    "Go to the home page": "முகப்புப் பக்கத்திற்குச் செல்",
     "Your Deliveries": "உங்கள் விநியோகங்கள்",
     "See what is arriving, what needs attention and when to order next.": "என்ன வருகிறது, என்ன கவனம் தேவை, அடுத்து எப்போது ஆர்டர் செய்ய வேண்டும் என்று பாருங்கள்.",
     "Place Order": "ஆர்டர் இடு",

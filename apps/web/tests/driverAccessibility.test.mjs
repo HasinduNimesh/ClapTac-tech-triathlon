@@ -112,6 +112,7 @@ test("shared text, status, guidance, and action colors meet WCAG AA contrast aga
   const smNotifDeferredBg = color(rule(".sm-notif-badge--deferred"), "background");
   const smNotifActionBg = color(rule(".sm-notif-action--solid"), "background");
   const smInfoBannerBg = color(rule(".sm-info-banner"), "background");
+  const notFoundActionBg = color(rule(".not-found-action"), "background");
   const smLoadErrorBg = color(rule(".sm-load-error"), "background");
   const smOrderTabActiveBg = color(rule(".sm-order-tab.active"), "background");
   const smSecondaryBtnBg = color(rule(".sm-btn-secondary"), "background");
@@ -144,6 +145,7 @@ test("shared text, status, guidance, and action colors meet WCAG AA contrast aga
     ["sm-info-banner-title", color(rule(".sm-info-banner-title"), "color"), smInfoBannerBg],
     ["sm-breadcrumb", color(rule(".sm-breadcrumb"), "color"), smHeroBg],
     ["sm-breadcrumb-link", color(rule(".sm-breadcrumb-link"), "color"), smHeroBg],
+    ["not-found action", color(rule(".not-found-action"), "color"), notFoundActionBg],
     ["sm-load-error", color(rule(".sm-load-error"), "color"), smLoadErrorBg],
     ["sm-order-tab.active", color(rule(".sm-order-tab.active"), "color"), smOrderTabActiveBg],
     ["sm-btn-secondary", color(rule(".sm-btn-secondary"), "color"), smSecondaryBtnBg],
@@ -171,7 +173,7 @@ test("shared text, status, guidance, and action colors meet WCAG AA contrast aga
     ".sm-table th",
     ".sm-notif-badge--receipt", ".sm-notif-badge--deferred",
     ".sm-notif-action--solid", ".sm-notif-action--outline", ".sm-info-banner-title",
-    ".sm-breadcrumb", ".sm-breadcrumb-link", ".sm-load-error", ".sm-order-tab.active",
+    ".not-found-action", ".sm-breadcrumb", ".sm-breadcrumb-link", ".sm-load-error", ".sm-order-tab.active",
     ".sm-btn-secondary", ".sm-timeline-step--warn .sm-timeline-label",
     '.sm-legacy-body button[type="submit"]', '.sm-legacy-body button[type="button"]',
   ]);
