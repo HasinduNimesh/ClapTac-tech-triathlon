@@ -6,6 +6,7 @@ import { RoleGate } from "./auth/RoleGate";
 import { Layout } from "./components/Layout";
 import { HomePage } from "./routes/HomePage";
 import { LoginPage } from "./routes/LoginPage";
+import { NotFoundPage } from "./routes/NotFoundPage";
 import { LocaleProvider, useLocale } from "./i18n";
 
 const DispatcherPage = lazy(() => import("./dispatcher/DispatcherPage").then((m) => ({ default: m.DispatcherPage })));
@@ -38,6 +39,7 @@ function AppRoutes() {
           <Route path="/store-manager/tracking" element={<TrackingPage />} />
           <Route path="/store-manager/receipts" element={<TrackingPage receiptsOnly />} />
           <Route path="/store-manager/notifications" element={<StoreManagerNotificationsPage />} />
+          <Route path="/store-manager/*" element={<NotFoundPage inWorkspace />} />
         </Route>
         <Route element={<Layout />}>
           <Route path="/" element={<HomePage />} />
@@ -52,6 +54,7 @@ function AppRoutes() {
           <Route path="/loader/loading" element={<RoleGate role="LOADER"><LoadingPage /></RoleGate>} />
           <Route path="/driver" element={<RoleGate role="DRIVER"><DriverPage /></RoleGate>} />
           <Route path="/driver/trips" element={<RoleGate role="DRIVER"><DriverTripsPage /></RoleGate>} />
+          <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>
     </Suspense>

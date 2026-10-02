@@ -109,10 +109,14 @@ test("shared text, status, guidance, and action colors meet WCAG AA contrast aga
   const smNoticeBadgeBg = color(rule(".sm-notice-badge"), "background");
   const smTableHeadBg = color(rule(".sm-table thead tr"), "background");
   const smNotifReceiptBg = color(rule(".sm-notif-badge--receipt"), "background");
-  const smNotifEtaBg = color(rule(".sm-notif-badge--eta"), "background");
   const smNotifDeferredBg = color(rule(".sm-notif-badge--deferred"), "background");
-  const smNotifActionBg = color(rule(".sm-notif-action.tap"), "background");
+  const smNotifActionBg = color(rule(".sm-notif-action--solid"), "background");
   const smInfoBannerBg = color(rule(".sm-info-banner"), "background");
+  const notFoundActionBg = color(rule(".not-found-action"), "background");
+  const smLoadErrorBg = color(rule(".sm-load-error"), "background");
+  const smOrderTabActiveBg = color(rule(".sm-order-tab.active"), "background");
+  const smSecondaryBtnBg = color(rule(".sm-btn-secondary"), "background");
+  const smLegacySubmitBg = color(rule('.sm-legacy-body button[type="submit"]'), "background");
   const smPairs = [
     ["sm-nav-label", color(rule(".sm-nav-label"), "color"), smSidebarBg],
     ["sm-nav-item", color(rule(".sm-nav-item"), "color"), smSidebarBg],
@@ -120,8 +124,6 @@ test("shared text, status, guidance, and action colors meet WCAG AA contrast aga
     ["sm-nav-item.active", color(rule(".sm-nav-item.active"), "color"), smNavItemActiveBg],
     ["sm-hero-title", color(rule(".sm-hero-title"), "color"), smHeroBg],
     ["sm-hero-sub", color(rule(".sm-hero-sub"), "color"), smHeroBg],
-    ["sm-dashboard-picker-label", color(rule(".sm-dashboard-picker-label"), "color"), pageBackground],
-    ["sm-btn-outline", color(rule(".sm-btn-outline"), "color"), smHeroBg],
     ["sm-btn-place-order", color(rule(".sm-btn-place-order"), "color"), smBtnPlaceOrderBg],
     ["sm-stat-label", color(rule(".sm-stat-label"), "color"), pageBackground],
     ["sm-stat-sub--orange", color(rule(".sm-stat-sub--orange"), "color"), pageBackground],
@@ -137,10 +139,19 @@ test("shared text, status, guidance, and action colors meet WCAG AA contrast aga
     ["sm-create-order-link", color(rule(".sm-create-order-link"), "color"), pageBackground],
     ["sm-table th", color(rule(".sm-table th"), "color"), smTableHeadBg],
     ["sm-notif-badge--receipt", color(rule(".sm-notif-badge--receipt"), "color"), smNotifReceiptBg],
-    ["sm-notif-badge--eta", color(rule(".sm-notif-badge--eta"), "color"), smNotifEtaBg],
     ["sm-notif-badge--deferred", color(rule(".sm-notif-badge--deferred"), "color"), smNotifDeferredBg],
-    ["sm-notif-action.tap", color(rule(".sm-notif-action.tap"), "color"), smNotifActionBg],
+    ["sm-notif-action--solid", color(rule(".sm-notif-action--solid"), "color"), smNotifActionBg],
+    ["sm-notif-action--outline", color(rule(".sm-notif-action--outline"), "color"), color(rule(".sm-notif-action--outline"), "background")],
     ["sm-info-banner-title", color(rule(".sm-info-banner-title"), "color"), smInfoBannerBg],
+    ["sm-breadcrumb", color(rule(".sm-breadcrumb"), "color"), smHeroBg],
+    ["sm-breadcrumb-link", color(rule(".sm-breadcrumb-link"), "color"), smHeroBg],
+    ["not-found action", color(rule(".not-found-action"), "color"), notFoundActionBg],
+    ["sm-load-error", color(rule(".sm-load-error"), "color"), smLoadErrorBg],
+    ["sm-order-tab.active", color(rule(".sm-order-tab.active"), "color"), smOrderTabActiveBg],
+    ["sm-btn-secondary", color(rule(".sm-btn-secondary"), "color"), smSecondaryBtnBg],
+    ["sm-timeline warn label", color(rule(".sm-timeline-step--warn .sm-timeline-label"), "color"), cardBackground],
+    ["sm legacy submit button", color(rule('.sm-legacy-body button[type="submit"]'), "color"), smLegacySubmitBg],
+    ["sm legacy action button", color(rule('.sm-legacy-body button[type="button"]'), "color"), smLegacySubmitBg],
   ];
   for (const [label, foreground, background] of smPairs) {
     assert.ok(contrast(foreground, background) >= 4.5, `${label} contrast is below 4.5:1`);
@@ -154,15 +165,17 @@ test("shared text, status, guidance, and action colors meet WCAG AA contrast aga
     ".stop-guidance dt", ".muted", ".linkish", ".tap.primary",
     ".login-badge", ".login-footnote-link",
     ".sm-nav-label", ".sm-nav-item", ".sm-nav-item:hover", ".sm-nav-item.active",
-    ".sm-hero-title", ".sm-hero-sub", ".sm-dashboard-picker-label",
-    ".sm-btn-outline", ".sm-btn-place-order",
+    ".sm-hero-title", ".sm-hero-sub", ".sm-btn-place-order",
     ".sm-stat-label", ".sm-stat-sub--orange", ".sm-stat-sub--green",
     ".sm-panel-link", ".sm-track-link",
     ".sm-badge--on-route", ".sm-badge--deferred", ".sm-badge--delivered", ".sm-badge--default",
     ".sm-notice-badge", ".sm-alert-action", ".sm-create-order-link",
     ".sm-table th",
-    ".sm-notif-badge--receipt", ".sm-notif-badge--eta", ".sm-notif-badge--deferred",
-    ".sm-notif-action.tap", ".sm-info-banner-title",
+    ".sm-notif-badge--receipt", ".sm-notif-badge--deferred",
+    ".sm-notif-action--solid", ".sm-notif-action--outline", ".sm-info-banner-title",
+    ".not-found-action", ".sm-breadcrumb", ".sm-breadcrumb-link", ".sm-load-error", ".sm-order-tab.active",
+    ".sm-btn-secondary", ".sm-timeline-step--warn .sm-timeline-label",
+    '.sm-legacy-body button[type="submit"]', '.sm-legacy-body button[type="button"]',
   ]);
   assert.deepEqual(
     explicitForegroundSelectors.filter((selector) => !testedForegroundSelectors.has(selector)),

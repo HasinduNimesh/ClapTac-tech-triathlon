@@ -4,6 +4,7 @@ import { apiJSON, Order } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { useLocale } from "../i18n";
 import { deferralExplanation } from "./deferralMessage.mjs";
+import { StoreManagerHero } from "./StoreManagerHero";
 
 type ReceiptIssue = { id:string; issueType:string; affectedUnits:number; note?:string };
 type Receipt = { id:string; expectedUnits:number; receivedUnits:number; status:string; confirmedAt:string };
@@ -55,10 +56,10 @@ export function TrackingPage({receiptsOnly=false}:{receiptsOnly?:boolean}){
     catch(err){setError(String(err));}
   }
 
-  return <section className="card">
-    <h2>{receiptsOnly?t("Receipt confirmation"):t("Order tracking")}</h2>
-    <p>{receiptsOnly?t("Confirm the quantity received after delivery. Report a discrepancy if anything is missing or damaged."):t("Follow each order from confirmation through planning, delivery and store receipt.")}</p>
-    {!receiptsOnly&&<p><Link to="/store-manager/receipts">{t("Open pending receipts")}</Link></p>}
+  return <>
+    <StoreManagerHero compact crumbs={[{label:t("Store"),to:"/store-manager"},{label:receiptsOnly?t("Receipt confirmation"):t("Order tracking")}]} title={receiptsOnly?t("Receipt confirmation"):t("Order tracking")} subtitle={receiptsOnly?t("Confirm the quantity received after delivery. Report a discrepancy if anything is missing or damaged."):t("Follow each order from confirmation through planning, delivery and store receipt.")} />
+    <section className="sm-page-body sm-legacy-body">
+    <p>{receiptsOnly?<Link to="/store-manager/orders">{t("Back to your orders")}</Link>:<Link to="/store-manager/receipts">{t("Open pending receipts")}</Link>}</p>
     {error&&<p className="status-bad" role="alert">{error}</p>}{message&&<p role="status">{message}</p>}
     {receiptsOnly?pending.map(({order,tracking})=><article className="card" key={order.id}>
       <h3>{order.orderRef} · {order.brand}</h3><p>{order.orderUnits} {t("expected units")} · {t("Driver outcome")}: {t(tracking.delivery?.outcome||"")}</p>
@@ -83,5 +84,6 @@ export function TrackingPage({receiptsOnly=false}:{receiptsOnly?:boolean}){
     </article>)}
     {receiptsOnly&&!pending.length&&!error&&<p>{t("No receipts are waiting for confirmation.")}</p>}
     {!receiptsOnly&&!items.length&&!error&&<p>{t("No orders found for this outlet.")}</p>}
-  </section>;
+    </section>
+  </>;
 }

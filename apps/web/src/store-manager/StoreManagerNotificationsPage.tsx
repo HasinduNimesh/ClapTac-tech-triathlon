@@ -1,137 +1,133 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { apiJSON, Order } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { useLocale } from "../i18n";
-import heroBg from "../assets/store-manager/hero-bg.png";
-import iconPlus from "../assets/store-manager/icon-plus.svg";
 import iconChev from "../assets/store-manager/icon-chev.svg";
+import iconPlus from "../assets/store-manager/icon-plus.svg";
+import { deferralExplanation } from "./deferralMessage.mjs";
+import { isDeferred, needsReceipt } from "./orderStage.mjs";
+import { StoreManagerHero } from "./StoreManagerHero";
+import { Tracking, useOrderTrackings } from "./useOrderTrackings";
 
-type Tracking = {
-  stage: string;
-  order: Order;
-  planning: { plannedArrivalAt?: string; reasonCode?: string; reasonComment?: string };
-  delivery?: { outcome?: string };
-  receipt?: { status: string };
-};
+const deferralKey = (row: Tracking) => `${row.order.id}|${row.planning.planRef ?? ""}|${row.planning.reasonCode ?? ""}`;
+
+const storageKey = (userId: string) => `sm-acknowledged-deferrals:${userId}`;
+
+function readAcknowledged(userId: string): Set<string> {
+  try {
+    const raw = window.localStorage.getItem(storageKey(userId));
+    return new Set(raw ? (JSON.parse(raw) as string[]) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function saveAcknowledged(userId: string, ids: Set<string>) {
+  try {
+    window.localStorage.setItem(storageKey(userId), JSON.stringify([...ids]));
+  } catch {
+    // Acknowledgement still applies for this visit if storage is unavailable.
+  }
+}
 
 export function StoreManagerNotificationsPage() {
-  const { user } = useAuth();
+  const { profile } = useAuth();
   const { t } = useLocale();
-  const token = user?.access_token || "";
-  const [trackings, setTrackings] = useState<Tracking[]>([]);
-  const [error, setError] = useState("");
+  const userId = profile?.userId || "anonymous";
+  const { rows, loading, loadFailed, skipped, reload } = useOrderTrackings();
+  const [acknowledged, setAcknowledged] = useState<Set<string>>(() => readAcknowledged(userId));
 
-  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+  const receipts = rows.filter((row) => needsReceipt(row.stage));
+  const deferred = rows.filter((row) => isDeferred(row.stage) && !acknowledged.has(deferralKey(row)));
+  const noticeCount = receipts.length + deferred.length;
 
-  const load = useCallback(async () => {
-    if (!token) return;
-    setError("");
-    try {
-      const body = await apiJSON<{ items: Order[] }>("/orders", token);
-      const rows = await Promise.all(
-        (body.items || []).map(async (order) => {
-          const res = await apiJSON<{ tracking: Tracking }>(`/orders/${order.id}/tracking`, token);
-          return res.tracking;
-        })
-      );
-      setTrackings(rows);
-    } catch (e) {
-      setError(String(e));
-    }
-  }, [token]);
+  useEffect(() => {
+    if (loading || loadFailed || skipped > 0) return;
+    const current = new Set(rows.filter((row) => isDeferred(row.stage)).map(deferralKey));
+    const kept = [...acknowledged].filter((key) => current.has(key));
+    if (kept.length === acknowledged.size) return;
+    const next = new Set(kept);
+    setAcknowledged(next);
+    saveAcknowledged(userId, next);
+  }, [rows, loading, loadFailed, skipped, acknowledged, userId]);
 
-  useEffect(() => { void load(); }, [load]);
-
-  const needsReceipt = trackings.filter(t => t.delivery?.outcome === "DELIVERED" && t.receipt?.status !== "CONFIRMED");
-  const deferred = trackings.filter(t =>
-    (t.stage === "DEFERRED" || t.stage === "PLANNING_DEFERRED") && !dismissed.has(t.order.id)
-  );
-
-  const noticeCount = needsReceipt.length + deferred.length;
+  function acknowledge(row: Tracking) {
+    const next = new Set(acknowledged).add(deferralKey(row));
+    setAcknowledged(next);
+    saveAcknowledged(userId, next);
+  }
 
   return (
     <>
-      <div className="sm-hero" style={{ backgroundImage: `url(${heroBg})` }}>
-        <div className="sm-hero-content">
-          <div>
-            <h1 className="sm-hero-title">{t("Notifications")}</h1>
-            <p className="sm-hero-sub">{t("Notices grouped for meaningful arrival changes, deferrals and receipts that need review.")}</p>
-          </div>
-        </div>
-        <div className="sm-hero-actions">
-          <Link to="/store-manager/orders/new" className="sm-btn-place-order">
-            <img src={iconPlus} alt="" aria-hidden="true" width={18} height={18} />
-            {t("Place Order")}
-          </Link>
-        </div>
-      </div>
+      <StoreManagerHero
+        compact
+        crumbs={[{ label: t("Store"), to: "/store-manager" }, { label: t("Notifications") }]}
+        title={t("Notifications")}
+        subtitle={t("Deferrals and receipts that need your review are grouped here.")}
+      >
+        <Link to="/store-manager/orders/new" className="sm-btn-place-order">
+          <img src={iconPlus} alt="" aria-hidden="true" width={24} height={24} />
+          {t("Place Order")}
+        </Link>
+      </StoreManagerHero>
 
-      <div className="sm-notifications-content">
-        {error && <p className="status-bad" role="alert">{error}</p>}
+      <div className="sm-page-body">
+        {loadFailed && (
+          <div className="sm-load-error" role="alert">
+            <span>{t("Orders could not be loaded. Check your connection and try again.")}</span>
+            <button type="button" className="tap" onClick={() => void reload()}>{t("Retry")}</button>
+          </div>
+        )}
+        {skipped > 0 && !loadFailed && <p className="sm-load-note muted" role="status">{t("Some orders could not be loaded and are not shown.")}</p>}
 
         <section className="sm-panel" aria-labelledby="needs-attention-heading">
           <div className="sm-panel-header">
             <h2 id="needs-attention-heading" className="sm-panel-title">{t("Needs attention")}</h2>
-            {noticeCount > 0 && (
-              <span className="sm-notice-badge">{noticeCount} {t("updates")}</span>
-            )}
+            {noticeCount > 0 && <span className="sm-notice-badge">{noticeCount} {noticeCount === 1 ? t("update") : t("updates")}</span>}
           </div>
 
-          {needsReceipt.map((row) => (
+          {loading && <p className="sm-empty muted" role="status">{t("Loading your orders…")}</p>}
+
+          {receipts.map((row) => (
             <div key={row.order.id} className="sm-notification-item">
-              <div className="sm-notification-meta">
-                <span className="sm-notif-badge sm-notif-badge--receipt">{t("RECEIPT")}</span>
-              </div>
+              <div className="sm-notification-meta"><span className="sm-notif-badge sm-notif-badge--receipt">{t("RECEIPT")}</span></div>
               <div className="sm-notification-body">
                 <h3 className="sm-notification-title">{row.order.orderRef} · {t("delivery needs receipt confirmation")}</h3>
-                <p className="sm-notification-desc muted">
-                  {t("Driver has recorded delivery. Confirm the count and report shortage or damage.")}
-                </p>
+                <p className="sm-notification-desc muted">{t("Driver has recorded delivery. Confirm the count and report shortage or damage.")}</p>
               </div>
-              <Link to="/store-manager/receipts" className="tap primary sm-notif-action">
-                {t("Confirm receipt")}
-              </Link>
+              <Link to="/store-manager/receipts" className="sm-notif-action sm-notif-action--solid">{t("Confirm receipt")}</Link>
             </div>
           ))}
 
-          {deferred.map((row) => (
-            <div key={row.order.id} className="sm-notification-item">
-              <div className="sm-notification-meta">
-                <span className="sm-notif-badge sm-notif-badge--deferred">{t("DEFERRED")}</span>
+          {deferred.map((row) => {
+            const why = deferralExplanation(row.planning.reasonCode);
+            return (
+              <div key={row.order.id} className="sm-notification-item">
+                <div className="sm-notification-meta"><span className="sm-notif-badge sm-notif-badge--deferred">{t("DEFERRED")}</span></div>
+                <div className="sm-notification-body">
+                  <h3 className="sm-notification-title">{row.order.orderRef} · {t("moved to a later run")}</h3>
+                  <p className="sm-notification-desc muted">{t(why.message)}{row.planning.reasonComment ? ` · ${row.planning.reasonComment}` : ""}</p>
+                </div>
+                <div className="sm-notif-actions">
+                  <Link to={`/store-manager/orders?order=${encodeURIComponent(row.order.id)}`} className="sm-notif-action sm-notif-action--outline">{t("View order")}</Link>
+                  <button type="button" className="sm-notif-action sm-notif-action--outline" onClick={() => acknowledge(row)}>{t("Acknowledge update")}</button>
+                </div>
               </div>
-              <div className="sm-notification-body">
-                <h3 className="sm-notification-title">{row.order.orderRef} · {t("moved to a later run")}</h3>
-                <p className="sm-notification-desc muted">
-                  {row.planning.reasonComment || t("Capacity was fully allocated. Proposed run pending confirmation.")}
-                </p>
-              </div>
-              <button
-                type="button"
-                className="tap sm-notif-action sm-notif-action--outline"
-                onClick={() => setDismissed(prev => new Set([...prev, row.order.id]))}
-              >
-                {t("Acknowledge update")}
-              </button>
-            </div>
-          ))}
+            );
+          })}
 
-          {noticeCount === 0 && !error && (
-            <p className="sm-empty muted">{t("No notices at this time.")}</p>
-          )}
+          {!loading && noticeCount === 0 && !loadFailed && <p className="sm-empty muted">{t("No notices at this time.")}</p>}
         </section>
 
         <div className="sm-info-banner">
-          <p className="sm-info-banner-title">
-            {t("Notices are grouped for meaningful arrival changes, deferrals and receipts that need review.")}
-          </p>
+          <p className="sm-info-banner-title">{t("Notices are grouped for meaningful arrival changes, deferrals and receipts that need review.")}</p>
           <p className="muted">{t("Small ETA movements won't create repeated alerts.")}</p>
         </div>
 
         <div className="sm-notifications-links">
           <Link to="/store-manager" className="sm-panel-link">
-            ← {t("Back to dashboard")}
-            <img src={iconChev} alt="" aria-hidden="true" width={14} height={14} className="sm-chev-right" />
+            <img src={iconChev} alt="" aria-hidden="true" width={16} height={16} className="sm-chev-left" />
+            {t("Back to dashboard")}
           </Link>
         </div>
       </div>
