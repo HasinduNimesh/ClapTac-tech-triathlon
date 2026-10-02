@@ -894,6 +894,13 @@ func (s Service) loadWorld(ctx context.Context, pl domain.Plan) (allocate.Input,
 	}
 	counts, countsErr := s.Repo.OutletDeferralCounts(ctx)
 	lastServed, lastServedErr := s.Peers.OutletLastServed(ctx)
+	lastAttempted, lastAttemptedErr := s.Peers.OutletLastAttempted(ctx)
+	if lastAttemptedErr != nil {
+		lastAttempted = map[string]time.Time{}
+		if s.Peers.Logger != nil {
+			s.Peers.Logger.Warn("outlet_last_attempted_unavailable", "error", lastAttemptedErr)
+		}
+	}
 	lastDeferralByOutlet, lastDeferralErr := s.Repo.LatestDeferralsByOutlet(ctx, pl.DeliveryDate)
 	if lastDeferralErr != nil {
 		lastDeferralByOutlet = map[string]string{}
@@ -909,7 +916,7 @@ func (s Service) loadWorld(ctx context.Context, pl domain.Plan) (allocate.Input,
 			s.Peers.Logger.Warn("planning_policy_unavailable_using_safe_defaults", "error", policyErr)
 		}
 	}
-	fairnessSignalAvailable, err := applyFairnessHistory(orders, counts, countsErr, lastServed, lastServedErr, schedule.PlanDate(pl.DeliveryDate), policy, lastDeferralByOutlet)
+	fairnessSignalAvailable, err := applyFairnessHistory(orders, counts, countsErr, lastServed, lastServedErr, schedule.PlanDate(pl.DeliveryDate), policy, lastDeferralByOutlet, lastAttempted)
 	if err != nil {
 		return allocate.Input{}, err
 	}

@@ -472,6 +472,33 @@ func (p Postgres) OutletLastServed(ctx context.Context) ([]domain.OutletLastServ
 	return items, rows.Err()
 }
 
+// OutletLastAttempted covers every terminal outcome (DELIVERED, PARTIAL,
+// NOT_DELIVERED, FAILED, REFUSED) via "outcome_code is set" rather than an
+// explicit list, so a future outcome code is still picked up automatically.
+func (p Postgres) OutletLastAttempted(ctx context.Context) ([]domain.OutletLastAttempted, error) {
+	rows, err := p.Pool.Query(ctx, `
+		SELECT outlet_id, MAX(COALESCE(outcome_at, outcome_received_at))
+		FROM stops
+		WHERE outlet_id IS NOT NULL AND outlet_id <> ''
+		  AND outcome_code IS NOT NULL AND outcome_code <> ''
+		GROUP BY outlet_id
+		ORDER BY outlet_id
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]domain.OutletLastAttempted, 0)
+	for rows.Next() {
+		var item domain.OutletLastAttempted
+		if err := rows.Scan(&item.OutletID, &item.LastAttemptedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
 func (p Postgres) MarkArrived(ctx context.Context, stopID string, occurredAt time.Time) error {
 	tag, err := p.Pool.Exec(ctx, `
 		UPDATE stops SET status = $2, arrived_at = $3, arrived_received_at = now(), updated_at = now(), version = version + 1

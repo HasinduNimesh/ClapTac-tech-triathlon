@@ -169,6 +169,10 @@ func (s Service) OutletLastServed(ctx context.Context) ([]domain.OutletLastServe
 	return s.Repo.OutletLastServed(ctx)
 }
 
+func (s Service) OutletLastAttempted(ctx context.Context) ([]domain.OutletLastAttempted, error) {
+	return s.Repo.OutletLastAttempted(ctx)
+}
+
 func (s Service) Prepare(ctx context.Context, profile *authorization.Profile, tripID string) (map[string]any, error) {
 	if existing, err := s.Repo.GetByTrip(ctx, tripID); err == nil {
 		if err := s.guardVehicle(profile, existing.VehicleID); err != nil {

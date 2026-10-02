@@ -31,6 +31,7 @@ type Driver interface {
 	Sync(ctx context.Context, profile *authorization.Profile, req domain.SyncRequest) []map[string]any
 	InternalOrder(ctx context.Context, orderID string) (domain.OrderTracking, error)
 	OutletLastServed(ctx context.Context) ([]domain.OutletLastServed, error)
+	OutletLastAttempted(ctx context.Context) ([]domain.OutletLastAttempted, error)
 	SendTripMessage(ctx context.Context, profile *authorization.Profile, tripID, stopID, body string) (domain.TripMessage, error)
 	TripMessages(ctx context.Context, profile *authorization.Profile, tripID string) ([]domain.TripMessage, error)
 	AcknowledgeTripMessage(ctx context.Context, profile *authorization.Profile, tripID, messageID string) (domain.TripMessage, error)
@@ -72,6 +73,7 @@ func (h Handler) Routes(r chi.Router) {
 		r.With(sync).Post("/sync", h.sync)
 		r.With(internal).Get("/internal/orders/{orderId}", h.internalOrder)
 		r.With(internal).Get("/internal/outlets/last-served", h.outletLastServed)
+		r.With(internal).Get("/internal/outlets/last-attempted", h.outletLastAttempted)
 	})
 }
 
@@ -135,6 +137,14 @@ func (h Handler) ackTripMessage(w http.ResponseWriter, r *http.Request) {
 
 func (h Handler) outletLastServed(w http.ResponseWriter, r *http.Request) {
 	items, err := h.Service.OutletLastServed(r.Context())
+	if writeErr(w, err) {
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (h Handler) outletLastAttempted(w http.ResponseWriter, r *http.Request) {
+	items, err := h.Service.OutletLastAttempted(r.Context())
 	if writeErr(w, err) {
 		return
 	}
