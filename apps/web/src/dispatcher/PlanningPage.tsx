@@ -24,6 +24,7 @@ export function PlanningPage() {
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [assignOrderId, setAssignOrderId] = useState("");
+  const [assignReason, setAssignReason] = useState("");
   const [deferOrderId, setDeferOrderId] = useState("");
   const [vehicleId, setVehicleId] = useState("");
   const [tripNumber, setTripNumber] = useState("1");
@@ -124,10 +125,11 @@ export function PlanningPage() {
     await run("Assigned", async () => {
       await apiJSON(`/planning/plans/${detail.plan.id}/allocations`, token, {
         method: "POST",
-        body: JSON.stringify({ orderId: assignOrderId, vehicleId, tripNumber: Number(tripNumber) }),
+        body: JSON.stringify({ orderId: assignOrderId, vehicleId, tripNumber: Number(tripNumber), reason: assignReason }),
       });
       await refresh(detail.plan.id);
       setAssignOrderId("");
+      setAssignReason("");
     });
   }
 
@@ -217,22 +219,29 @@ export function PlanningPage() {
           </div>
 
           <h3>{t("Unallocated")}</h3>
-          <table>
-            <thead>
-              <tr>
-                <th>{t("Order")}</th>
-                <th>{t("Reason")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(detail.unallocated || []).map((u) => (
-                <tr key={u.orderId}>
-                  <td>{u.orderRef || u.orderId}</td>
-                  <td>{u.reasonCode}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          {detail.unallocatedReasonsAvailable === false && (
+            <p className="status-bad" role="status">{t("Why these orders are unallocated could not be loaded right now; the reasons below may be incomplete.")}</p>
+          )}
+          {(detail.unallocated || []).map((u) => (
+            <article className="card" key={u.orderId}>
+              <p><strong>{u.orderRef || u.orderId}</strong> · {t("Primary reason")}: {t(u.reasonCode)}
+                {typeof u.details?.primaryBlockedVehicleTrips === "number" && typeof u.details?.vehicleTripsEvaluated === "number" && (
+                  <span className="muted"> ({t("blocked")} {u.details.primaryBlockedVehicleTrips}/{u.details.vehicleTripsEvaluated} {t("vehicle-trips tried")})</span>
+                )}
+              </p>
+              {(u.details?.otherLimitingFactors?.length ?? 0) > 0 && (
+                <div>
+                  <p className="muted">{t("Other limiting factors")}:</p>
+                  <ul>
+                    {u.details!.otherLimitingFactors!.map((f) => (
+                      <li key={f.reasonCode}>{t(f.reasonCode)} · {t("blocked")} {f.vehicleTripsBlocked} {t("vehicle-trip(s)")}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </article>
+          ))}
+          {(detail.unallocated || []).length === 0 && <p className="muted">{t("No unallocated orders.")}</p>}
 
           <h3>{t("Fairness priority signals")}</h3>
           <p className="muted">{t("Priority affects processing order only; hard vehicle and delivery constraints still decide feasibility.")}</p>
@@ -380,6 +389,7 @@ export function PlanningPage() {
               <option value="1">{t("Trip")} 1</option>
               <option value="2">{t("Trip")} 2</option>
             </select>
+            <input aria-label={t("Reason for this manual assignment")} placeholder={t("Why are you assigning this manually?")} value={assignReason} onChange={(e) => setAssignReason(e.target.value)} required minLength={3} maxLength={500} />
               <button type="submit" disabled={confirmed || !detail.unallocated?.length}>
               {t("Assign")}
             </button>

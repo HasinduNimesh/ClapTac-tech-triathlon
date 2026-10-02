@@ -351,3 +351,51 @@ func TestNoReeferVanUnallocated(t *testing.T) {
 		t.Fatalf("want unallocated got %#v %#v", out.Assignments, out.Unallocated)
 	}
 }
+
+func TestExplainUnallocatedPrimaryAndOtherFactors(t *testing.T) {
+	attempts := [][]domain.Result{
+		{{ReasonCode: domain.ReasonRefrigeration}, {ReasonCode: domain.ReasonDepotMismatch}},
+		{{ReasonCode: domain.ReasonWeightExceeded, Details: map[string]any{"capKg": 100.0}}},
+		{{ReasonCode: domain.ReasonRefrigeration}, {ReasonCode: domain.ReasonWeightExceeded}},
+	}
+	code, details := ExplainUnallocated(attempts)
+	if code != domain.ReasonWeightExceeded {
+		t.Fatalf("closest attempt should decide primary reason, got %s", code)
+	}
+	if details["capKg"] != 100.0 || details["vehicleTripsEvaluated"] != 3 || details["primaryBlockedVehicleTrips"] != 2 {
+		t.Fatalf("unexpected details %#v", details)
+	}
+	others, ok := details["otherLimitingFactors"].([]map[string]any)
+	if !ok || len(others) != 2 || others[0]["reasonCode"] != domain.ReasonRefrigeration || others[0]["vehicleTripsBlocked"] != 2 || others[1]["reasonCode"] != domain.ReasonDepotMismatch {
+		t.Fatalf("unexpected other factors %#v", details["otherLimitingFactors"])
+	}
+	again, againDetails := ExplainUnallocated(attempts)
+	if again != code || len(againDetails) != len(details) {
+		t.Fatal("explanation must be deterministic")
+	}
+	if c, d := ExplainUnallocated(nil); c != domain.ReasonNoEligibleVehicle || len(d) != 0 {
+		t.Fatalf("no attempts should map to NO_ELIGIBLE_VEHICLE, got %s %#v", c, d)
+	}
+}
+
+func TestDeferralDebtConsequenceBreaksTiesWithoutOverridingFairness(t *testing.T) {
+	fresh := domain.Order{ID: "fresh-chilled", OrderRef: "B", Temp: "chilled", Outlet: domain.Outlet{Brand: "Fresh"}, DaysSinceLastServed: 5}
+	plain := domain.Order{ID: "plain", OrderRef: "A", Temp: "ambient", Outlet: domain.Outlet{Brand: "Style"}, DaysSinceLastServed: 5}
+	if got := ConsequencePoints(fresh); got != PerishabilityPoints+BrandCriticalityPoints {
+		t.Fatalf("chilled Fresh consequence=%d", got)
+	}
+	if ConsequencePoints(plain) != 0 {
+		t.Fatal("ambient non-Fresh order should add no consequence points")
+	}
+	sorted := SortOrders([]domain.Order{plain, fresh})
+	if sorted[0].ID != "fresh-chilled" {
+		t.Fatalf("equal fairness: costlier deferral should be queued first, got %s", sorted[0].ID)
+	}
+	deferred := domain.Order{ID: "deferred", OrderRef: "C", OutletDeferralCount: 1, Outlet: domain.Outlet{Brand: "Style"}, Temp: "ambient"}
+	if got := SortOrders([]domain.Order{fresh, deferred}); got[0].ID != "deferred" {
+		t.Fatalf("a prior deferral must outrank consequence points, got %s", got[0].ID)
+	}
+	if got := FairnessScore(fresh); got != 5 {
+		t.Fatalf("fairness score itself must stay unchanged, got %d", got)
+	}
+}

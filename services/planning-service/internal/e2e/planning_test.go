@@ -88,6 +88,7 @@ func TestPlanningGenerateConfirm(t *testing.T) {
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0013_planning_stop_times.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0020_planning_publications.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0035_planning_disruption_risks.sql"))
+	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0036_planning_unallocated_reasons.sql"))
 
 	peers := httptest.NewServer(peerStub())
 	t.Cleanup(peers.Close)
@@ -416,6 +417,277 @@ func (staticProfiles) Resolve(_ context.Context, subject string) (*authorization
 	default:
 		return &authorization.Profile{Subject: subject}, nil
 	}
+}
+
+// TestPlanningUnallocatedReasonPersists proves FR-12's allocator explanation
+// survives past the one-time generate response: an order too heavy for either
+// vehicle must still show its real reason code and other limiting factors when
+// the Dispatcher reopens the plan later, not the generic placeholder that was
+// synthesized before this reason was persisted.
+func TestPlanningUnallocatedReasonPersists(t *testing.T) {
+	ctx := context.Background()
+	req := testcontainers.ContainerRequest{
+		Image:        "postgres:16-alpine",
+		ExposedPorts: []string{"5432/tcp"},
+		Env: map[string]string{
+			"POSTGRES_USER": "waypoint", "POSTGRES_PASSWORD": "waypoint", "POSTGRES_DB": "waypoint",
+		},
+		WaitingFor: wait.ForLog("database system is ready to accept connections").WithOccurrence(2).WithStartupTimeout(60 * time.Second),
+	}
+	pg, err := startPostgresContainer(ctx, testcontainers.GenericContainerRequest{ContainerRequest: req, Started: true})
+	if err != nil {
+		t.Skipf("testcontainers postgres:16-alpine unavailable: %v", err)
+	}
+	t.Cleanup(func() { _ = pg.Terminate(ctx) })
+	host, err := pg.Host(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	port, err := pg.MappedPort(ctx, "5432")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dsn := "postgres://waypoint:waypoint@" + host + ":" + port.Port() + "/waypoint?sslmode=disable"
+	root := repoRoot(t)
+	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0001_init.sql"))
+	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0007_planning.sql"))
+	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0013_planning_stop_times.sql"))
+	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0020_planning_publications.sql"))
+	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0035_planning_disruption_risks.sql"))
+	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0036_planning_unallocated_reasons.sql"))
+
+	peers := httptest.NewServer(overweightOrderPeerStub())
+	t.Cleanup(peers.Close)
+
+	planPool, err := db.Open(ctx, dsn, "planning")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(planPool.Close)
+	client := planclient.Peers{
+		OrdersURL: peers.URL, FleetURL: peers.URL, SharedURL: peers.URL, DeliveryURL: peers.URL,
+		M2M: staticToken("svc-planning"),
+	}
+	planH := planhandler.Handler{
+		Authn:    bearerAuth{},
+		Profiles: staticProfiles{},
+		Service:  planservice.Service{Repo: planstore.Postgres{Pool: planPool}, Peers: client},
+	}
+	planR := chi.NewRouter()
+	planH.Routes(planR)
+	planSrv := httptest.NewServer(planR)
+	t.Cleanup(planSrv.Close)
+
+	createPlan, _ := http.NewRequest(http.MethodPost, planSrv.URL+"/api/v1/planning/plans", bytes.NewReader([]byte(`{"deliveryDate":"2026-09-29"}`)))
+	createPlan.Header.Set("Authorization", "Bearer usr-dispatcher")
+	createPlan.Header.Set("Content-Type", "application/json")
+	pres, err := http.DefaultClient.Do(createPlan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pres.Body.Close()
+	if pres.StatusCode != http.StatusCreated {
+		t.Fatalf("create plan %d %s", pres.StatusCode, readBody(pres))
+	}
+	var created struct {
+		Plan struct {
+			ID string `json:"id"`
+		} `json:"plan"`
+	}
+	if err := json.NewDecoder(pres.Body).Decode(&created); err != nil {
+		t.Fatal(err)
+	}
+
+	gen, _ := http.NewRequest(http.MethodPost, planSrv.URL+"/api/v1/planning/plans/"+created.Plan.ID+"/generate", nil)
+	gen.Header.Set("Authorization", "Bearer usr-dispatcher")
+	gres, err := http.DefaultClient.Do(gen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	genBody := readBody(gres)
+	gres.Body.Close()
+	if gres.StatusCode != http.StatusOK {
+		t.Fatalf("generate %d: %s", gres.StatusCode, genBody)
+	}
+	var generated struct {
+		Unallocated int `json:"unallocated"`
+		Failures    []struct {
+			OrderID    string         `json:"orderId"`
+			ReasonCode string         `json:"reasonCode"`
+			Details    map[string]any `json:"details"`
+		} `json:"failures"`
+	}
+	if err := json.Unmarshal([]byte(genBody), &generated); err != nil {
+		t.Fatal(err)
+	}
+	if generated.Unallocated != 1 || len(generated.Failures) != 1 {
+		t.Fatalf("expected exactly one unallocated order: %s", genBody)
+	}
+	if generated.Failures[0].OrderID != "ord-heavy" || generated.Failures[0].ReasonCode != "WEIGHT_CAPACITY_EXCEEDED" {
+		t.Fatalf("unexpected failure on generate: %+v", generated.Failures[0])
+	}
+	if _, ok := generated.Failures[0].Details["otherLimitingFactors"]; !ok {
+		t.Fatalf("generate response missing other limiting factors: %+v", generated.Failures[0].Details)
+	}
+
+	// FR-54: a manual allocation override must carry a reason. Missing one is
+	// rejected before the constraint engine even runs, so this still returns
+	// 400 (not 409) for an order that would fail constraints anyway.
+	noReason, _ := http.NewRequest(http.MethodPost, planSrv.URL+"/api/v1/planning/plans/"+created.Plan.ID+"/allocations", strings.NewReader(`{"orderId":"ord-heavy","vehicleId":"VEH001","tripNumber":1}`))
+	noReason.Header.Set("Authorization", "Bearer usr-dispatcher")
+	noReason.Header.Set("Content-Type", "application/json")
+	noReasonRes, err := http.DefaultClient.Do(noReason)
+	if err != nil {
+		t.Fatal(err)
+	}
+	noReasonBody := readBody(noReasonRes)
+	noReasonRes.Body.Close()
+	if noReasonRes.StatusCode != http.StatusBadRequest {
+		t.Fatalf("manual assign without a reason should be rejected 400, got %d: %s", noReasonRes.StatusCode, noReasonBody)
+	}
+
+	// With a real reason supplied, the request reaches the constraint engine
+	// instead (and is rejected 409 for the same weight failure as above).
+	withReason, _ := http.NewRequest(http.MethodPost, planSrv.URL+"/api/v1/planning/plans/"+created.Plan.ID+"/allocations", strings.NewReader(`{"orderId":"ord-heavy","vehicleId":"VEH001","tripNumber":1,"reason":"Dispatcher is testing manual override capture."}`))
+	withReason.Header.Set("Authorization", "Bearer usr-dispatcher")
+	withReason.Header.Set("Content-Type", "application/json")
+	withReasonRes, err := http.DefaultClient.Do(withReason)
+	if err != nil {
+		t.Fatal(err)
+	}
+	withReasonBody := readBody(withReasonRes)
+	withReasonRes.Body.Close()
+	if withReasonRes.StatusCode != http.StatusConflict {
+		t.Fatalf("manual assign with a reason should still enforce constraints (409), got %d: %s", withReasonRes.StatusCode, withReasonBody)
+	}
+
+	// Fetch the plan detail twice, simulating the Dispatcher closing and
+	// reopening the plan well after the one-time generate response is gone.
+	for i := 0; i < 2; i++ {
+		getPlan, _ := http.NewRequest(http.MethodGet, planSrv.URL+"/api/v1/planning/plans/"+created.Plan.ID, nil)
+		getPlan.Header.Set("Authorization", "Bearer usr-dispatcher")
+		dres, err := http.DefaultClient.Do(getPlan)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var detail map[string]any
+		if err := json.NewDecoder(dres.Body).Decode(&detail); err != nil {
+			dres.Body.Close()
+			t.Fatal(err)
+		}
+		dres.Body.Close()
+		unalloc, ok := detail["unallocated"].([]any)
+		if !ok || len(unalloc) != 1 {
+			t.Fatalf("round %d: plan detail unallocated: %#v", i, detail["unallocated"])
+		}
+		row, ok := unalloc[0].(map[string]any)
+		if !ok || row["orderId"] != "ord-heavy" {
+			t.Fatalf("round %d: unexpected unallocated row: %#v", i, unalloc[0])
+		}
+		if row["reasonCode"] != "WEIGHT_CAPACITY_EXCEEDED" {
+			t.Fatalf("round %d: persisted reason regressed to placeholder: %#v", i, row)
+		}
+		details, ok := row["details"].(map[string]any)
+		if !ok {
+			t.Fatalf("round %d: persisted reason missing details: %#v", i, row)
+		}
+		if _, ok := details["otherLimitingFactors"]; !ok {
+			t.Fatalf("round %d: persisted reason missing other limiting factors: %#v", i, details)
+		}
+	}
+
+	// If the persisted-reason table becomes unreadable, the Dispatcher must
+	// see an explicit "unavailable" signal, never a specific-looking but
+	// possibly wrong reason silently standing in for it.
+	if _, err := planPool.Exec(ctx, `DROP TABLE planning.unallocated_reasons`); err != nil {
+		t.Fatal(err)
+	}
+	getPlanAfterDrop, _ := http.NewRequest(http.MethodGet, planSrv.URL+"/api/v1/planning/plans/"+created.Plan.ID, nil)
+	getPlanAfterDrop.Header.Set("Authorization", "Bearer usr-dispatcher")
+	afterDropRes, err := http.DefaultClient.Do(getPlanAfterDrop)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var afterDrop map[string]any
+	if err := json.NewDecoder(afterDropRes.Body).Decode(&afterDrop); err != nil {
+		afterDropRes.Body.Close()
+		t.Fatal(err)
+	}
+	afterDropRes.Body.Close()
+	if afterDropRes.StatusCode != http.StatusOK {
+		t.Fatalf("plan detail should still degrade gracefully, not fail outright: %d", afterDropRes.StatusCode)
+	}
+	if afterDrop["unallocatedReasonsAvailable"] != false {
+		t.Fatalf("expected unallocatedReasonsAvailable=false once the table is gone: %#v", afterDrop["unallocatedReasonsAvailable"])
+	}
+	unallocAfterDrop, _ := afterDrop["unallocated"].([]any)
+	if len(unallocAfterDrop) != 1 {
+		t.Fatalf("expected the one unallocated order to remain listed: %#v", afterDrop["unallocated"])
+	}
+	rowAfterDrop, _ := unallocAfterDrop[0].(map[string]any)
+	if rowAfterDrop["reasonCode"] != "REASON_UNAVAILABLE" {
+		t.Fatalf("expected an explicit unavailable reason, not a misleading placeholder: %#v", rowAfterDrop)
+	}
+}
+
+// overweightOrderPeerStub is a minimal peer stub for TestPlanningUnallocatedReasonPersists:
+// one order fits easily, the other exceeds both vehicles' weight capacity so it
+// is left unallocated with a specific, checkable reason.
+func overweightOrderPeerStub() http.Handler {
+	r := chi.NewRouter()
+	r.Get("/api/v1/delivery/internal/outlets/last-served", func(w http.ResponseWriter, _ *http.Request) {
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{"items": []map[string]any{}})
+	})
+	r.Get("/api/v1/orders", func(w http.ResponseWriter, _ *http.Request) {
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{"items": []map[string]any{
+			{
+				"id": "ord-light", "orderRef": "ORD000001", "outletId": "OUT034", "brand": "Fresh",
+				"temperatureRequirement": "ambient", "orderWeightKg": 40, "orderVolumeM3": 1.2,
+				"requestedDeliveryDate": "2026-09-29", "status": "confirmed",
+			},
+			{
+				"id": "ord-heavy", "orderRef": "ORD000002", "outletId": "OUT034", "brand": "Fresh",
+				"temperatureRequirement": "ambient", "orderWeightKg": 99999, "orderVolumeM3": 1.2,
+				"requestedDeliveryDate": "2026-09-29", "status": "confirmed",
+			},
+		}})
+	})
+	r.Get("/api/v1/fleet/vehicles", func(w http.ResponseWriter, _ *http.Request) {
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{"items": []map[string]any{
+			// VEH001 is home-depot eligible but too light for ord-heavy (WEIGHT_CAPACITY_EXCEEDED).
+			{"id": "VEH001", "type": "truck", "temp": "ambient", "homeDepot": "DEPOT_NORTH", "weightCapacityKg": 2000, "volumeCapacityM3": 20, "kmPerL": 8, "weeklyFuelQuotaL": 400},
+			// VEH002 could carry the weight but is based at a different depot (DEPOT_MISMATCH),
+			// so the explanation has two distinct reasons across the failed attempts.
+			{"id": "VEH002", "type": "truck", "temp": "ambient", "homeDepot": "DEPOT_SOUTH", "weightCapacityKg": 200000, "volumeCapacityM3": 2000, "kmPerL": 8, "weeklyFuelQuotaL": 400},
+		}})
+	})
+	r.Get("/api/v1/fleet/vehicles/{id}", func(w http.ResponseWriter, req *http.Request) {
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{"vehicle": map[string]any{"id": chi.URLParam(req, "id"), "homeDepot": "DEPOT_NORTH"}})
+	})
+	r.Get("/api/v1/fleet/availability", func(w http.ResponseWriter, _ *http.Request) {
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{"items": []map[string]any{}})
+	})
+	r.Get("/api/v1/shared/outlets", func(w http.ResponseWriter, _ *http.Request) {
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{"items": []map[string]any{{
+			"id": "OUT034", "brand": "Fresh", "district": "Colombo", "depot": "DEPOT_NORTH",
+			"parkingConstraint": "normal", "mallWindow": false, "windowOpenTime": "06:30", "windowCloseTime": "08:00",
+		}}})
+	})
+	r.Get("/api/v1/shared/travel", func(w http.ResponseWriter, _ *http.Request) {
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{"items": []map[string]any{}, "defaultService": 15, "mallService": 20})
+	})
+	r.Get("/api/v1/shared/profiles/me", func(w http.ResponseWriter, req *http.Request) {
+		p, err := bearerAuth{}.Authenticate(req)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusUnauthorized)
+			return
+		}
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{"profile": map[string]any{"userId": "USR002", "subject": p.Subject, "roles": []string{"DISPATCHER"}}})
+	})
+	r.Post("/api/v1/shared/audit-events", func(w http.ResponseWriter, _ *http.Request) {
+		httpx.WriteJSON(w, http.StatusAccepted, map[string]any{"status": "ingested"})
+	})
+	return r
 }
 
 func peerStub() http.Handler {

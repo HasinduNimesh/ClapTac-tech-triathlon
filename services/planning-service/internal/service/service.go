@@ -213,6 +213,9 @@ func (s Service) Generate(ctx context.Context, profile *authorization.Profile, i
 	for _, f := range out.Unallocated {
 		telemetry.ConstraintFailures.WithLabelValues(f.ReasonCode).Inc()
 	}
+	if err := s.Repo.ReplaceUnallocatedReasons(ctx, pl.ID, out.Unallocated); err != nil {
+		return domain.GenerateResult{}, err
+	}
 	completed = true
 	telemetry.PlansGenerated.Inc()
 	actor := actorID(profile)
@@ -246,7 +249,29 @@ func (s Service) Reset(ctx context.Context, profile *authorization.Profile, id s
 	return s.Repo.Reset(ctx, pl.ID)
 }
 
-func (s Service) Assign(ctx context.Context, profile *authorization.Profile, planID, orderID, vehicleID string, tripNo int) (domain.Allocation, []domain.Result, error) {
+// manualReasonBounds mirrors the deferral comment's practical length limits:
+// long enough for a real explanation, short enough to stay an audit note.
+const (
+	manualReasonMinLen = 3
+	manualReasonMaxLen = 500
+)
+
+// validManualReason requires a non-trivial, human-written explanation for a
+// manual allocation override (FR-54): the dispatcher is overruling or
+// pre-empting the deterministic allocator, so the override itself must be
+// explainable, not just the hard constraints it still has to satisfy.
+func validManualReason(reason string) error {
+	trimmed := strings.TrimSpace(reason)
+	if len(trimmed) < manualReasonMinLen || len(trimmed) > manualReasonMaxLen {
+		return fmt.Errorf("invalid: reason")
+	}
+	return nil
+}
+
+func (s Service) Assign(ctx context.Context, profile *authorization.Profile, planID, orderID, vehicleID string, tripNo int, reason string) (domain.Allocation, []domain.Result, error) {
+	if err := validManualReason(reason); err != nil {
+		return domain.Allocation{}, nil, err
+	}
 	pl, err := s.Repo.Get(ctx, planID)
 	if err != nil {
 		return domain.Allocation{}, nil, fmt.Errorf("not found")
@@ -269,7 +294,7 @@ func (s Service) Assign(ctx context.Context, profile *authorization.Profile, pla
 		return domain.Allocation{}, nil, err
 	}
 	telemetry.OrdersAllocated.Inc()
-	s.Peers.Publish(ctx, audit.ActionOrderAllocated, actorID(profile), "ORDER", orderID, map[string]any{"vehicleId": vehicleID, "tripNumber": tripNo})
+	s.Peers.Publish(ctx, audit.ActionOrderAllocated, actorID(profile), "ORDER", orderID, map[string]any{"vehicleId": vehicleID, "tripNumber": tripNo, "reason": strings.TrimSpace(reason)})
 	allocs, _ := s.Repo.ListAllocations(ctx, pl.ID)
 	for _, a := range allocs {
 		if a.OrderID == orderID {
@@ -287,7 +312,10 @@ func (s Service) publication(ctx context.Context, pl domain.Plan) domain.Publica
 	return domain.Publication{Version: pl.CurrentVersion, Acknowledgements: []domain.PlanAcknowledgement{}}
 }
 
-func (s Service) Reassign(ctx context.Context, profile *authorization.Profile, planID, allocID, vehicleID string, tripNo int) ([]domain.Result, error) {
+func (s Service) Reassign(ctx context.Context, profile *authorization.Profile, planID, allocID, vehicleID string, tripNo int, reason string) ([]domain.Result, error) {
+	if err := validManualReason(reason); err != nil {
+		return nil, err
+	}
 	pl, err := s.Repo.Get(ctx, planID)
 	if err != nil {
 		return nil, fmt.Errorf("not found")
@@ -310,7 +338,7 @@ func (s Service) Reassign(ctx context.Context, profile *authorization.Profile, p
 	if err := s.persistAssignment(ctx, pl.ID, allocate.Assignment{Order: domain.Order{ID: a.OrderID}, VehicleID: vehicleID, TripNumber: tripNo}); err != nil {
 		return nil, err
 	}
-	s.Peers.Publish(ctx, audit.ActionOrderReallocated, actorID(profile), "ORDER", a.OrderID, map[string]any{"from": a.VehicleID, "to": vehicleID})
+	s.Peers.Publish(ctx, audit.ActionOrderReallocated, actorID(profile), "ORDER", a.OrderID, map[string]any{"from": a.VehicleID, "to": vehicleID, "reason": strings.TrimSpace(reason)})
 	return nil, nil
 }
 
@@ -1057,12 +1085,31 @@ func (s Service) detail(ctx context.Context, pl domain.Plan) (map[string]any, er
 	for _, d := range deferred {
 		deferredIDs[d.OrderID] = true
 	}
+	reasons, reasonsErr := s.Repo.ListUnallocatedReasons(ctx, pl.ID)
+	reasonsAvailable := reasonsErr == nil
+	if !reasonsAvailable && s.Peers.Logger != nil {
+		s.Peers.Logger.Warn("unallocated_reasons_unavailable", "plan_id", pl.ID, "error", reasonsErr)
+	}
 	var unalloc []map[string]any
 	for _, o := range world.Orders {
 		if allocated[o.ID] || deferredIDs[o.ID] {
 			continue
 		}
-		unalloc = append(unalloc, map[string]any{"orderId": o.ID, "orderRef": o.OrderRef, "reasonCode": domain.ReasonNoEligibleVehicle})
+		// A persisted reason comes from the last successful generation. An
+		// order added or changed afterwards (e.g. a late import) has none
+		// yet, so it keeps the generic placeholder until regenerated - but
+		// if the lookup itself failed, say so explicitly rather than
+		// showing a specific-looking reason that may not be true.
+		entry := map[string]any{"orderId": o.ID, "orderRef": o.OrderRef, "reasonCode": domain.ReasonNoEligibleVehicle}
+		if !reasonsAvailable {
+			entry["reasonCode"] = domain.ReasonUnavailable
+		} else if r, ok := reasons[o.ID]; ok {
+			entry["reasonCode"] = r.ReasonCode
+			if len(r.Details) > 0 {
+				entry["details"] = r.Details
+			}
+		}
+		unalloc = append(unalloc, entry)
 	}
 	if unalloc == nil {
 		unalloc = []map[string]any{}
@@ -1075,9 +1122,10 @@ func (s Service) detail(ctx context.Context, pl domain.Plan) (map[string]any, er
 		"plan": pl, "trips": trips, "allocations": allocs, "deferrals": deferred,
 		"publication": publication,
 		"unallocated": unalloc, "vehicles": world.Vehicles, "orders": world.Orders,
-		"fairness":            map[string]any{"signalAvailable": world.FairnessSignalAvailable, "policy": allocate.FairnessPolicyWithPolicy(world.FairnessSignalAvailable, world.Policy), "asOf": pl.DeliveryDate},
-		"fuelLedgerAvailable": world.FuelLedgerAvailable,
-		"planningPolicy":      world.Policy, "policySignalAvailable": world.PolicySignalAvailable,
+		"unallocatedReasonsAvailable": reasonsAvailable,
+		"fairness":                    map[string]any{"signalAvailable": world.FairnessSignalAvailable, "policy": allocate.FairnessPolicyWithPolicy(world.FairnessSignalAvailable, world.Policy), "asOf": pl.DeliveryDate},
+		"fuelLedgerAvailable":         world.FuelLedgerAvailable,
+		"planningPolicy":              world.Policy, "policySignalAvailable": world.PolicySignalAvailable,
 	}, nil
 }
 

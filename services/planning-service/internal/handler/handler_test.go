@@ -95,10 +95,10 @@ func (s *stubPlanner) Simulate(context.Context, string) (domain.GenerateResult, 
 	return domain.GenerateResult{Allocated: 1}, nil
 }
 func (s *stubPlanner) Reset(context.Context, *authorization.Profile, string) error { return nil }
-func (s *stubPlanner) Assign(context.Context, *authorization.Profile, string, string, string, int) (domain.Allocation, []domain.Result, error) {
+func (s *stubPlanner) Assign(context.Context, *authorization.Profile, string, string, string, int, string) (domain.Allocation, []domain.Result, error) {
 	return domain.Allocation{}, s.assignFails, s.assignErr
 }
-func (s *stubPlanner) Reassign(context.Context, *authorization.Profile, string, string, string, int) ([]domain.Result, error) {
+func (s *stubPlanner) Reassign(context.Context, *authorization.Profile, string, string, string, int, string) ([]domain.Result, error) {
 	return nil, nil
 }
 func (s *stubPlanner) Remove(context.Context, *authorization.Profile, string, string) error {

@@ -492,6 +492,55 @@ func (p Postgres) ListDeferrals(ctx context.Context, planID string) ([]domain.De
 	return out, rows.Err()
 }
 
+// ReplaceUnallocatedReasons stores the allocator's explanation for every order
+// left unallocated by the latest generation of this plan, so the reason and
+// "other limiting factors" survive beyond the one-time generate response. It
+// replaces any reasons from a prior generation of the same plan.
+func (p Postgres) ReplaceUnallocatedReasons(ctx context.Context, planID string, reasons []domain.ConstraintFailure) error {
+	tx, err := p.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `DELETE FROM planning.unallocated_reasons WHERE plan_id = $1::uuid`, planID); err != nil {
+		return err
+	}
+	for _, r := range reasons {
+		details, _ := json.Marshal(r.Details)
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO planning.unallocated_reasons (plan_id, order_id, reason_code, details)
+			VALUES ($1::uuid, $2, $3, $4)
+		`, planID, r.OrderID, r.ReasonCode, details); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
+}
+
+// ListUnallocatedReasons returns the persisted allocator explanation for every
+// order on this plan that was left unallocated by its latest generation.
+func (p Postgres) ListUnallocatedReasons(ctx context.Context, planID string) (map[string]domain.UnallocatedReason, error) {
+	rows, err := p.Pool.Query(ctx, `
+		SELECT order_id, reason_code, details FROM planning.unallocated_reasons WHERE plan_id = $1::uuid
+	`, planID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]domain.UnallocatedReason{}
+	for rows.Next() {
+		var r domain.UnallocatedReason
+		var raw []byte
+		if err := rows.Scan(&r.OrderID, &r.ReasonCode, &raw); err != nil {
+			return nil, err
+		}
+		_ = json.Unmarshal(raw, &r.Details)
+		r.PlanID = planID
+		out[r.OrderID] = r
+	}
+	return out, rows.Err()
+}
+
 func (p Postgres) OutletDeferralCounts(ctx context.Context) (map[string]int, error) {
 	rows, err := p.Pool.Query(ctx, `SELECT outlet_id, count(*) FROM deferrals WHERE outlet_id IS NOT NULL AND outlet_id <> '' GROUP BY outlet_id`)
 	if err != nil {

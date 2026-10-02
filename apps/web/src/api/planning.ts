@@ -29,10 +29,20 @@ export type Deferral = {
   comment?: string;
 };
 
+export type OtherLimitingFactor = {
+  reasonCode: string;
+  vehicleTripsBlocked: number;
+};
+
 export type Unallocated = {
   orderId: string;
   orderRef?: string;
   reasonCode: string;
+  details?: {
+    otherLimitingFactors?: OtherLimitingFactor[];
+    vehicleTripsEvaluated?: number;
+    primaryBlockedVehicleTrips?: number;
+  };
 };
 
 export type PlanVehicle = {
@@ -107,6 +117,7 @@ export type PlanDetail = {
   };
   fuelLedgerAvailable?: boolean;
   policySignalAvailable?: boolean;
+  unallocatedReasonsAvailable?: boolean;
   planningPolicy?: { version: number; cutoffLocalTime: string; deferralWeightPoints: number; maxDeferralCount: number; maxUnservedDays: number; maxTripsPerVehicle: number };
   publication?: { version: number; contentHash: string; publishedBy: string; publishedAt: string; acknowledgements: {actorId:string;actorRole:string;acknowledgedAt:string}[] };
 };

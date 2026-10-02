@@ -18,6 +18,10 @@ const (
 	ReasonTripLimit          = "TRIP_LIMIT_REACHED"
 	ReasonVehicleUnavailable = "VEHICLE_UNAVAILABLE"
 	ReasonManualDeferral     = "MANUAL_DISPATCHER_DEFERRAL"
+	// ReasonUnavailable marks an order whose real persisted reason could not
+	// be read back, so the Dispatcher is told the explanation is missing
+	// rather than being shown a specific-looking but possibly wrong reason.
+	ReasonUnavailable = "REASON_UNAVAILABLE"
 )
 
 type Result struct {
@@ -167,6 +171,16 @@ type Deferral struct {
 }
 
 type ConstraintFailure struct {
+	OrderID    string         `json:"orderId"`
+	ReasonCode string         `json:"reasonCode"`
+	Details    map[string]any `json:"details,omitempty"`
+}
+
+// UnallocatedReason is the persisted form of a ConstraintFailure: the allocator's
+// explanation for one order on one plan, kept so it survives past the generate
+// response and still explains the order if the Dispatcher reopens the plan later.
+type UnallocatedReason struct {
+	PlanID     string         `json:"planId"`
 	OrderID    string         `json:"orderId"`
 	ReasonCode string         `json:"reasonCode"`
 	Details    map[string]any `json:"details,omitempty"`

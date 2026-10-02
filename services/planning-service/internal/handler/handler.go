@@ -23,8 +23,8 @@ type Planner interface {
 	Generate(ctx context.Context, profile *authorization.Profile, id string) (domain.GenerateResult, error)
 	Simulate(ctx context.Context, id string) (domain.GenerateResult, error)
 	Reset(ctx context.Context, profile *authorization.Profile, id string) error
-	Assign(ctx context.Context, profile *authorization.Profile, planID, orderID, vehicleID string, tripNo int) (domain.Allocation, []domain.Result, error)
-	Reassign(ctx context.Context, profile *authorization.Profile, planID, allocID, vehicleID string, tripNo int) ([]domain.Result, error)
+	Assign(ctx context.Context, profile *authorization.Profile, planID, orderID, vehicleID string, tripNo int, reason string) (domain.Allocation, []domain.Result, error)
+	Reassign(ctx context.Context, profile *authorization.Profile, planID, allocID, vehicleID string, tripNo int, reason string) ([]domain.Result, error)
 	Remove(ctx context.Context, profile *authorization.Profile, planID, allocID string) error
 	Defer(ctx context.Context, profile *authorization.Profile, planID, orderID, code, comment string) error
 	Confirm(ctx context.Context, profile *authorization.Profile, id string) error
@@ -249,12 +249,13 @@ func (h Handler) assign(w http.ResponseWriter, r *http.Request) {
 		OrderID    string `json:"orderId"`
 		VehicleID  string `json:"vehicleId"`
 		TripNumber int    `json:"tripNumber"`
+		Reason     string `json:"reason"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		apierrors.BadRequest(w, "invalid JSON")
 		return
 	}
-	alloc, fails, err := h.Service.Assign(r.Context(), h.profile(r), chi.URLParam(r, "id"), body.OrderID, body.VehicleID, body.TripNumber)
+	alloc, fails, err := h.Service.Assign(r.Context(), h.profile(r), chi.URLParam(r, "id"), body.OrderID, body.VehicleID, body.TripNumber, body.Reason)
 	if writeAllocErr(w, err, fails) {
 		return
 	}
@@ -265,12 +266,13 @@ func (h Handler) reassign(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		VehicleID  string `json:"vehicleId"`
 		TripNumber int    `json:"tripNumber"`
+		Reason     string `json:"reason"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		apierrors.BadRequest(w, "invalid JSON")
 		return
 	}
-	fails, err := h.Service.Reassign(r.Context(), h.profile(r), chi.URLParam(r, "id"), chi.URLParam(r, "allocId"), body.VehicleID, body.TripNumber)
+	fails, err := h.Service.Reassign(r.Context(), h.profile(r), chi.URLParam(r, "id"), chi.URLParam(r, "allocId"), body.VehicleID, body.TripNumber, body.Reason)
 	if writeAllocErr(w, err, fails) {
 		return
 	}
