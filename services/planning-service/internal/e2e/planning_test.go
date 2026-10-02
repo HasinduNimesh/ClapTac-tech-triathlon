@@ -595,6 +595,39 @@ func TestPlanningUnallocatedReasonPersists(t *testing.T) {
 			t.Fatalf("round %d: persisted reason missing other limiting factors: %#v", i, details)
 		}
 	}
+
+	// If the persisted-reason table becomes unreadable, the Dispatcher must
+	// see an explicit "unavailable" signal, never a specific-looking but
+	// possibly wrong reason silently standing in for it.
+	if _, err := planPool.Exec(ctx, `DROP TABLE planning.unallocated_reasons`); err != nil {
+		t.Fatal(err)
+	}
+	getPlanAfterDrop, _ := http.NewRequest(http.MethodGet, planSrv.URL+"/api/v1/planning/plans/"+created.Plan.ID, nil)
+	getPlanAfterDrop.Header.Set("Authorization", "Bearer usr-dispatcher")
+	afterDropRes, err := http.DefaultClient.Do(getPlanAfterDrop)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var afterDrop map[string]any
+	if err := json.NewDecoder(afterDropRes.Body).Decode(&afterDrop); err != nil {
+		afterDropRes.Body.Close()
+		t.Fatal(err)
+	}
+	afterDropRes.Body.Close()
+	if afterDropRes.StatusCode != http.StatusOK {
+		t.Fatalf("plan detail should still degrade gracefully, not fail outright: %d", afterDropRes.StatusCode)
+	}
+	if afterDrop["unallocatedReasonsAvailable"] != false {
+		t.Fatalf("expected unallocatedReasonsAvailable=false once the table is gone: %#v", afterDrop["unallocatedReasonsAvailable"])
+	}
+	unallocAfterDrop, _ := afterDrop["unallocated"].([]any)
+	if len(unallocAfterDrop) != 1 {
+		t.Fatalf("expected the one unallocated order to remain listed: %#v", afterDrop["unallocated"])
+	}
+	rowAfterDrop, _ := unallocAfterDrop[0].(map[string]any)
+	if rowAfterDrop["reasonCode"] != "REASON_UNAVAILABLE" {
+		t.Fatalf("expected an explicit unavailable reason, not a misleading placeholder: %#v", rowAfterDrop)
+	}
 }
 
 // overweightOrderPeerStub is a minimal peer stub for TestPlanningUnallocatedReasonPersists:

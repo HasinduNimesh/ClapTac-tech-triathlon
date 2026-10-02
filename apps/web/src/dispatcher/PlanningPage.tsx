@@ -219,6 +219,9 @@ export function PlanningPage() {
           </div>
 
           <h3>{t("Unallocated")}</h3>
+          {detail.unallocatedReasonsAvailable === false && (
+            <p className="status-bad" role="status">{t("Why these orders are unallocated could not be loaded right now; the reasons below may be incomplete.")}</p>
+          )}
           {(detail.unallocated || []).map((u) => (
             <article className="card" key={u.orderId}>
               <p><strong>{u.orderRef || u.orderId}</strong> · {t("Primary reason")}: {t(u.reasonCode)}

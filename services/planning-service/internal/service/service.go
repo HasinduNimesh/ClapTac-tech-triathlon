@@ -1085,17 +1085,25 @@ func (s Service) detail(ctx context.Context, pl domain.Plan) (map[string]any, er
 	for _, d := range deferred {
 		deferredIDs[d.OrderID] = true
 	}
-	reasons, _ := s.Repo.ListUnallocatedReasons(ctx, pl.ID)
+	reasons, reasonsErr := s.Repo.ListUnallocatedReasons(ctx, pl.ID)
+	reasonsAvailable := reasonsErr == nil
+	if !reasonsAvailable && s.Peers.Logger != nil {
+		s.Peers.Logger.Warn("unallocated_reasons_unavailable", "plan_id", pl.ID, "error", reasonsErr)
+	}
 	var unalloc []map[string]any
 	for _, o := range world.Orders {
 		if allocated[o.ID] || deferredIDs[o.ID] {
 			continue
 		}
+		// A persisted reason comes from the last successful generation. An
+		// order added or changed afterwards (e.g. a late import) has none
+		// yet, so it keeps the generic placeholder until regenerated - but
+		// if the lookup itself failed, say so explicitly rather than
+		// showing a specific-looking reason that may not be true.
 		entry := map[string]any{"orderId": o.ID, "orderRef": o.OrderRef, "reasonCode": domain.ReasonNoEligibleVehicle}
-		// A persisted reason comes from the last successful generation. An order
-		// added or changed afterwards (e.g. a late import) has none yet, so it
-		// keeps the generic placeholder until the plan is regenerated.
-		if r, ok := reasons[o.ID]; ok {
+		if !reasonsAvailable {
+			entry["reasonCode"] = domain.ReasonUnavailable
+		} else if r, ok := reasons[o.ID]; ok {
 			entry["reasonCode"] = r.ReasonCode
 			if len(r.Details) > 0 {
 				entry["details"] = r.Details
@@ -1114,9 +1122,10 @@ func (s Service) detail(ctx context.Context, pl domain.Plan) (map[string]any, er
 		"plan": pl, "trips": trips, "allocations": allocs, "deferrals": deferred,
 		"publication": publication,
 		"unallocated": unalloc, "vehicles": world.Vehicles, "orders": world.Orders,
-		"fairness":            map[string]any{"signalAvailable": world.FairnessSignalAvailable, "policy": allocate.FairnessPolicyWithPolicy(world.FairnessSignalAvailable, world.Policy), "asOf": pl.DeliveryDate},
-		"fuelLedgerAvailable": world.FuelLedgerAvailable,
-		"planningPolicy":      world.Policy, "policySignalAvailable": world.PolicySignalAvailable,
+		"unallocatedReasonsAvailable": reasonsAvailable,
+		"fairness":                    map[string]any{"signalAvailable": world.FairnessSignalAvailable, "policy": allocate.FairnessPolicyWithPolicy(world.FairnessSignalAvailable, world.Policy), "asOf": pl.DeliveryDate},
+		"fuelLedgerAvailable":         world.FuelLedgerAvailable,
+		"planningPolicy":              world.Policy, "policySignalAvailable": world.PolicySignalAvailable,
 	}, nil
 }
 

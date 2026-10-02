@@ -18,6 +18,10 @@ const (
 	ReasonTripLimit          = "TRIP_LIMIT_REACHED"
 	ReasonVehicleUnavailable = "VEHICLE_UNAVAILABLE"
 	ReasonManualDeferral     = "MANUAL_DISPATCHER_DEFERRAL"
+	// ReasonUnavailable marks an order whose real persisted reason could not
+	// be read back, so the Dispatcher is told the explanation is missing
+	// rather than being shown a specific-looking but possibly wrong reason.
+	ReasonUnavailable = "REASON_UNAVAILABLE"
 )
 
 type Result struct {
