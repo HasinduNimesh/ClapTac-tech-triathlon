@@ -37,6 +37,7 @@ const (
 	ActionDeliverySyncConflict         = "DELIVERY_SYNC_CONFLICT"
 	ActionDeliveryTemperatureRecorded  = "DELIVERY_TEMPERATURE_RECORDED"
 	ActionDeliveryTemperatureException = "DELIVERY_TEMPERATURE_EXCEPTION"
+	ActionDeliveryIncidentReported     = "DELIVERY_INCIDENT_REPORTED"
 	ActionDeliveryRunCompleted         = "DELIVERY_RUN_COMPLETED"
 	ActionTripStarted                  = "trip.started"
 	ActionDeliveryOutcomeChanged       = "delivery.outcome_changed"

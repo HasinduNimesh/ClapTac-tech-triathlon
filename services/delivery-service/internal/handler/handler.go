@@ -26,11 +26,12 @@ type Driver interface {
 	Start(ctx context.Context, profile *authorization.Profile, tripID, opID string) (map[string]any, error)
 	Arrive(ctx context.Context, profile *authorization.Profile, tripID, stopID, opID, occurred string) (map[string]any, error)
 	Outcome(ctx context.Context, profile *authorization.Profile, tripID, stopID, opID, depends, code, reason, note, occurred string) (map[string]any, error)
-	UploadProof(ctx context.Context, profile *authorization.Profile, tripID, stopID, opID, proofType, mime string, body []byte, captured string) (domain.Proof, error)
+	UploadProof(ctx context.Context, profile *authorization.Profile, tripID, stopID, opID, proofType, mime string, body []byte, captured, receiverName string) (domain.Proof, error)
 	Complete(ctx context.Context, profile *authorization.Profile, tripID, opID, occurred string) (map[string]any, error)
 	Sync(ctx context.Context, profile *authorization.Profile, req domain.SyncRequest) []map[string]any
 	InternalOrder(ctx context.Context, orderID string) (domain.OrderTracking, error)
 	OutletLastServed(ctx context.Context) ([]domain.OutletLastServed, error)
+	OutletLastAttempted(ctx context.Context, beforeDate string) ([]domain.OutletLastAttempted, error)
 	SendTripMessage(ctx context.Context, profile *authorization.Profile, tripID, stopID, body string) (domain.TripMessage, error)
 	TripMessages(ctx context.Context, profile *authorization.Profile, tripID string) ([]domain.TripMessage, error)
 	AcknowledgeTripMessage(ctx context.Context, profile *authorization.Profile, tripID, messageID string) (domain.TripMessage, error)
@@ -72,6 +73,7 @@ func (h Handler) Routes(r chi.Router) {
 		r.With(sync).Post("/sync", h.sync)
 		r.With(internal).Get("/internal/orders/{orderId}", h.internalOrder)
 		r.With(internal).Get("/internal/outlets/last-served", h.outletLastServed)
+		r.With(internal).Get("/internal/outlets/last-attempted", h.outletLastAttempted)
 	})
 }
 
@@ -135,6 +137,19 @@ func (h Handler) ackTripMessage(w http.ResponseWriter, r *http.Request) {
 
 func (h Handler) outletLastServed(w http.ResponseWriter, r *http.Request) {
 	items, err := h.Service.OutletLastServed(r.Context())
+	if writeErr(w, err) {
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (h Handler) outletLastAttempted(w http.ResponseWriter, r *http.Request) {
+	before := r.URL.Query().Get("before")
+	if before == "" {
+		apierrors.BadRequest(w, "before query parameter is required (YYYY-MM-DD)")
+		return
+	}
+	items, err := h.Service.OutletLastAttempted(r.Context(), before)
 	if writeErr(w, err) {
 		return
 	}
@@ -259,7 +274,7 @@ func (h Handler) proof(w http.ResponseWriter, r *http.Request) {
 		mime = r.FormValue("mimeType")
 	}
 	opID := first(r.Header.Get("Idempotency-Key"), r.FormValue("operationId"))
-	pr, err := h.Service.UploadProof(r.Context(), h.profile(r), chi.URLParam(r, "tripId"), chi.URLParam(r, "stopId"), opID, r.FormValue("type"), mime, body, r.FormValue("capturedAt"))
+	pr, err := h.Service.UploadProof(r.Context(), h.profile(r), chi.URLParam(r, "tripId"), chi.URLParam(r, "stopId"), opID, r.FormValue("type"), mime, body, r.FormValue("capturedAt"), r.FormValue("receiverName"))
 	if writeErr(w, err) {
 		return
 	}

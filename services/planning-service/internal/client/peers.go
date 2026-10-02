@@ -51,6 +51,32 @@ func (p Peers) OutletLastServed(ctx context.Context) (map[string]time.Time, erro
 	return items, nil
 }
 
+// OutletLastAttempted covers every terminal delivery outcome, not just
+// successful ones - FR-53's repeat-deferral warning needs this to avoid
+// claiming an outlet was deferred on its last run when it was actually
+// attempted (and failed) instead.
+func (p Peers) OutletLastAttempted(ctx context.Context, beforeDate string) (map[string]time.Time, error) {
+	tok, err := p.m2m(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var result struct {
+		Items []struct {
+			OutletID        string    `json:"outletId"`
+			LastAttemptedAt time.Time `json:"lastAttemptedAt"`
+		} `json:"items"`
+	}
+	path := p.DeliveryURL + "/api/v1/delivery/internal/outlets/last-attempted?before=" + url.QueryEscape(beforeDate)
+	if err := p.getJSON(ctx, path, tok, &result); err != nil {
+		return nil, err
+	}
+	items := make(map[string]time.Time, len(result.Items))
+	for _, item := range result.Items {
+		items[item.OutletID] = item.LastAttemptedAt
+	}
+	return items, nil
+}
+
 func (p Peers) http() *http.Client {
 	if p.HTTP != nil {
 		return p.HTTP

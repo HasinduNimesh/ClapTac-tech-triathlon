@@ -416,6 +416,34 @@ func (p Postgres) RecordTemperatureReading(ctx context.Context, runID, stopID, o
 	return item, nil
 }
 
+// InsertDriverIncident records a FR-22 categorised field report and its
+// matching sync-operation ledger row in one transaction, mirroring how a
+// temperature reading is recorded.
+func (p Postgres) InsertDriverIncident(ctx context.Context, runID, stopID, operationID, category, description, reportedBy string, occurredAt time.Time) (domain.DriverIncident, error) {
+	tx, err := p.Pool.Begin(ctx)
+	if err != nil {
+		return domain.DriverIncident{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	item := domain.DriverIncident{OperationID: operationID, RunID: runID, StopID: stopID, Category: category, Description: description, ReportedBy: reportedBy, OccurredAt: occurredAt}
+	err = tx.QueryRow(ctx, `
+		INSERT INTO delivery.driver_incidents(run_id, stop_id, operation_id, category, description, reported_by, occurred_at)
+		VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7)
+		RETURNING id::text, created_at
+	`, runID, nullIfEmpty(stopID), operationID, category, description, reportedBy, occurredAt).Scan(&item.ID, &item.CreatedAt)
+	if err != nil {
+		return domain.DriverIncident{}, err
+	}
+	payload, _ := json.Marshal(map[string]any{"incident": item})
+	if _, err = tx.Exec(ctx, `INSERT INTO delivery.sync_operations(operation_id,run_id,stop_id,operation_type,occurred_at,result_status,result_payload) VALUES($1,$2,$3,$4,$5,'APPLIED',$6::jsonb)`, operationID, runID, nullIfEmpty(stopID), domain.OpIncidentReport, occurredAt, payload); err != nil {
+		return domain.DriverIncident{}, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return domain.DriverIncident{}, err
+	}
+	return item, nil
+}
+
 func (p Postgres) OrderTracking(ctx context.Context, orderID string) (domain.OrderTracking, error) {
 	var t domain.OrderTracking
 	var short []byte
@@ -432,7 +460,7 @@ func (p Postgres) OrderTracking(ctx context.Context, orderID string) (domain.Ord
 	if t.LoadingShortfallSummary == nil {
 		t.LoadingShortfallSummary = []any{}
 	}
-	rows, err := p.Pool.Query(ctx, `SELECT idempotency_key,proof_type,mime_type,uploaded_at,pending FROM proofs WHERE stop_id=$1::uuid ORDER BY created_at`, t.StopID)
+	rows, err := p.Pool.Query(ctx, `SELECT idempotency_key,proof_type,mime_type,uploaded_at,pending,COALESCE(receiver_name,'') FROM proofs WHERE stop_id=$1::uuid ORDER BY created_at`, t.StopID)
 	if err != nil {
 		return t, err
 	}
@@ -440,7 +468,7 @@ func (p Postgres) OrderTracking(ctx context.Context, orderID string) (domain.Ord
 	t.Proofs = []domain.ProofSummary{}
 	for rows.Next() {
 		var pr domain.ProofSummary
-		if err := rows.Scan(&pr.OperationID, &pr.Type, &pr.MimeType, &pr.UploadedAt, &pr.Pending); err != nil {
+		if err := rows.Scan(&pr.OperationID, &pr.Type, &pr.MimeType, &pr.UploadedAt, &pr.Pending, &pr.ReceiverName); err != nil {
 			return t, err
 		}
 		t.Proofs = append(t.Proofs, pr)
@@ -465,6 +493,45 @@ func (p Postgres) OutletLastServed(ctx context.Context) ([]domain.OutletLastServ
 	for rows.Next() {
 		var item domain.OutletLastServed
 		if err := rows.Scan(&item.OutletID, &item.LastServedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+// OutletLastAttempted covers every terminal outcome (DELIVERED, PARTIAL,
+// NOT_DELIVERED, FAILED, REFUSED) via "outcome_code is set" rather than an
+// explicit list, so a future outcome code is still picked up automatically.
+// beforeDate scopes it to attempts strictly before that date - required so
+// reopening an older plan is judged by what had actually happened as of
+// that plan's date, not contaminated by attempts recorded since.
+//
+// outcome_at/outcome_received_at are timestamptz; beforeDate is a plain
+// calendar date in Asia/Colombo (NFR-20). Comparing a timestamptz directly
+// against ::date lets Postgres cast using the session/DB timezone (UTC by
+// default here), which is the wrong midnight - an outcome at 19:00Z the day
+// before is already past midnight in Colombo (+5:30) and must count as
+// "that day", not "before it". AT TIME ZONE 'Asia/Colombo' anchors the
+// cutoff explicitly, matching the existing pattern in LatenessHistory below.
+func (p Postgres) OutletLastAttempted(ctx context.Context, beforeDate string) ([]domain.OutletLastAttempted, error) {
+	rows, err := p.Pool.Query(ctx, `
+		SELECT outlet_id, MAX(COALESCE(outcome_at, outcome_received_at))
+		FROM stops
+		WHERE outlet_id IS NOT NULL AND outlet_id <> ''
+		  AND outcome_code IS NOT NULL AND outcome_code <> ''
+		  AND COALESCE(outcome_at, outcome_received_at) < ($1::date::timestamp AT TIME ZONE 'Asia/Colombo')
+		GROUP BY outlet_id
+		ORDER BY outlet_id
+	`, beforeDate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]domain.OutletLastAttempted, 0)
+	for rows.Next() {
+		var item domain.OutletLastAttempted
+		if err := rows.Scan(&item.OutletID, &item.LastAttemptedAt); err != nil {
 			return nil, err
 		}
 		items = append(items, item)
@@ -557,16 +624,16 @@ func (p Postgres) InsertOp(ctx context.Context, op domain.SyncOp) error {
 
 func (p Postgres) InsertProof(ctx context.Context, pr domain.Proof) (domain.Proof, error) {
 	row := p.Pool.QueryRow(ctx, `
-		INSERT INTO proofs (stop_id, proof_type, object_key, mime_type, sha256, captured_at, created_by, idempotency_key, pending)
-		VALUES ($1::uuid,$2,$3,$4,$5,$6,$7,$8,true)
-		RETURNING id::text, stop_id::text, proof_type, object_key, mime_type, COALESCE(sha256,''), captured_at, uploaded_at, created_by, idempotency_key, pending
-	`, pr.StopID, pr.ProofType, pr.ObjectKey, pr.MimeType, pr.SHA256, pr.CapturedAt, pr.CreatedBy, pr.IdempotencyKey)
+		INSERT INTO proofs (stop_id, proof_type, object_key, mime_type, sha256, captured_at, created_by, idempotency_key, pending, receiver_name)
+		VALUES ($1::uuid,$2,$3,$4,$5,$6,$7,$8,true,$9)
+		RETURNING id::text, stop_id::text, proof_type, object_key, mime_type, COALESCE(sha256,''), captured_at, uploaded_at, created_by, idempotency_key, pending, COALESCE(receiver_name,'')
+	`, pr.StopID, pr.ProofType, pr.ObjectKey, pr.MimeType, pr.SHA256, pr.CapturedAt, pr.CreatedBy, pr.IdempotencyKey, nullIfEmpty(pr.ReceiverName))
 	return scanProof(row)
 }
 
 func (p Postgres) GetProofByKey(ctx context.Context, key string) (domain.Proof, error) {
 	row := p.Pool.QueryRow(ctx, `
-		SELECT id::text, stop_id::text, proof_type, object_key, mime_type, COALESCE(sha256,''), captured_at, uploaded_at, created_by, idempotency_key, pending
+		SELECT id::text, stop_id::text, proof_type, object_key, mime_type, COALESCE(sha256,''), captured_at, uploaded_at, created_by, idempotency_key, pending, COALESCE(receiver_name,'')
 		FROM proofs WHERE idempotency_key = $1`, key)
 	return scanProof(row)
 }
@@ -718,7 +785,7 @@ func scanStop(row scanner) (domain.Stop, error) {
 
 func scanProof(row scanner) (domain.Proof, error) {
 	var p domain.Proof
-	err := row.Scan(&p.ID, &p.StopID, &p.ProofType, &p.ObjectKey, &p.MimeType, &p.SHA256, &p.CapturedAt, &p.UploadedAt, &p.CreatedBy, &p.IdempotencyKey, &p.Pending)
+	err := row.Scan(&p.ID, &p.StopID, &p.ProofType, &p.ObjectKey, &p.MimeType, &p.SHA256, &p.CapturedAt, &p.UploadedAt, &p.CreatedBy, &p.IdempotencyKey, &p.Pending, &p.ReceiverName)
 	if err == pgx.ErrNoRows {
 		return p, fmt.Errorf("not found")
 	}

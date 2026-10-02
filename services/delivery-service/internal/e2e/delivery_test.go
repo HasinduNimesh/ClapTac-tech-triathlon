@@ -82,6 +82,113 @@ func (staticProfiles) Resolve(_ context.Context, subject string) (*authorization
 	}
 }
 
+// TestOutletLastAttemptedScopedByDate proves FR-53's review follow-up: a
+// delivery attempt must only count toward "was this outlet run since its
+// last deferral" if it happened before the plan being evaluated, not just
+// before "now". Without the beforeDate filter, reopening an older plan could
+// be cleared by an attempt that, as of that plan's own date, had not
+// happened yet.
+func TestOutletLastAttemptedScopedByDate(t *testing.T) {
+	ctx := context.Background()
+	req := testcontainers.ContainerRequest{
+		Image:        "postgres:16-alpine",
+		ExposedPorts: []string{"5432/tcp"},
+		Env: map[string]string{
+			"POSTGRES_USER": "waypoint", "POSTGRES_PASSWORD": "waypoint", "POSTGRES_DB": "waypoint",
+		},
+		WaitingFor: wait.ForLog("database system is ready to accept connections").WithOccurrence(2).WithStartupTimeout(60 * time.Second),
+	}
+	pg, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{ContainerRequest: req, Started: true})
+	if err != nil {
+		t.Skipf("testcontainers postgres:16-alpine unavailable: %v", err)
+	}
+	t.Cleanup(func() { _ = pg.Terminate(ctx) })
+	host, err := pg.Host(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	port, err := pg.MappedPort(ctx, "5432")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dsn := "postgres://waypoint:waypoint@" + host + ":" + port.Port() + "/waypoint?sslmode=disable"
+	root := repoRoot(t)
+	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0001_init.sql"))
+	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0012_delivery.sql"))
+
+	pool, err := db.Open(ctx, dsn, "delivery")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+	store := delstore.Postgres{Pool: pool}
+
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO delivery.runs (trip_id, plan_id, plan_ref, delivery_date, vehicle_id, depot, status)
+		VALUES ('trip-scoped', 'plan-scoped', 'PLAN000001', '2026-09-20', 'VEH001', 'DEPOT_NORTH', 'completed')
+	`); err != nil {
+		t.Fatal(err)
+	}
+	var runID string
+	if err := pool.QueryRow(ctx, `SELECT id::text FROM delivery.runs WHERE trip_id='trip-scoped'`).Scan(&runID); err != nil {
+		t.Fatal(err)
+	}
+	// Two outcomes for two different outlets: one on 2026-09-22 (before the
+	// plan date used below), one on 2026-09-28 (after it). Plus a Colombo
+	// (+5:30) date-boundary pair: 2026-09-24T18:29:59Z is 2026-09-24T23:59:59
+	// in Colombo - still "before" 2026-09-25 - while 2026-09-24T19:00:00Z is
+	// already 2026-09-25T00:30 in Colombo, i.e. the plan's own day, not
+	// before it. A UTC-midnight comparison would wrongly include the latter.
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO delivery.stops (run_id, allocation_id, order_id, outlet_id, stop_sequence, status, outcome_code, outcome_at)
+		VALUES
+			($1::uuid, 'a-early', 'ord-early', 'OUT-EARLY', 1, 'completed', 'DELIVERED', '2026-09-22T10:00:00Z'),
+			($1::uuid, 'a-late', 'ord-late', 'OUT-LATE', 2, 'completed', 'NOT_DELIVERED', '2026-09-28T10:00:00Z'),
+			($1::uuid, 'a-boundary-before', 'ord-boundary-before', 'OUT-BOUNDARY-BEFORE', 3, 'completed', 'DELIVERED', '2026-09-24T18:29:59Z'),
+			($1::uuid, 'a-boundary-after', 'ord-boundary-after', 'OUT-BOUNDARY-AFTER', 4, 'completed', 'DELIVERED', '2026-09-24T19:00:00Z')
+	`, runID); err != nil {
+		t.Fatal(err)
+	}
+
+	// A plan dated 2026-09-25 must see the 2026-09-22 attempt and the
+	// 18:29:59Z boundary case (still Sep 24 in Colombo), but not the
+	// 2026-09-28 one or the 19:00:00Z boundary case (already Sep 25 in
+	// Colombo - the plan's own day, not before it).
+	items, err := store.OutletLastAttempted(ctx, "2026-09-25")
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	for _, it := range items {
+		seen[it.OutletID] = true
+	}
+	if !seen["OUT-EARLY"] {
+		t.Fatalf("expected OUT-EARLY's 2026-09-22 attempt to be visible to a 2026-09-25 plan: %+v", items)
+	}
+	if seen["OUT-LATE"] {
+		t.Fatalf("OUT-LATE's 2026-09-28 attempt is in the future relative to a 2026-09-25 plan and must not be visible: %+v", items)
+	}
+	if !seen["OUT-BOUNDARY-BEFORE"] {
+		t.Fatalf("2026-09-24T18:29:59Z is still 2026-09-24 in Colombo (+5:30) and must be visible to a 2026-09-25 plan: %+v", items)
+	}
+	if seen["OUT-BOUNDARY-AFTER"] {
+		t.Fatalf("2026-09-24T19:00:00Z is already 2026-09-25T00:30 in Colombo (+5:30) - the plan's own day, not before it - and must not be visible: %+v", items)
+	}
+
+	// A later plan (2026-09-30) must see both.
+	itemsLater, err := store.OutletLastAttempted(ctx, "2026-09-30")
+	if err != nil {
+		t.Fatal(err)
+	}
+	seenLater := map[string]bool{}
+	for _, it := range itemsLater {
+		seenLater[it.OutletID] = true
+	}
+	if !seenLater["OUT-EARLY"] || !seenLater["OUT-LATE"] {
+		t.Fatalf("a 2026-09-30 plan should see both earlier attempts: %+v", itemsLater)
+	}
+}
+
 func TestDeliveryWorkflow(t *testing.T) {
 	ctx := context.Background()
 	req := testcontainers.ContainerRequest{
@@ -119,6 +226,8 @@ func TestDeliveryWorkflow(t *testing.T) {
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0034_delivery_planned_arrival_snapshot.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0030_outlet_access_instructions.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0031_cold_chain_readings.sql"))
+	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0038_delivery_proof_receiver_name.sql"))
+	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0039_delivery_driver_incidents.sql"))
 
 	peers := httptest.NewServer(peerStub())
 	t.Cleanup(peers.Close)
@@ -373,8 +482,8 @@ func TestDeliveryWorkflow(t *testing.T) {
 		t.Fatalf("sync before proof %d %s", syncBeforeProof.status, syncBeforeProof.body)
 	}
 
-	pr := uploadProof(t, srv, "trip-north", stopID, "usr-driver", "proof-1", "SIGNATURE")
-	if pr.status != http.StatusCreated {
+	pr := uploadProofWithReceiver(t, srv, "trip-north", stopID, "usr-driver", "proof-1", "SIGNATURE", "Nimal Perera")
+	if pr.status != http.StatusCreated || !strings.Contains(pr.body, `"receiverName":"Nimal Perera"`) {
 		t.Fatalf("proof %d %s", pr.status, pr.body)
 	}
 	replayProof := uploadProof(t, srv, "trip-north", stopID, "usr-driver", "proof-1", "PHOTO")
@@ -412,12 +521,15 @@ func TestDeliveryWorkflow(t *testing.T) {
 	if tempUnconfigured.status != http.StatusOK || !strings.Contains(tempUnconfigured.body, `"LIMITS_UNCONFIGURED"`) {
 		t.Fatalf("unconfigured temperature limits must prompt review, not claim safe: %d %s", tempUnconfigured.status, tempUnconfigured.body)
 	}
-	if code := uploadProof(t, srv, "trip-north", stop2, "usr-driver", "proof-2", "PHOTO").status; code != http.StatusCreated {
+	if code := uploadProofWithReceiver(t, srv, "trip-north", stop2, "usr-driver", "proof-2", "PHOTO", "Kamal Silva").status; code != http.StatusCreated {
 		t.Fatalf("photo 2")
 	}
 	proofTracking := do(t, srv, http.MethodGet, "/api/v1/delivery/internal/orders/ord-2", "svc-order", nil, "")
 	if proofTracking.status != http.StatusOK || !strings.Contains(proofTracking.body, `"operationId":"proof-2"`) || !strings.Contains(proofTracking.body, `"type":"PHOTO"`) {
 		t.Fatalf("internal order view did not expose uploaded photo identity: %d %s", proofTracking.status, proofTracking.body)
+	}
+	if !strings.Contains(proofTracking.body, `"receiverName":"Kamal Silva"`) {
+		t.Fatalf("FR-25: internal order view did not expose the proof's recipient name: %s", proofTracking.body)
 	}
 	partial := do(t, srv, http.MethodPost, "/api/v1/delivery/sync", "usr-driver", []byte(`{"operations":[{"operationId":"out-2","type":"STOP_OUTCOME","tripId":"trip-north","stopId":"`+stop2+`","dependsOnOperationId":"proof-2","payload":{"code":"PARTIAL","occurredAt":"2026-09-29T09:10:00Z"}}]}`), "")
 	if partial.status != http.StatusOK || !strings.Contains(partial.body, `"APPLIED"`) {
@@ -430,6 +542,32 @@ func TestDeliveryWorkflow(t *testing.T) {
 	ambientTemp := do(t, srv, http.MethodPost, "/api/v1/delivery/sync", "usr-driver", []byte(`{"operations":[{"operationId":"temp-ambient","type":"TEMPERATURE_READING","tripId":"trip-north","stopId":"`+stop3+`","payload":{"valueC":2.0}}]}`), "")
 	if ambientTemp.status != http.StatusOK || !strings.Contains(ambientTemp.body, `"REJECTED"`) {
 		t.Fatalf("ambient stop must reject cold-chain reading %d %s", ambientTemp.status, ambientTemp.body)
+	}
+
+	// FR-22: a Driver-reported incident tied to a stop (a goods issue found on arrival).
+	incidentAtStop := do(t, srv, http.MethodPost, "/api/v1/delivery/sync", "usr-driver", []byte(`{"operations":[{"operationId":"incident-goods","type":"INCIDENT_REPORT","tripId":"trip-north","stopId":"`+stop3+`","payload":{"category":"goods","description":"Carton for this order arrived crushed."}}]}`), "")
+	if incidentAtStop.status != http.StatusOK || !strings.Contains(incidentAtStop.body, `"APPLIED"`) {
+		t.Fatalf("stop-scoped incident report %d %s", incidentAtStop.status, incidentAtStop.body)
+	}
+	// An incident with no stop (a road closure between stops) must still be accepted.
+	incidentNoStop := do(t, srv, http.MethodPost, "/api/v1/delivery/sync", "usr-driver", []byte(`{"operations":[{"operationId":"incident-road","type":"INCIDENT_REPORT","tripId":"trip-north","payload":{"category":"ROAD","description":"Road closed near the Kelani bridge; took the Peliyagoda detour."}}]}`), "")
+	if incidentNoStop.status != http.StatusOK || !strings.Contains(incidentNoStop.body, `"APPLIED"`) {
+		t.Fatalf("trip-scoped incident report without a stop %d %s", incidentNoStop.status, incidentNoStop.body)
+	}
+	// An unrecognised category is rejected rather than silently stored as OTHER.
+	badIncident := do(t, srv, http.MethodPost, "/api/v1/delivery/sync", "usr-driver", []byte(`{"operations":[{"operationId":"incident-bad","type":"INCIDENT_REPORT","tripId":"trip-north","payload":{"category":"WEATHER","description":"Heavy rain."}}]}`), "")
+	if badIncident.status != http.StatusOK || !strings.Contains(badIncident.body, `"REJECTED"`) {
+		t.Fatalf("unrecognised incident category must be rejected %d %s", badIncident.status, badIncident.body)
+	}
+	// A different vehicle's driver cannot report an incident against this trip.
+	incidentWrongVehicle := do(t, srv, http.MethodPost, "/api/v1/delivery/sync", "usr-driver-other", []byte(`{"operations":[{"operationId":"incident-forbidden","type":"INCIDENT_REPORT","tripId":"trip-north","payload":{"category":"SAFETY","description":"Should not be accepted from another driver."}}]}`), "")
+	if incidentWrongVehicle.status != http.StatusOK || !strings.Contains(incidentWrongVehicle.body, `"REJECTED"`) {
+		t.Fatalf("incident report from an unassigned vehicle must be rejected %d %s", incidentWrongVehicle.status, incidentWrongVehicle.body)
+	}
+	// Idempotent replay of the same operationId does not create a duplicate record.
+	incidentReplay := do(t, srv, http.MethodPost, "/api/v1/delivery/sync", "usr-driver", []byte(`{"operations":[{"operationId":"incident-goods","type":"INCIDENT_REPORT","tripId":"trip-north","stopId":"`+stop3+`","payload":{"category":"goods","description":"Carton for this order arrived crushed."}}]}`), "")
+	if incidentReplay.status != http.StatusOK || !strings.Contains(incidentReplay.body, `"DUPLICATE"`) {
+		t.Fatalf("replayed incident report should report duplicate, not re-apply %d %s", incidentReplay.status, incidentReplay.body)
 	}
 	missingReason := do(t, srv, http.MethodPost, "/api/v1/delivery/trips/trip-north/stops/"+stop3+"/outcome", "usr-driver", []byte(`{"code":"NOT_DELIVERED"}`), "out-3-no-reason")
 	if missingReason.status != http.StatusBadRequest {
@@ -594,10 +732,18 @@ func peerStub() http.Handler {
 
 func uploadProof(t *testing.T, srv *httptest.Server, tripID, stopID, subject, key, typ string) resp {
 	t.Helper()
+	return uploadProofWithReceiver(t, srv, tripID, stopID, subject, key, typ, "")
+}
+
+func uploadProofWithReceiver(t *testing.T, srv *httptest.Server, tripID, stopID, subject, key, typ, receiverName string) resp {
+	t.Helper()
 	var buf bytes.Buffer
 	w := multipart.NewWriter(&buf)
 	_ = w.WriteField("type", typ)
 	_ = w.WriteField("mimeType", "image/png")
+	if receiverName != "" {
+		_ = w.WriteField("receiverName", receiverName)
+	}
 	fw, err := w.CreateFormFile("file", "proof.png")
 	if err != nil {
 		t.Fatal(err)

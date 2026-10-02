@@ -27,6 +27,7 @@ export type Deferral = {
   outletId: string;
   reasonCode: string;
   comment?: string;
+  nextRunTarget?: string;
 };
 
 export type OtherLimitingFactor = {
@@ -100,6 +101,8 @@ export type PlanOrder = {
   daysSinceLastServed: number;
   lastServedAt?: string;
   fairnessScore: number;
+  deferredLastRun?: boolean;
+  lastDeferralDate?: string;
 };
 
 export type PlanDetail = {

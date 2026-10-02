@@ -33,6 +33,15 @@ const (
 	OpStopOutcome        = "STOP_OUTCOME"
 	OpTemperatureReading = "TEMPERATURE_READING"
 	OpRouteCompleted     = "ROUTE_COMPLETED"
+	OpIncidentReport     = "INCIDENT_REPORT"
+
+	// FR-22: categories for a Driver-reported incident.
+	IncidentVehicle = "VEHICLE"
+	IncidentRoad    = "ROAD"
+	IncidentOutlet  = "OUTLET"
+	IncidentGoods   = "GOODS"
+	IncidentSafety  = "SAFETY"
+	IncidentOther   = "OTHER"
 
 	ResultApplied   = "APPLIED"
 	ResultConflict  = "CONFLICT"
@@ -125,6 +134,21 @@ type TemperatureReading struct {
 	Note        string    `json:"note,omitempty"`
 }
 
+// DriverIncident is FR-22's categorised field report: vehicle, road, outlet,
+// goods, safety, or other. StopID is optional because not every incident
+// (a road closure, a vehicle fault between stops) happens at a stop.
+type DriverIncident struct {
+	ID          string    `json:"id"`
+	OperationID string    `json:"operationId"`
+	RunID       string    `json:"runId"`
+	StopID      string    `json:"stopId,omitempty"`
+	Category    string    `json:"category"`
+	Description string    `json:"description"`
+	ReportedBy  string    `json:"reportedBy"`
+	OccurredAt  time.Time `json:"occurredAt"`
+	CreatedAt   time.Time `json:"createdAt"`
+}
+
 type Proof struct {
 	ID             string     `json:"id"`
 	StopID         string     `json:"stopId"`
@@ -137,6 +161,9 @@ type Proof struct {
 	CreatedBy      string     `json:"createdBy"`
 	IdempotencyKey string     `json:"idempotencyKey"`
 	Pending        bool       `json:"pending"`
+	// ReceiverName is who accepted the delivery (FR-25), as reported by the
+	// Driver. Optional: not every proof capture has a named recipient.
+	ReceiverName string `json:"receiverName,omitempty"`
 }
 
 type OrderTracking struct {
@@ -158,12 +185,23 @@ type OutletLastServed struct {
 	LastServedAt time.Time `json:"lastServedAt"`
 }
 
+// OutletLastAttempted is distinct from OutletLastServed: it covers every
+// terminal delivery outcome (DELIVERED, PARTIAL, NOT_DELIVERED, REFUSED),
+// not just successful ones. FR-53's repeat-deferral warning needs this - an
+// outlet whose last run was an attempted-but-failed delivery was not
+// deferred on that run, even though it was not successfully served either.
+type OutletLastAttempted struct {
+	OutletID        string    `json:"outletId"`
+	LastAttemptedAt time.Time `json:"lastAttemptedAt"`
+}
+
 type ProofSummary struct {
-	OperationID string     `json:"operationId,omitempty"`
-	Type        string     `json:"type"`
-	MimeType    string     `json:"mimeType"`
-	UploadedAt  *time.Time `json:"uploadedAt,omitempty"`
-	Pending     bool       `json:"pending"`
+	OperationID  string     `json:"operationId,omitempty"`
+	Type         string     `json:"type"`
+	MimeType     string     `json:"mimeType"`
+	UploadedAt   *time.Time `json:"uploadedAt,omitempty"`
+	Pending      bool       `json:"pending"`
+	ReceiverName string     `json:"receiverName,omitempty"`
 }
 
 type SyncOp struct {

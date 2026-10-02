@@ -38,6 +38,9 @@ export function DriverTripsPage() {
   const [techCustody, setTechCustody] = useState<Record<string,{sealId:string;serials:string;condition:string}>>({});
   const [proofIds, setProofIds] = useState<Record<string, string>>({});
   const [photoProofIds, setPhotoProofIds] = useState<Record<string,string>>({});
+  const [receiverName, setReceiverName] = useState("");
+  const [incidentCategory, setIncidentCategory] = useState("VEHICLE");
+  const [incidentDescription, setIncidentDescription] = useState("");
   const [queueCount, setQueueCount] = useState(0);
   const [privacyNotice, setPrivacyNotice] = useState("");
   const [queueRetention, setQueueRetention] = useState<ReturnType<typeof queueRetentionWarning>>(null);
@@ -53,6 +56,13 @@ export function DriverTripsPage() {
   const detailRef = useRef<DeliveryTripDetail | null>(detail);
   const queueHealthReport = useRef({ ownerId: "", attemptedAt: 0, inFlight: false });
   detailRef.current = detail;
+
+  // FR-25 review fix: receiverName is proof metadata for whichever stop is
+  // currently open. Without this, switching stops after typing a name for
+  // stop A silently attributes that name to stop B's proof too.
+  useEffect(() => {
+    setReceiverName("");
+  }, [stop?.id]);
 
   useEffect(() => {
     let active = true;
@@ -335,6 +345,7 @@ export function DriverTripsPage() {
       blob,
       mimeType,
       proofType,
+      receiverName: receiverName.trim() || undefined,
       createdAt: new Date().toISOString(),
     });
     setProofIds((prev) => ({ ...prev, [stop.id]: operationId }));
@@ -366,6 +377,24 @@ export function DriverTripsPage() {
     await enqueue(ownerId,{operationId,type:"TEMPERATURE_READING",tripId:detail.tripId,stopId:stop.id,payload:{valueC,occurredAt},createdAt:occurredAt});
     const updated={...detail,stops:detail.stops.map((s)=>s.id===stop.id?{...s,temperatureReadings:[...(s.temperatureReadings||[]),reading]}:s)};
     setDetail(updated);setStop(updated.stops.find((s)=>s.id===stop.id)||null);setTemperatureC("");setSummarySource("device");await cacheDetail(updated,ownerId);await refreshBanner();
+  }
+
+  async function reportIncident(e: FormEvent) {
+    e.preventDefault();
+    if (!detail || incidentDescription.trim() === "") { setError(t("Describe the incident before reporting it.")); return; }
+    const operationId = newOperationId();
+    const occurredAt = new Date().toISOString();
+    await enqueue(ownerId, {
+      operationId,
+      type: "INCIDENT_REPORT",
+      tripId: detail.tripId,
+      stopId: stop?.id,
+      payload: { category: incidentCategory, description: incidentDescription.trim(), occurredAt },
+      createdAt: occurredAt,
+    });
+    setIncidentDescription("");
+    setSummarySource("device");
+    await refreshBanner();
   }
 
   async function outcome(code: "DELIVERED" | "PARTIAL" | "NOT_DELIVERED" | "FAILED" | "REFUSED") {
@@ -580,6 +609,22 @@ export function DriverTripsPage() {
             <h3 id="driver-messages-heading">{t("Dispatcher messages")}</h3>
             {messages.length===0?<p>{t("No trip messages.")}</p>:<ul>{messages.map(m=><li key={m.id}><p>{m.body}</p><small>{m.stopId?t("Stop-specific instruction"):t("Trip-wide instruction")} · {new Date(m.createdAt).toLocaleString()}</small>{m.acknowledgedAt?<p className="status-ok" role="status">{t("Acknowledged")}</p>:<button type="button" className="tap" onClick={()=>void acknowledgeMessage(m.id)}>{t("Acknowledge receipt")}</button>}</li>)}</ul>}
           </section>}
+          <section aria-labelledby="driver-incident-heading">
+            <h3 id="driver-incident-heading">{t("Report an incident")}</h3>
+            <p className="muted">{t("Report a vehicle, road, outlet, goods, or safety problem. Dispatch sees this in the trip's history.")}</p>
+            <form onSubmit={reportIncident} className="row">
+              <select aria-label={t("Incident category")} value={incidentCategory} onChange={(e) => setIncidentCategory(e.target.value)}>
+                <option value="VEHICLE">{t("Vehicle")}</option>
+                <option value="ROAD">{t("Road")}</option>
+                <option value="OUTLET">{t("Outlet")}</option>
+                <option value="GOODS">{t("Goods")}</option>
+                <option value="SAFETY">{t("Safety")}</option>
+                <option value="OTHER">{t("Other")}</option>
+              </select>
+              <input aria-label={t("Incident description")} placeholder={t("What happened?")} value={incidentDescription} onChange={(e) => setIncidentDescription(e.target.value)} maxLength={1000} />
+              <button type="submit" className="tap">{t("Report")}</button>
+            </form>
+          </section>
           <button type="button" className="tap" onClick={() => setShowSummary((show) => !show)}>
             {showSummary ? t("Back to route") : t("End-of-day summary")}
           </button>
@@ -675,6 +720,7 @@ export function DriverTripsPage() {
               {stop.temperatureRequirement === "chilled" && <section aria-label={t("Chilled goods temperature")}><h4>{t("Chilled goods temperature")}</h4><p className="muted">{t("Use a calibrated manual thermometer at the outlet. This records evidence; configured outlet limits determine whether it is in range.")}</p><label>{t("Temperature (°C)")}<input type="number" min="-40" max="100" step="0.1" inputMode="decimal" value={temperatureC} onChange={(e)=>setTemperatureC(e.target.value)} /></label><button type="button" className="tap" onClick={recordTemperature}>{t("Record temperature")}</button><ul aria-live="polite">{(stop.temperatureReadings||[]).map((reading)=><li key={reading.operationId} className={reading.evaluation==="OUT_OF_RANGE"?"status-bad":""} role={reading.evaluation==="OUT_OF_RANGE"?"alert":"status"}>{reading.valueC.toFixed(1)} °C · {t(reading.evaluation)} · {new Date(reading.occurredAt).toLocaleString("en-LK",{timeZone:"Asia/Colombo"})} {reading.actorId&&`· ${reading.actorId}`}</li>)}</ul></section>}
           <p className="muted">{t("Capture proof for delivered or partial orders. PNG/JPEG only. Not delivered requires a reason.")}</p>
               {proofIds[stop.id] && <p className={queueCount ? "muted" : "status-ok"} role="status">{queueCount ? t("Proof saved on this device · waiting to sync") : t("Proof synced")}</p>}
+              <label>{t("Recipient name (optional)")}<input type="text" maxLength={120} value={receiverName} onChange={(e) => setReceiverName(e.target.value)} disabled={!safeStopped} /></label>
               <canvas
                 ref={canvasRef}
                 className="sig"
