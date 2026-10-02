@@ -92,7 +92,7 @@ func (s *stubDriver) InternalOrder(context.Context, string) (domain.OrderTrackin
 func (s *stubDriver) OutletLastServed(context.Context) ([]domain.OutletLastServed, error) {
 	return []domain.OutletLastServed{}, nil
 }
-func (s *stubDriver) OutletLastAttempted(context.Context) ([]domain.OutletLastAttempted, error) {
+func (s *stubDriver) OutletLastAttempted(context.Context, string) ([]domain.OutletLastAttempted, error) {
 	return []domain.OutletLastAttempted{}, nil
 }
 func (s *stubDriver) SendTripMessage(_ context.Context, _ *authorization.Profile, tripID, stopID, body string) (domain.TripMessage, error) {

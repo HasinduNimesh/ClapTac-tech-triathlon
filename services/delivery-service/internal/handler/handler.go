@@ -31,7 +31,7 @@ type Driver interface {
 	Sync(ctx context.Context, profile *authorization.Profile, req domain.SyncRequest) []map[string]any
 	InternalOrder(ctx context.Context, orderID string) (domain.OrderTracking, error)
 	OutletLastServed(ctx context.Context) ([]domain.OutletLastServed, error)
-	OutletLastAttempted(ctx context.Context) ([]domain.OutletLastAttempted, error)
+	OutletLastAttempted(ctx context.Context, beforeDate string) ([]domain.OutletLastAttempted, error)
 	SendTripMessage(ctx context.Context, profile *authorization.Profile, tripID, stopID, body string) (domain.TripMessage, error)
 	TripMessages(ctx context.Context, profile *authorization.Profile, tripID string) ([]domain.TripMessage, error)
 	AcknowledgeTripMessage(ctx context.Context, profile *authorization.Profile, tripID, messageID string) (domain.TripMessage, error)
@@ -144,7 +144,12 @@ func (h Handler) outletLastServed(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h Handler) outletLastAttempted(w http.ResponseWriter, r *http.Request) {
-	items, err := h.Service.OutletLastAttempted(r.Context())
+	before := r.URL.Query().Get("before")
+	if before == "" {
+		apierrors.BadRequest(w, "before query parameter is required (YYYY-MM-DD)")
+		return
+	}
+	items, err := h.Service.OutletLastAttempted(r.Context(), before)
 	if writeErr(w, err) {
 		return
 	}

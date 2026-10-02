@@ -894,7 +894,7 @@ func (s Service) loadWorld(ctx context.Context, pl domain.Plan) (allocate.Input,
 	}
 	counts, countsErr := s.Repo.OutletDeferralCounts(ctx)
 	lastServed, lastServedErr := s.Peers.OutletLastServed(ctx)
-	lastAttempted, lastAttemptedErr := s.Peers.OutletLastAttempted(ctx)
+	lastAttempted, lastAttemptedErr := s.Peers.OutletLastAttempted(ctx, pl.DeliveryDate)
 	if lastAttemptedErr != nil {
 		lastAttempted = map[string]time.Time{}
 		if s.Peers.Logger != nil {

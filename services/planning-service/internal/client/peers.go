@@ -55,7 +55,7 @@ func (p Peers) OutletLastServed(ctx context.Context) (map[string]time.Time, erro
 // successful ones - FR-53's repeat-deferral warning needs this to avoid
 // claiming an outlet was deferred on its last run when it was actually
 // attempted (and failed) instead.
-func (p Peers) OutletLastAttempted(ctx context.Context) (map[string]time.Time, error) {
+func (p Peers) OutletLastAttempted(ctx context.Context, beforeDate string) (map[string]time.Time, error) {
 	tok, err := p.m2m(ctx)
 	if err != nil {
 		return nil, err
@@ -66,7 +66,8 @@ func (p Peers) OutletLastAttempted(ctx context.Context) (map[string]time.Time, e
 			LastAttemptedAt time.Time `json:"lastAttemptedAt"`
 		} `json:"items"`
 	}
-	if err := p.getJSON(ctx, p.DeliveryURL+"/api/v1/delivery/internal/outlets/last-attempted", tok, &result); err != nil {
+	path := p.DeliveryURL + "/api/v1/delivery/internal/outlets/last-attempted?before=" + url.QueryEscape(beforeDate)
+	if err := p.getJSON(ctx, path, tok, &result); err != nil {
 		return nil, err
 	}
 	items := make(map[string]time.Time, len(result.Items))

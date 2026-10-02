@@ -475,15 +475,19 @@ func (p Postgres) OutletLastServed(ctx context.Context) ([]domain.OutletLastServ
 // OutletLastAttempted covers every terminal outcome (DELIVERED, PARTIAL,
 // NOT_DELIVERED, FAILED, REFUSED) via "outcome_code is set" rather than an
 // explicit list, so a future outcome code is still picked up automatically.
-func (p Postgres) OutletLastAttempted(ctx context.Context) ([]domain.OutletLastAttempted, error) {
+// beforeDate scopes it to attempts strictly before that date - required so
+// reopening an older plan is judged by what had actually happened as of
+// that plan's date, not contaminated by attempts recorded since.
+func (p Postgres) OutletLastAttempted(ctx context.Context, beforeDate string) ([]domain.OutletLastAttempted, error) {
 	rows, err := p.Pool.Query(ctx, `
 		SELECT outlet_id, MAX(COALESCE(outcome_at, outcome_received_at))
 		FROM stops
 		WHERE outlet_id IS NOT NULL AND outlet_id <> ''
 		  AND outcome_code IS NOT NULL AND outcome_code <> ''
+		  AND COALESCE(outcome_at, outcome_received_at) < $1::date
 		GROUP BY outlet_id
 		ORDER BY outlet_id
-	`)
+	`, beforeDate)
 	if err != nil {
 		return nil, err
 	}
