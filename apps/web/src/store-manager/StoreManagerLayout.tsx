@@ -1,8 +1,8 @@
-import { useState } from "react";
-import { NavLink, Outlet } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { useLocale } from "../i18n";
-import logo from "../assets/store-manager/sidebar-logo.png";
+import logo from "../assets/login/logo.png";
 import iconCategory from "../assets/store-manager/icon-category.svg";
 import iconVector from "../assets/store-manager/icon-vector.svg";
 import iconBox from "../assets/store-manager/icon-box.svg";
@@ -14,8 +14,17 @@ export function StoreManagerLayout() {
   const { profile, logout } = useAuth();
   const { t } = useLocale();
   const [navOpen, setNavOpen] = useState(false);
+  const { pathname } = useLocation();
+  const ordersActive = pathname === "/store-manager/orders" || pathname.startsWith("/store-manager/tracking") || pathname.startsWith("/store-manager/receipts");
 
   const outletId = profile?.outletIds?.[0];
+
+  useEffect(() => {
+    if (!navOpen) return;
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setNavOpen(false); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [navOpen]);
 
   const navContent = (
     <>
@@ -25,28 +34,28 @@ export function StoreManagerLayout() {
       <nav className="sm-nav" aria-label={t("Store Manager")}>
         <span className="sm-nav-label">{t("Store Manager Workspace")}</span>
         <NavLink to="/store-manager" end className={({ isActive }) => `sm-nav-item${isActive ? " active" : ""}`} onClick={() => setNavOpen(false)}>
-          <img src={iconCategory} alt="" aria-hidden="true" width={20} height={20} />
+          <span className="sm-nav-icon sm-nav-icon--light" aria-hidden="true"><img src={iconCategory} alt="" width={20} height={20} /></span>
           {t("Dashboard")}
         </NavLink>
         <NavLink to="/store-manager/orders/new" className={({ isActive }) => `sm-nav-item${isActive ? " active" : ""}`} onClick={() => setNavOpen(false)}>
-          <img src={iconVector} alt="" aria-hidden="true" width={16} height={16} />
+          <span className="sm-nav-icon" aria-hidden="true"><img src={iconVector} alt="" width={15} height={11} /></span>
           {t("Place Orders")}
         </NavLink>
-        <NavLink to="/store-manager/orders" className={({ isActive }) => `sm-nav-item${isActive ? " active" : ""}`} onClick={() => setNavOpen(false)}>
-          <img src={iconBox} alt="" aria-hidden="true" width={20} height={20} />
+        <Link to="/store-manager/orders" className={`sm-nav-item${ordersActive ? " active" : ""}`} aria-current={ordersActive ? "page" : undefined} onClick={() => setNavOpen(false)}>
+          <span className="sm-nav-icon" aria-hidden="true"><img src={iconBox} alt="" width={20} height={20} /></span>
           {t("Orders")}
-        </NavLink>
+        </Link>
       </nav>
 
       <hr className="sm-sidebar-hr sm-sidebar-hr--mid" />
 
       <nav className="sm-nav sm-nav--secondary" aria-label={t("Secondary")}>
         <NavLink to="/store-manager/notifications" className={({ isActive }) => `sm-nav-item${isActive ? " active" : ""}`} onClick={() => setNavOpen(false)}>
-          <img src={iconBell} alt="" aria-hidden="true" width={20} height={20} />
+          <span className="sm-nav-icon" aria-hidden="true"><img src={iconBell} alt="" width={15} height={16} /></span>
           {t("Notifications")}
         </NavLink>
         <span className="sm-nav-item sm-nav-item--static">
-          <img src={iconHelp} alt="" aria-hidden="true" width={20} height={20} />
+          <span className="sm-nav-icon" aria-hidden="true"><img src={iconHelp} alt="" width={6} height={18} /></span>
           {t("Help & Guide")}
         </span>
       </nav>
