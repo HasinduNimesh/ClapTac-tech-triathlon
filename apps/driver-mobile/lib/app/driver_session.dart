@@ -26,6 +26,7 @@ class DriverSession extends ChangeNotifier {
     TripInfo? trip,
     DateTime Function()? clock,
     bool demoUpdates = false,
+    this.demoAuth = false,
   })  : _baseTrip = trip ?? sampleTrip,
         _clock = clock ?? DateTime.now {
     if (demoUpdates) {
@@ -43,6 +44,9 @@ class DriverSession extends ChangeNotifier {
 
   final LocalDatabase database;
   final SyncQueue queue;
+
+  /// Accept any credentials. Only for demos and tests: staff accounts are not connected yet.
+  final bool demoAuth;
   final TripInfo _baseTrip;
   final DateTime Function() _clock;
 
@@ -54,6 +58,8 @@ class DriverSession extends ChangeNotifier {
 
   bool signedIn = false;
   bool loadConfirmed = false;
+  bool loadDiscrepancyReported = false;
+  String? signInError;
   DriverTab tab = DriverTab.route;
 
   TripInfo get trip => TripInfo(
@@ -70,16 +76,26 @@ class DriverSession extends ChangeNotifier {
 
   int get pendingPhotoUploads => _results.values.where((draft) => draft.hasPhoto).length;
 
-  void signIn() {
+  /// Returns whether the driver was let in. Without a verified identity provider
+  /// this only succeeds in a demo build, so a normal build cannot open the workspace.
+  bool signIn() {
+    if (!demoAuth) {
+      signInError = 'Sign-in is not available yet. Staff accounts are not connected to this build.';
+      notifyListeners();
+      return false;
+    }
+    signInError = null;
     signedIn = true;
     tab = DriverTab.route;
     notifyListeners();
+    return true;
   }
 
   /// Ends the trip and returns to sign-in, clearing what was recorded today.
   void finishTrip() {
     signedIn = false;
     loadConfirmed = false;
+    loadDiscrepancyReported = false;
     tab = DriverTab.route;
     _results.clear();
     updates.removeWhere((item) => item.id != planConflictId);
@@ -115,12 +131,46 @@ class DriverSession extends ChangeNotifier {
     notifyListeners();
   }
 
-  void reportProblem(ProblemReport report, {StopInfo? stop}) {
+  /// The driver says something on the load list is missing. The discrepancy is queued
+  /// and the route stays available, but the load is not marked as confirmed.
+  Future<void> reportLoadDiscrepancy() async {
+    await queue.enqueue(SyncEvent(
+      eventId: 'load-discrepancy-${trip.tripRef}',
+      idempotencyKey: 'load-discrepancy-${trip.tripRef}',
+      action: 'load.discrepancy_reported',
+      resourceType: 'trip',
+      resourceId: trip.tripRef,
+      payload: {'vehicle': trip.vehicleCode},
+    ));
+    loadDiscrepancyReported = true;
+    updates.insert(
+      0,
+      UpdateItem(
+        title: 'Missing load item reported',
+        detail: '${trip.vehicleCode} · ${trip.tripRef} · queued on this phone, not sent yet',
+        time: clockLabel(_clock()),
+        tone: NoteTone.danger,
+      ),
+    );
+    notifyListeners();
+  }
+
+  Future<void> reportProblem(ProblemReport report, {StopInfo? stop}) async {
+    final stamp = _clock().millisecondsSinceEpoch;
+    final key = 'incident-${trip.tripRef}-${stop?.outletCode ?? 'trip'}-${report.kind.name}-$stamp';
+    await queue.enqueue(SyncEvent(
+      eventId: key,
+      idempotencyKey: key,
+      action: 'incident.reported',
+      resourceType: 'trip',
+      resourceId: trip.tripRef,
+      payload: {'kind': report.kind.name, 'note': report.note, if (stop != null) 'stop': stop.outletCode},
+    ));
     updates.insert(
       0,
       UpdateItem(
         title: 'Problem reported',
-        detail: '${problemLabel(report.kind)}${stop == null ? '' : ' · ${stop.outletCode} ${stop.name}'} · saved on this phone',
+        detail: '${problemLabel(report.kind)}${stop == null ? '' : ' · ${stop.outletCode} ${stop.name}'} · queued on this phone, not sent yet',
         time: clockLabel(_clock()),
         tone: NoteTone.danger,
       ),

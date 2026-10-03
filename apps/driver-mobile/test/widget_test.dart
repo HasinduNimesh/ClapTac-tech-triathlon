@@ -6,9 +6,9 @@ import 'package:waypoint_driver/sync/sync.dart';
 
 import 'helpers/render.dart';
 
-Future<InMemorySyncQueue> _boot(WidgetTester tester, {bool demo = false}) async {
+Future<InMemorySyncQueue> _boot(WidgetTester tester, {bool demo = false, bool auth = true}) async {
   final queue = InMemorySyncQueue();
-  await pumpScreen(tester, WaypointDriverApp(database: InMemoryLocalDatabase(), queue: queue, demoUpdates: demo));
+  await pumpScreen(tester, WaypointDriverApp(database: InMemoryLocalDatabase(), queue: queue, demoUpdates: demo, demoAuth: auth));
   return queue;
 }
 
@@ -164,5 +164,53 @@ void main() {
     await tester.tap(find.text('Finish trip'));
     await tester.pumpAndSettle();
     expect(find.text('Drivers, Loaders and Store Manager'), findsOneWidget);
+  });
+
+  testWidgets('a normal build refuses to sign in and explains why', (tester) async {
+    await _boot(tester, auth: false);
+    await tester.enterText(find.byType(TextField).first, 'DRV-0318');
+    await tester.enterText(find.byType(TextField).last, 'secret');
+    await tester.pump();
+    await tester.tap(find.text('Sign in').last);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Sign-in is not available yet'), findsOneWidget);
+    expect(find.text('Check the load before you leave'), findsNothing);
+    expect(find.text('0 of 3 stops completed'), findsNothing);
+  });
+
+  testWidgets('reporting a missing load item queues a discrepancy and says it was not sent', (tester) async {
+    final queue = await _boot(tester);
+    await tester.enterText(find.byType(TextField).first, 'DRV-0318');
+    await tester.enterText(find.byType(TextField).last, 'secret');
+    await tester.pump();
+    await tester.tap(find.text('Sign in').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text("Something isn't on my list"));
+    await tester.pumpAndSettle();
+
+    final actions = (await queue.pending()).map((e) => e.action);
+    expect(actions, contains('load.discrepancy_reported'));
+    expect(find.textContaining('has not been sent to dispatch yet'), findsOneWidget);
+    expect(find.text('0 of 3 stops completed'), findsOneWidget);
+  });
+
+  testWidgets('a problem report is queued and the confirmation does not claim it was sent', (tester) async {
+    final queue = await _boot(tester);
+    await _signInAndConfirmLoad(tester);
+    await tester.tap(find.textContaining('Report a problem'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Send to dispatcher'));
+    await tester.pumpAndSettle();
+
+    final events = await queue.pending();
+    expect(events.where((e) => e.action == 'incident.reported'), hasLength(1));
+    expect(events.firstWhere((e) => e.action == 'incident.reported').payload['kind'], 'vehicleBreakdown');
+    expect(find.textContaining('has not been sent to dispatch yet'), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 6));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Updates'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('queued on this phone, not sent yet'), findsOneWidget);
   });
 }

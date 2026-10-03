@@ -17,8 +17,8 @@ Deliveries go through `DeliveryRepository` into the local database and `SyncQueu
 
 ## Not built yet
 
-- Sign-in does not verify credentials (ThunderID/OIDC is not connected).
-- Nothing is uploaded: `InMemoryLocalDatabase` and `InMemorySyncQueue` are used, so data is lost when the app closes, and the "synced" and "syncing" screens are never reached from the flow.
+- Sign-in is disabled in a normal build because staff accounts (ThunderID/OIDC) are not connected. `flutter run --dart-define=DEMO_AUTH=true` accepts any credentials for demos only.
+- Nothing is uploaded or sent to dispatch (deliveries, load discrepancies and problem reports are only queued locally, and the screens say so): `InMemoryLocalDatabase` and `InMemorySyncQueue` are used, so data is lost when the app closes, and the "synced" and "syncing" screens are never reached from the flow.
 - Photo and signature capture only toggle a "captured" state.
 - Connectivity is not detected, so the no-signal sign-in variant is not triggered automatically.
 - `flutter run --dart-define=DEMO_UPDATES=true` adds a sample plan update so the plan review screen can be opened.

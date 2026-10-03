@@ -5,6 +5,7 @@ import '../../theme/assets.dart';
 import '../../theme/tokens.dart';
 import '../../widgets/app_buttons.dart';
 import '../../widgets/hero_header.dart';
+import '../../widgets/note_banner.dart';
 import '../../widgets/svg_icon.dart';
 import 'sign_in_assets.dart';
 
@@ -35,6 +36,7 @@ class SignInScreen extends StatefulWidget {
     this.noSignal = false,
     this.savedSession,
     this.onForgotPassword,
+    this.errorMessage,
   });
 
   final void Function(String staffId, String password) onSignIn;
@@ -42,6 +44,9 @@ class SignInScreen extends StatefulWidget {
   final bool noSignal;
   final SavedSession? savedSession;
   final VoidCallback? onForgotPassword;
+
+  /// Shown above the fields when sign-in could not proceed (announced to screen readers).
+  final String? errorMessage;
 
   @override
   State<SignInScreen> createState() => _SignInScreenState();
@@ -137,6 +142,17 @@ class _SignInScreenState extends State<SignInScreen> {
                         child: Text('Sign in', style: AppText.of(28, FontWeight.w700, height: 41 / 28)),
                       ),
                       if (noSignal) ...[const SizedBox(height: 20), const _NoSignalAlert()],
+                      if (widget.errorMessage != null) ...[
+                        const SizedBox(height: 20),
+                        Semantics(
+                          liveRegion: true,
+                          child: NoteBanner(
+                            tone: NoteTone.danger,
+                            icon: const SvgIcon(AppAssets.alertTriangleRed, size: 20),
+                            text: widget.errorMessage!,
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 20),
                       _Field(
                         label: 'Staff ID or email',

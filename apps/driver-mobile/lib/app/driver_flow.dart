@@ -30,8 +30,10 @@ class DriverFlow extends StatelessWidget {
       listenable: session,
       builder: (context, _) {
         if (!session.signedIn) {
-          // Placeholder: staff credentials are not verified yet (ThunderID sign-in is not connected).
-          return SignInScreen(onSignIn: (staffId, password) => session.signIn());
+          return SignInScreen(
+            errorMessage: session.signInError,
+            onSignIn: (staffId, password) => session.signIn(),
+          );
         }
         return _DriverHome(session: session);
       },
@@ -61,9 +63,10 @@ class _DriverHomeState extends State<_DriverHome> {
           context,
           trip: session.trip,
           onConfirm: session.confirmLoad,
-          onMissingItem: () {
+          onMissingItem: () async {
+            await session.reportLoadDiscrepancy();
             session.confirmLoad();
-            _notify('Dispatch and the loader will be told something is missing.');
+            _notify('Missing item queued on this phone. It has not been sent to dispatch yet.');
           },
         );
       });
@@ -86,9 +89,10 @@ class _DriverHomeState extends State<_DriverHome> {
       context,
       trip: session.trip,
       stop: stop,
-      onSend: (report) {
-        session.reportProblem(report, stop: stop);
-        _notify('Sent to dispatcher. It is saved on this phone until you reconnect.');
+      onSend: (report) async {
+        await session.reportProblem(report, stop: stop);
+        if (!mounted) return;
+        _notify('Report queued on this phone. It has not been sent to dispatch yet.');
       },
     );
   }
