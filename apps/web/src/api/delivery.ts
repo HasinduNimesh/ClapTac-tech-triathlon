@@ -15,6 +15,7 @@ export type DeliveryStop = {
   parkingConstraint?: string;
   accessInstructions?: string;
   accessInstructionsUpdatedAt?: string;
+  plannedArrivalAt?: string;
   plannedWindowOpen?: string;
   plannedWindowClose?: string;
   stopSequence: number;

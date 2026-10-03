@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { useLocale } from "../i18n";
+import { ESTIMATES_UNAVAILABLE_MESSAGE, validArrivalAt } from "../api/estimateAvailability.mjs";
 import iconHistory from "../assets/store-manager/icon-history.svg";
 import iconTruck from "../assets/store-manager/icon-truck.svg";
 import iconCheck from "../assets/store-manager/icon-check.svg";
@@ -19,7 +20,7 @@ function Chevron() {
 function nextStep(row: Tracking, t: (key: string) => string) {
   if (needsReceipt(row.stage)) return <Link to="/store-manager/receipts" className="sm-track-link">{t("Confirm receipt")}</Link>;
   if (isDeferred(row.stage)) return t("Awaiting a new run");
-  if (row.planning.plannedArrivalAt && (row.stage === "PLANNED" || row.stage === "READY_FOR_DEPARTURE" || row.stage === "OUT_FOR_DELIVERY")) {
+  if (validArrivalAt(row.planning.plannedArrivalAt) && (row.stage === "PLANNED" || row.stage === "READY_FOR_DEPARTURE" || row.stage === "OUT_FOR_DELIVERY")) {
     return `${t("ETA")} ${colomboTime(row.planning.plannedArrivalAt)}`;
   }
   if (row.stage === "CONFIRMED") return t("Awaiting dispatch planning");
@@ -35,7 +36,8 @@ export function StoreManagerDashboardPage() {
   const deferred = rows.filter((row) => isDeferred(row.stage));
   const awaitingReceipt = rows.filter((row) => needsReceipt(row.stage));
   const attentionCount = deferred.length + awaitingReceipt.length;
-  const nextArrival = arriving.find((row) => row.planning.plannedArrivalAt);
+  const nextArrival = arriving.find((row) => validArrivalAt(row.planning.plannedArrivalAt));
+  const estimatesUnavailable = arriving.some((row) => !validArrivalAt(row.planning.plannedArrivalAt));
   const temperature = (value: string) => (value === "chilled" ? t("Chilled") : t("Ambient"));
 
   return (
@@ -52,7 +54,7 @@ export function StoreManagerDashboardPage() {
           <div className="sm-stat-icon sm-stat-icon--blue"><img src={iconHistory} alt="" aria-hidden="true" width={24} height={24} /></div>
           <div className="sm-stat-body">
             <p className="sm-stat-label">{t("Next expected arrival")}</p>
-            <p className="sm-stat-value">{nextArrival?.planning.plannedArrivalAt ? colomboTime(nextArrival.planning.plannedArrivalAt) : "—"}</p>
+            <p className="sm-stat-value">{validArrivalAt(nextArrival?.planning.plannedArrivalAt) ? colomboTime(nextArrival.planning.plannedArrivalAt) : "—"}</p>
             <p className="sm-stat-sub sm-stat-sub--orange">
               {nextArrival ? `${t("Today")} · ${temperature(nextArrival.order.temperatureRequirement)}` : t("No arrivals today")}
             </p>
@@ -78,6 +80,7 @@ export function StoreManagerDashboardPage() {
         </div>
       </div>
 
+      {estimatesUnavailable && <p role="status">{ESTIMATES_UNAVAILABLE_MESSAGE}</p>}
       {loadFailed && (
         <div className="sm-load-error" role="alert">
           <span>{t("Orders could not be loaded. Check your connection and try again.")}</span>
@@ -108,7 +111,7 @@ export function StoreManagerDashboardPage() {
               <div className="sm-order-card-bottom">
                 <p className="sm-order-eta">
                   <span className="muted">{t("Expected arrival:")} </span>
-                  <strong>{row.planning.plannedArrivalAt ? colomboTime(row.planning.plannedArrivalAt) : "—"}</strong>
+                  <strong>{validArrivalAt(row.planning.plannedArrivalAt) ? colomboTime(row.planning.plannedArrivalAt) : "—"}</strong>
                 </p>
                 <Link to={`/store-manager/orders?order=${encodeURIComponent(row.order.id)}`} className="sm-track-link">{t("Track order")}<Chevron /></Link>
               </div>

@@ -1,6 +1,7 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiJSON, Order } from "../api/client";
+import { ESTIMATES_UNAVAILABLE_MESSAGE, validArrivalAt } from "../api/estimateAvailability.mjs";
 import { useAuth } from "../auth/AuthContext";
 import { useLocale } from "../i18n";
 import { deferralExplanation } from "./deferralMessage.mjs";
@@ -75,7 +76,7 @@ export function TrackingPage({receiptsOnly=false}:{receiptsOnly?:boolean}){
       </form>
     </article>):items.map(row=><article className="card" key={row.order.id}>
       <h3>{row.order.orderRef} · {row.order.brand}</h3><p>{t("Requested")} {row.order.requestedDeliveryDate} · {row.order.orderUnits} {t("units")} · {t(row.stage.replace(/_/g," "))}</p>
-      {row.planning.plannedArrivalAt&&<p>{t("Planned arrival")}: {new Date(row.planning.plannedArrivalAt).toLocaleString()}</p>}
+      {validArrivalAt(row.planning.plannedArrivalAt)?<p>{t("Planned arrival")}: {new Date(row.planning.plannedArrivalAt).toLocaleString()}</p>:["PLANNED","READY_FOR_DEPARTURE","OUT_FOR_DELIVERY"].includes(row.stage)&&<p role="status">{ESTIMATES_UNAVAILABLE_MESSAGE}</p>}
       {row.planning.reasonCode&&(()=>{const why=deferralExplanation(row.planning.reasonCode);return <div className="status-bad" role="status"><p><strong>{t("Deferred")}</strong>: {t(why.message)}{row.planning.reasonComment?` · ${row.planning.reasonComment}`:""}</p><p>{t("What happens next")}: {t(why.nextAction)}</p></div>;})()}
       {(row.custody||[]).length>0&&<section className="card"><h4>{t("Tech chain of custody")}</h4><ol>{row.custody!.map(event=><li key={event.id}>{t(event.stage)} · {t("Seal ID")} {event.sealId} · {event.serialNumbers.join(", ")} · {event.condition} · {event.recordedBy} · {new Date(event.recordedAt).toLocaleString()}{event.receiverName?` · ${event.receiverName}`:""}{event.evidenceRef?` · ${t("Evidence reference")} ${event.evidenceRef}`:""}</li>)}</ol></section>}
       {row.delivery&&<p>{t("Driver outcome")}: {t(row.delivery.outcome||row.delivery.runStatus)}{row.delivery.reason?` · ${t(row.delivery.reason)}`:""} · {row.delivery.proofs?.length||0} {t("proof item(s)")}{row.delivery.proofs?.find((p)=>p.receiverName)&&` · ${t("Received by")} ${row.delivery.proofs.find((p)=>p.receiverName)!.receiverName}`}</p>}
