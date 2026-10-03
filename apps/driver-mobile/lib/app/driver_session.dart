@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../auth/auth_gateway.dart';
@@ -12,6 +14,7 @@ import '../sync/sync.dart';
 import '../sync/sqlite_sync_queue.dart';
 import '../sync/sync_worker.dart';
 import '../trips/trip_source.dart';
+import '../trips/trip_start.dart';
 import '../widgets/driver_shell.dart';
 import '../widgets/note_banner.dart';
 
@@ -39,12 +42,15 @@ class DriverSession extends ChangeNotifier {
     this.auth,
     this.trips,
     this.worker,
+    this.starter,
   })  : _initialTrip = trip ?? ((demoRoute || (auth == null && demoAuth)) ? sampleTrip : null),
         _clock = clock ?? DateTime.now,
         _newId = newId ?? newOperationId {
     worker?.onProgress = (progress, detail) {
       syncProgress = progress;
       syncDetail = detail;
+      // Each tick is a chance to start a trip that could not be started without a connection.
+      if (tripStartState == TripStartState.waiting && !tripStarting && loadResolved) unawaited(startTrip());
       if (signedIn) _refreshPending();
       notifyListeners();
     };
@@ -64,6 +70,9 @@ class DriverSession extends ChangeNotifier {
   final LocalDatabase database;
   final SyncQueue queue;
   final DeliverySyncWorker? worker;
+
+  /// Acknowledges the plan and starts the run on the server. Null in demo and test sessions.
+  final TripStarter? starter;
 
   @override
   void dispose() {
@@ -106,6 +115,11 @@ class DriverSession extends ChangeNotifier {
   /// Loading today's route from the server, and why it failed (null when it did not).
   bool tripsLoading = false;
   String? tripsError;
+
+  /// Whether the server run has been started, and why not when it was refused.
+  TripStartState tripStartState = TripStartState.notStarted;
+  String? tripStartMessage;
+  bool get tripStarting => tripStartState == TripStartState.starting;
   DriverProfile? identity;
   LoadCheck loadCheck = LoadCheck.unchecked;
   String? signInError;
@@ -128,6 +142,9 @@ class DriverSession extends ChangeNotifier {
       stops: base.stops,
       completedStops: base.completedStops + _results.length,
       completedStopIds: base.completedStopIds,
+      planId: base.planId,
+      planVersion: base.planVersion,
+      runStatus: base.runStatus,
     );
   }
 
@@ -145,7 +162,7 @@ class DriverSession extends ChangeNotifier {
       SyncProgress.idle => ('Sync up to date', 'No unsent updates are waiting.', NoteTone.success),
       SyncProgress.syncing => ('Syncing', 'Sending saved updates to Waypoint in order.', NoteTone.info),
       SyncProgress.waitingForSignIn => ('Sign-in needed', 'Saved updates remain on this phone until you sign in.', NoteTone.amber),
-      SyncProgress.waitingForTripStart => ('Trip not started', 'Saved stop updates will sync after the plan is acknowledged and the trip is started.', NoteTone.amber),
+      SyncProgress.waitingForTripStart => ('Trip not started', tripStartMessage ?? 'Saved stop updates will sync after the plan is acknowledged and the trip is started.', NoteTone.amber),
       SyncProgress.waitingForProof => ('Proof needed', 'The outcome stays on this phone until its photo or signature is uploaded.', NoteTone.amber),
       SyncProgress.offline => ('Waiting for connection', syncDetail ?? 'Saved updates will retry when Waypoint can be reached.', NoteTone.offline),
       SyncProgress.needsAttention => ('Sync needs attention', syncDetail ?? 'A saved update needs review before later updates can sync.', NoteTone.danger),
@@ -218,17 +235,27 @@ class DriverSession extends ChangeNotifier {
     }
     final loaded = result.trip;
     if (loaded != null) {
+      final sameTrip = _baseTrip?.tripId == loaded.tripId;
       _baseTrip = loaded;
-      loadCheck = LoadCheck.unchecked;
+      if (loaded.started) {
+        // Already started (the app was restarted mid-run): do not ask for the load check again.
+        loadCheck = LoadCheck.confirmed;
+        tripStartState = TripStartState.started;
+        tripStartMessage = null;
+      } else if (!sameTrip) {
+        loadCheck = LoadCheck.unchecked;
+        tripStartState = TripStartState.notStarted;
+        tripStartMessage = null;
+      }
       await _restoreQueuedActions(loaded);
+      // A reload after the server refused the start (the plan changed) tries again with the new version.
+      if (sameTrip && loadResolved && !loaded.started) {
+        notifyListeners();
+        await startTrip();
+        return;
+      }
     } else if (result.signInExpired) {
-      // The stored sign-in is no longer accepted: go back to sign-in instead of showing a dead end.
-      worker?.stop();
-      signedIn = false;
-      if (queue is SqliteSyncQueue) await (queue as SqliteSyncQueue).useOwner(null);
-      await auth?.signOut();
-      identity = null;
-      signInError = result.failure;
+      await _signInExpired(result.failure);
     } else {
       tripsError = result.failure;
     }
@@ -341,8 +368,52 @@ class DriverSession extends ChangeNotifier {
     notifyListeners();
   }
 
-  void confirmLoad() {
+  /// The stored sign-in is no longer accepted: go back to sign-in instead of showing a dead end.
+  Future<void> _signInExpired(String? message) async {
+    worker?.stop();
+    signedIn = false;
+    if (queue is SqliteSyncQueue) await (queue as SqliteSyncQueue).useOwner(null);
+    await auth?.signOut();
+    identity = null;
+    signInError = message;
+  }
+
+  /// Confirming the load is also the driver setting off, so it starts the trip on the server.
+  Future<void> confirmLoad() async {
     loadCheck = LoadCheck.confirmed;
+    notifyListeners();
+    await startTrip();
+  }
+
+  /// Acknowledges the current plan and starts the server run. Needs a connection: when there is
+  /// none it waits and is retried on each sync tick, and nothing the driver recorded is lost.
+  Future<void> startTrip() async {
+    final source = starter;
+    if (source == null || !hasRoute || tripStarting || tripStartState == TripStartState.started) return;
+    final base = _baseTrip!;
+    tripStartState = TripStartState.starting;
+    tripStartMessage = null;
+    notifyListeners();
+    final result = await source.start(trip, operationId: _operationId('start:${base.tripId}'));
+    if (!signedIn || _baseTrip?.tripId != base.tripId) {
+      tripStartState = TripStartState.notStarted;
+      return;
+    }
+    switch (result.status) {
+      case TripStartStatus.started:
+        tripStartState = TripStartState.started;
+        _baseTrip = _baseTrip!.withRunStatus('in_progress');
+        unawaited(worker?.syncNow());
+      case TripStartStatus.offline:
+        tripStartState = TripStartState.waiting;
+        tripStartMessage = 'The trip starts when Waypoint can be reached. Saved updates stay on this phone until then.';
+      case TripStartStatus.signInNeeded:
+        tripStartState = TripStartState.notStarted;
+        await _signInExpired(result.message);
+      case TripStartStatus.refused:
+        tripStartState = TripStartState.refused;
+        tripStartMessage = result.message;
+    }
     notifyListeners();
   }
 
@@ -415,6 +486,8 @@ class DriverSession extends ChangeNotifier {
       description: 'Driver departed without resolving a reported missing load item.',
     );
     loadCheck = LoadCheck.overridden;
+    notifyListeners();
+    await startTrip();
     updates.insert(
       0,
       UpdateItem(
@@ -507,6 +580,9 @@ class DriverSession extends ChangeNotifier {
 }
 
 enum LoadCheck { unchecked, confirmed, discrepancy, overridden }
+
+/// `waiting`: no connection yet, will retry. `refused`: the server said no (see the message).
+enum TripStartState { notStarted, starting, waiting, started, refused }
 
 /// Category names used by the delivery sync contract for INCIDENT_REPORT.
 String incidentCategory(ProblemKind kind) {

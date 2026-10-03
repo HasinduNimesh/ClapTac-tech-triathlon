@@ -44,7 +44,7 @@ void main() {
         draft: const DeliveryDraft(outcome: DeliveryOutcome.delivered),
         occurredAt: _at,
       );
-      expect(op.payload, {'code': 'DELIVERED'});
+      expect(op.payload, {'code': 'DELIVERED', 'deliveredUnits': 12});
       expect(op.toSyncJson().containsKey('dependsOnOperationId'), isFalse);
     });
 
@@ -60,7 +60,7 @@ void main() {
       expect(op.toSyncJson()['dependsOnOperationId'], 'proof-1');
     });
 
-    test('a partial delivery keeps the quantity in the note because the API has no field for it', () {
+    test('a partial delivery sends the quantity as deliveredUnits and keeps the driver\'s note as it is', () {
       final op = Operations.stopOutcome(
         operationId: 'op-3',
         trip: sampleTrip,
@@ -69,8 +69,24 @@ void main() {
         occurredAt: _at,
       );
       expect(op.payload['code'], 'PARTIAL');
-      expect(op.payload['note'], 'Received 5 of 12 units. Two cartons damaged');
+      expect(op.payload['deliveredUnits'], 5);
+      expect(op.payload['note'], 'Two cartons damaged');
       expect(op.payload.containsKey('reason'), isFalse);
+    });
+
+    test('failed and refused deliveries deliver no units', () {
+      for (final outcome in [DeliveryOutcome.failed, DeliveryOutcome.refused]) {
+        final op = Operations.stopOutcome(operationId: 'op', trip: sampleTrip, stop: _stop, draft: DeliveryDraft(outcome: outcome), occurredAt: _at);
+        expect(op.payload['deliveredUnits'], 0, reason: '$outcome');
+      }
+    });
+
+    test('a stop without expected units sends no deliveredUnits, which the server would reject', () {
+      const unknown = StopInfo(stopId: 'stop-x', sequence: 1, outletCode: 'O', name: 'N', windowStart: '', windowEnd: '', accessNote: '', contactNote: '', goods: 'G');
+      for (final outcome in DeliveryOutcome.values) {
+        final op = Operations.stopOutcome(operationId: 'op', trip: sampleTrip, stop: unknown, draft: DeliveryDraft(outcome: outcome, quantity: 3), occurredAt: _at);
+        expect(op.payload.containsKey('deliveredUnits'), isFalse, reason: '$outcome');
+      }
     });
 
     test('failed and refused deliveries always carry a valid reason code', () {

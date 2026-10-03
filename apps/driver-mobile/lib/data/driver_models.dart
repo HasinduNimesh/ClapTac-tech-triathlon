@@ -73,6 +73,9 @@ class TripInfo {
     required this.stops,
     this.completedStops = 0,
     this.completedStopIds = const {},
+    this.planId = '',
+    this.planVersion = 0,
+    this.runStatus = '',
   });
 
   /// The server's trip and delivery-run ids, used when operations are sent.
@@ -87,6 +90,30 @@ class TripInfo {
   final List<StopInfo> stops;
   final int completedStops;
   final Set<String> completedStopIds;
+
+  /// What the server needs before a trip can start: the plan the driver must acknowledge, its
+  /// current version, and whether the run is already in progress (`prepared`, `in_progress`).
+  final String planId;
+  final int planVersion;
+  final String runStatus;
+
+  bool get started => runStatus == 'in_progress';
+
+  TripInfo withRunStatus(String status) => TripInfo(
+        tripId: tripId,
+        runId: runId,
+        vehicleCode: vehicleCode,
+        plate: plate,
+        tripRef: tripRef,
+        depot: depot,
+        window: window,
+        stops: stops,
+        completedStops: completedStops,
+        completedStopIds: completedStopIds,
+        planId: planId,
+        planVersion: planVersion,
+        runStatus: status,
+      );
 
   /// "VEH001", or "VEH001 - WP LB-4521" when a plate is known.
   String get vehicleLabel => plate.isEmpty ? vehicleCode : '$vehicleCode - $plate';

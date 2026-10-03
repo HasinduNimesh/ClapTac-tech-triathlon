@@ -77,7 +77,8 @@ class _RecordDeliveryScreenState extends State<RecordDeliveryScreen> {
   bool get _valid {
     if (!_quantityEditable) return true;
     final q = _enteredQuantity;
-    return q != null && q >= 0 && q <= widget.expectedQuantity;
+    // The server accepts a partial delivery only between none and all of the expected units.
+    return q != null && q > 0 && q < widget.expectedQuantity;
   }
 
   int get _effectiveQuantity {
@@ -219,7 +220,7 @@ class _RecordDeliveryScreenState extends State<RecordDeliveryScreen> {
                 suffixText: widget.unit,
                 suffixStyle: AppText.of(14, FontWeight.w500, height: 1.35),
                 isDense: false,
-                errorText: _quantityEditable && _enteredQuantity == null ? 'Enter a quantity from 0 to $expected' : null,
+                errorText: _quantityEditable && !_valid ? (expected < 2 ? 'This stop has too few units for a partial delivery' : 'Enter a quantity from 1 to ${expected - 1}') : null,
                 helperText: _quantityEditable ? 'Expected $expected ${widget.unit}' : null,
                 contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                 enabledBorder: _border(AppColors.border),

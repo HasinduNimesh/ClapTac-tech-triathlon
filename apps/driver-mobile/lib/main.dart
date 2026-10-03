@@ -14,12 +14,13 @@ import 'sync/sync.dart';
 import 'sync/sqlite_sync_queue.dart';
 import 'sync/sync_worker.dart';
 import 'trips/trip_source.dart';
+import 'trips/trip_start.dart';
 import 'trips/trips_api.dart';
 import 'theme/app_theme.dart';
 
-({AuthGateway? auth, TripSource? trips, SyncQueue queue, DeliverySyncWorker? worker}) _buildServices() {
+({AuthGateway? auth, TripSource? trips, TripStarter? starter, SyncQueue queue, DeliverySyncWorker? worker}) _buildServices() {
   final config = AuthConfig.fromEnvironment();
-  if (!config.isConfigured) return (auth: null, trips: null, queue: InMemorySyncQueue(), worker: null);
+  if (!config.isConfigured) return (auth: null, trips: null, starter: null, queue: InMemorySyncQueue(), worker: null);
   final auth = OidcAuthGateway(
     config: config,
     client: AppAuthOidcClient(config),
@@ -30,6 +31,7 @@ import 'theme/app_theme.dart';
   return (
     auth: auth,
     trips: ApiTripSource(api: TripsApi(client: http.Client(), baseUrl: config.apiBaseUrl), auth: auth),
+    starter: ApiTripStarter(client: http.Client(), baseUrl: config.apiBaseUrl, auth: auth),
     queue: queue,
     worker: DeliverySyncWorker(queue: queue, auth: auth, client: http.Client(), baseUrl: config.apiBaseUrl),
   );
@@ -42,6 +44,7 @@ void main() {
     // Real sign-in when OIDC_ISSUER and API_BASE_URL are provided; otherwise sign-in stays disabled.
     auth: services.auth,
     trips: services.trips,
+    starter: services.starter,
     database: InMemoryLocalDatabase(),
     queue: services.queue,
     worker: services.worker,
@@ -62,6 +65,7 @@ class WaypointDriverApp extends StatefulWidget {
     this.demoRoute = false,
     this.auth,
     this.trips,
+    this.starter,
     this.worker,
   });
 
@@ -72,6 +76,7 @@ class WaypointDriverApp extends StatefulWidget {
   final bool demoRoute;
   final AuthGateway? auth;
   final TripSource? trips;
+  final TripStarter? starter;
   final DeliverySyncWorker? worker;
 
   @override
@@ -87,6 +92,7 @@ class _WaypointDriverAppState extends State<WaypointDriverApp> {
     demoRoute: widget.demoRoute,
     auth: widget.auth,
     trips: widget.trips,
+    starter: widget.starter,
     worker: widget.worker,
   );
 
