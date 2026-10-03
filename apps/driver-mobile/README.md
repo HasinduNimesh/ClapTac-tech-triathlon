@@ -25,6 +25,8 @@ What the driver does is queued as delivery sync operations (`lib/sync/operations
 
 Every operation has a random operation id that is created once and kept, so a repeat is recognised as a duplicate. In a configured build, the queue is stored in SQLite under the signed-in Waypoint user ID. It is replayed in order on app restart and every 15 seconds while the app is open. An `APPLIED` result, or a `DUPLICATE` whose original result was `APPLIED`, marks an entry synced. `CONFLICT` and `REJECTED` stay on the phone and pause later entries; the Updates tab shows the problem. Network failures retain the entry for retry. The queue is not encrypted separately from the phone's application storage; device encryption and screen lock should be enabled on production phones.
 
+The queue and worker have automated tests for SQLite restart persistence, ordering, retries, and `APPLIED`, `DUPLICATE`, `CONFLICT`, and `REJECTED` responses. `test/live_sync_test.dart` is an opt-in integration check that sends one temporary ROAD incident through a local delivery service using a local driver token. It requires `WAYPOINT_LIVE_DRIVER_TOKEN_FILE`, `WAYPOINT_LIVE_TRIP_ID`, `WAYPOINT_LIVE_OPERATION_ID`, and `WAYPOINT_LIVE_API_BASE_URL`; the URL must be loopback HTTP. Clean its incident and sync operation from the disposable database after the check. No credential is kept in the repository.
+
 ## Sign-in
 
 Sign-in uses Authorization Code + PKCE through the system browser (AppAuth). The app never sees the username or password. After the browser returns, the app calls `GET /api/v1/shared/profiles/me` with the access token and only continues for accounts whose role is `DRIVER`:

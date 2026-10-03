@@ -19,8 +19,8 @@ String _two(int value) => value.toString().padLeft(2, '0');
 
 String clockLabel(DateTime time) => '${_two(time.hour)}:${_two(time.minute)}';
 
-/// A local action may be sent in the background; Updates shows its current state.
-const savedNotSent = 'saved on this phone';
+/// A local action remains queued until Waypoint confirms it was applied.
+const savedNotSent = 'saved on this phone, not sent yet';
 
 /// App state for the signed-in driver: today's trip, what has been recorded on this phone, and the
 /// updates list.

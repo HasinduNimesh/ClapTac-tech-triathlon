@@ -62,8 +62,8 @@ class SyncStateScreen extends StatelessWidget {
             color: tinted(215, 172, 79, 0.4),
             icon: StatesAssets.wifiOff,
             iconSize: 33.25,
-            title: 'Saved on this phone',
-            subtitle: 'Check Updates for its sync status.',
+            title: 'Offline',
+            subtitle: 'Saved on this phone; not sent yet.',
           ),
           const SizedBox(height: 13),
           const StateIllustration(circle: StatesAssets.circleNeutral, glyphs: [

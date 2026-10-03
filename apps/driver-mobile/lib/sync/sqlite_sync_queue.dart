@@ -15,7 +15,12 @@ class SqliteSyncQueue implements SyncQueue {
 
   static Future<Database> _openDefault() async {
     final root = await getDatabasesPath();
-    return openDatabase('$root/waypoint_driver_sync.db', version: 1, onCreate: (db, _) async {
+    return openAt('$root/waypoint_driver_sync.db');
+  }
+
+  /// Opens the same schema through an injected factory for desktop tests.
+  static Future<Database> openAt(String path, {DatabaseFactory? factory}) async {
+    return (factory ?? databaseFactory).openDatabase(path, options: OpenDatabaseOptions(version: 1, onCreate: (db, _) async {
       await db.execute('''
         CREATE TABLE operations (
           sequence INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -29,7 +34,7 @@ class SqliteSyncQueue implements SyncQueue {
         )
       ''');
       await db.execute('CREATE INDEX operations_owner_order ON operations(owner_id, sequence)');
-    });
+    }));
   }
 
   Future<Database> get db => _database ??= _open();
