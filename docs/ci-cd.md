@@ -1,9 +1,13 @@
 # CI and Azure VM deployment
 
-`.github/workflows/ci-cd.yml` checks every pull request and every push to `main`:
-Go vet, tests, and build; web tests and build; Flutter analysis and tests; and
-Docker Compose configuration and image builds. These jobs do not receive
-production secrets. A production deployment runs only when **Actions → CI and
+`.github/workflows/ci-cd.yml` checks pull requests and pushes to `main`. It
+selects jobs by changed paths: Go vet/tests/build for backend changes, web
+tests/build for web changes, Flutter analysis/tests for mobile changes, and
+Compose config plus affected image builds for deployable changes. Workflow and
+Makefile changes run every check. Documentation-only changes do not rebuild
+applications. These jobs do not receive production secrets. A manual deployment
+runs the complete check set regardless of changed paths. Production deployment
+runs only when **Actions → CI and
 production deployment → Run workflow** is started on `main` and all checks pass.
 
 ## Configure production access
