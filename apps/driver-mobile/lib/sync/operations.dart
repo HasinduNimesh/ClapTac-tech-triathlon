@@ -119,8 +119,10 @@ class Operations {
         occurredAt: occurredAt,
       );
 
-  /// There is no field for a partial quantity in the delivery API yet, so it goes in the note
-  /// rather than being lost.
+  /// `deliveredUnits` is sent only when the server knows the stop's expected units, because it
+  /// checks the quantity against them: DELIVERED must equal them, PARTIAL must be more than none
+  /// and fewer than all, and a failed or refused stop delivers none. Without expected units the
+  /// server rejects the field, so it is left out and the quantity stays unknown to the server.
   static OfflineOperation stopOutcome({
     required String operationId,
     required TripInfo trip,
@@ -129,10 +131,14 @@ class Operations {
     required DateTime occurredAt,
     String? proofOperationId,
   }) {
-    final notes = <String>[
-      if (draft.outcome == DeliveryOutcome.partial && draft.quantity != null) 'Received ${draft.quantity} of ${stop.units ?? 'an unrecorded number of'} ${stop.unitLabel}.',
-      if (draft.notes.isNotEmpty) draft.notes,
-    ];
+    final expected = stop.units;
+    final deliveredUnits = expected == null
+        ? null
+        : switch (draft.outcome) {
+            DeliveryOutcome.delivered => expected,
+            DeliveryOutcome.partial => draft.quantity,
+            DeliveryOutcome.failed || DeliveryOutcome.refused => 0,
+          };
     final reason = reasonFor(draft);
     return OfflineOperation(
       operationId: operationId,
@@ -145,7 +151,8 @@ class Operations {
       payload: {
         'code': outcomeCode(draft.outcome),
         if (reason != null) 'reason': reason,
-        if (notes.isNotEmpty) 'note': notes.join(' '),
+        if (deliveredUnits != null) 'deliveredUnits': deliveredUnits,
+        if (draft.notes.isNotEmpty) 'note': draft.notes,
       },
     );
   }

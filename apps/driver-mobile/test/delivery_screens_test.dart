@@ -153,13 +153,24 @@ void main() {
       expect(saved!.hasSignature, isFalse);
     });
 
-    testWidgets('quantity is clamped to the expected amount', (tester) async {
+    testWidgets('a partial quantity must be more than none and fewer than all', (tester) async {
       await pumpScreen(tester, screen());
       await tester.tap(find.text('Partial'));
       await tester.pump();
+      // Typing more than expected is clamped to the expected amount, which is a full delivery.
       await tester.enterText(find.byType(TextField), '999');
       await tester.pump();
       expect(tester.widget<TextField>(find.byType(TextField)).controller!.text, '120');
+      expect(find.text('Enter a quantity from 1 to 119'), findsOneWidget);
+      expect(saveEnabled(tester), isFalse);
+      await tester.enterText(find.byType(TextField), '0');
+      await tester.pump();
+      expect(saveEnabled(tester), isFalse);
+      await tester.enterText(find.byType(TextField), '119');
+      await tester.pump();
+      expect(saveEnabled(tester), isTrue);
+      await tester.enterText(find.byType(TextField), '1');
+      await tester.pump();
       expect(saveEnabled(tester), isTrue);
     });
 
@@ -169,7 +180,7 @@ void main() {
       await tester.pump();
       await tester.enterText(find.byType(TextField), '');
       await tester.pump();
-      expect(find.text('Enter a quantity from 0 to 120'), findsOneWidget);
+      expect(find.text('Enter a quantity from 1 to 119'), findsOneWidget);
       expect(saveEnabled(tester), isFalse);
     });
 
