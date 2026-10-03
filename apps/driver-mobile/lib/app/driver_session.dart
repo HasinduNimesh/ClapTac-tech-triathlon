@@ -1,14 +1,14 @@
 import 'package:flutter/foundation.dart';
 
+import '../auth/auth_gateway.dart';
+import '../auth/profile_api.dart';
 import '../data/driver_models.dart';
-import '../deliveries/deliveries.dart';
+import '../data/sample_data.dart';
 import '../offline/local_database.dart';
-import '../proof/proof.dart';
 import '../screens/states/end_of_day_screen.dart';
 import '../screens/updates/updates_screen.dart';
-import '../shared/models.dart';
+import '../sync/operations.dart';
 import '../sync/sync.dart';
-import '../data/sample_data.dart';
 import '../widgets/driver_shell.dart';
 import '../widgets/note_banner.dart';
 
@@ -16,24 +16,33 @@ String _two(int value) => value.toString().padLeft(2, '0');
 
 String clockLabel(DateTime time) => '${_two(time.hour)}:${_two(time.minute)}';
 
-/// App state for the signed-in driver: today's trip, what has been recorded on
-/// this phone, and the updates list. Deliveries are written to the local
-/// database and queued for sync; nothing is uploaded yet.
+/// What the app tells the driver about anything that is only queued on the phone.
+const savedNotSent = 'saved on this phone, not sent yet';
+
+/// App state for the signed-in driver: today's trip, what has been recorded on this phone, and the
+/// updates list.
+///
+/// Everything the driver does is queued as a delivery sync operation keyed by the server's trip
+/// and stop ids. Nothing is sent: there is no sync worker yet, and the queue is in memory.
 class DriverSession extends ChangeNotifier {
   DriverSession({
     required this.database,
     required this.queue,
     TripInfo? trip,
     DateTime Function()? clock,
+    String Function()? newId,
     bool demoUpdates = false,
     this.demoAuth = false,
-  })  : _baseTrip = trip ?? sampleTrip,
-        _clock = clock ?? DateTime.now {
+    this.demoRoute = false,
+    this.auth,
+  })  : _baseTrip = trip ?? ((demoRoute || (auth == null && demoAuth)) ? sampleTrip : null),
+        _clock = clock ?? DateTime.now,
+        _newId = newId ?? newOperationId {
     if (demoUpdates) {
       updates.add(const UpdateItem(
         id: planConflictId,
         title: 'Plan update needs review',
-        detail: 'Dispatch published Plan v4. Review how it affects your saved stop.',
+        detail: 'Demo only: sample plan change, nothing is sent to dispatch.',
         time: '06:32',
         tone: NoteTone.amber,
       ));
@@ -47,41 +56,105 @@ class DriverSession extends ChangeNotifier {
 
   /// Accept any credentials. Only for demos and tests: staff accounts are not connected yet.
   final bool demoAuth;
-  final TripInfo _baseTrip;
+
+  /// Show the sample route to a signed-in driver. Only for demos: assigned trips are not loaded yet.
+  final bool demoRoute;
+
+  /// Real sign-in through the identity provider. When set it replaces [demoAuth].
+  final AuthGateway? auth;
+
+  final TripInfo? _baseTrip;
   final DateTime Function() _clock;
+  final String Function() _newId;
 
-  late final DeliveryRepository _deliveries = DeliveryRepository(database, queue);
-  late final ProofRepository _proofs = ProofRepository(queue);
+  /// One id per kind of thing the driver did (per stop where it applies), created once and kept so a
+  /// repeat or a retry is recognised as the same operation.
+  final Map<String, String> _operationIds = {};
 
-  final Map<int, DeliveryDraft> _results = {};
+  final Map<String, DeliveryDraft> _results = {};
   final List<UpdateItem> updates = [];
+  int _incidents = 0;
 
   bool signedIn = false;
+  bool signingIn = false;
+  bool restoring = false;
+  DriverProfile? identity;
   LoadCheck loadCheck = LoadCheck.unchecked;
   String? signInError;
   DriverTab tab = DriverTab.route;
 
-  TripInfo get trip => TripInfo(
-        vehicleCode: _baseTrip.vehicleCode,
-        plate: _baseTrip.plate,
-        tripRef: _baseTrip.tripRef,
-        depot: _baseTrip.depot,
-        window: _baseTrip.window,
-        stops: _baseTrip.stops,
-        completedStops: _results.length,
-      );
+  /// Whether there is a route to show. Without one (a real sign-in, no trips loaded yet) the app
+  /// says so instead of showing sample data.
+  bool get hasRoute => _baseTrip != null;
+
+  TripInfo get trip {
+    final base = _baseTrip!;
+    return TripInfo(
+      tripId: base.tripId,
+      runId: base.runId,
+      vehicleCode: base.vehicleCode,
+      plate: base.plate,
+      tripRef: base.tripRef,
+      depot: base.depot,
+      window: base.window,
+      stops: base.stops,
+      completedStops: _results.length,
+    );
+  }
 
   /// The route can only be started once the load is confirmed, or the driver has
   /// explicitly chosen to depart after reporting a discrepancy.
   bool get loadResolved => loadCheck == LoadCheck.confirmed || loadCheck == LoadCheck.overridden;
 
-  bool get routeComplete => _results.length >= _baseTrip.stops.length;
+  bool get routeComplete => hasRoute && _results.length >= _baseTrip!.stops.length;
 
-  int get pendingPhotoUploads => _results.values.where((draft) => draft.hasPhoto).length;
+  /// Delivery records and reports that are queued but not sent. Nothing is sent yet.
+  int get pendingUploads => _results.length + _incidents;
 
-  /// Returns whether the driver was let in. Without a verified identity provider
-  /// this only succeeds in a demo build, so a normal build cannot open the workspace.
-  bool signIn() {
+  bool get usesIdentityProvider => auth != null;
+
+  String _operationId(String key) => _operationIds.putIfAbsent(key, _newId);
+
+  /// Opens a previous sign-in that is still valid, so a driver who is already signed in
+  /// (possibly without signal) does not have to sign in again.
+  Future<void> restore() async {
+    final gateway = auth;
+    if (gateway == null) return;
+    restoring = true;
+    notifyListeners();
+    final profile = await gateway.restore();
+    restoring = false;
+    if (profile != null) {
+      identity = profile;
+      signedIn = true;
+    }
+    notifyListeners();
+  }
+
+  /// Returns whether the driver was let in. A real sign-in goes through the identity provider
+  /// and the Waypoint profile; without one this only succeeds in a demo build, so a normal
+  /// build cannot open the workspace.
+  Future<bool> signIn() async {
+    final gateway = auth;
+    if (gateway != null) {
+      if (signingIn) return false;
+      signingIn = true;
+      signInError = null;
+      notifyListeners();
+      final outcome = await gateway.signIn();
+      signingIn = false;
+      final profile = outcome.profile;
+      if (profile == null) {
+        signInError = outcome.failure?.message;
+        notifyListeners();
+        return false;
+      }
+      identity = profile;
+      signedIn = true;
+      tab = DriverTab.route;
+      notifyListeners();
+      return true;
+    }
     if (!demoAuth) {
       signInError = 'Sign-in is not available yet. Staff accounts are not connected to this build.';
       notifyListeners();
@@ -94,12 +167,21 @@ class DriverSession extends ChangeNotifier {
     return true;
   }
 
-  /// Ends the trip and returns to sign-in, clearing what was recorded today.
-  void finishTrip() {
+  /// Ends the trip and signs out. If every stop was recorded, route completion is queued first.
+  /// What is already queued stays queued: finishing the trip does not discard anything unsent.
+  Future<void> finishTrip() async {
+    if (routeComplete) {
+      await queue.enqueue(Operations.routeCompleted(operationId: _operationId('route-completed'), trip: trip, occurredAt: _clock()).toSyncEvent());
+    }
+    final gateway = auth;
+    if (gateway != null) await gateway.signOut();
+    identity = null;
     signedIn = false;
     loadCheck = LoadCheck.unchecked;
     tab = DriverTab.route;
     _results.clear();
+    _operationIds.clear();
+    _incidents = 0;
     updates.removeWhere((item) => item.id != planConflictId);
     notifyListeners();
   }
@@ -115,17 +197,29 @@ class DriverSession extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// The driver parked at the stop. The server needs an arrival before it accepts an outcome.
+  Future<void> markArrived(StopInfo stop) {
+    return queue.enqueue(Operations.arrived(operationId: _operationId('arrived:${stop.stopId}'), trip: trip, stop: stop, occurredAt: _clock()).toSyncEvent());
+  }
+
+  /// Queues the outcome as a `STOP_OUTCOME`. No proof is attached: photo and signature capture is
+  /// not built, so there is nothing to upload and no `dependsOnOperationId` to claim. The server
+  /// requires proof for delivered and partial outcomes, so those will be rejected when sent until
+  /// capture exists.
   Future<void> recordDelivery(StopInfo stop, DeliveryDraft draft) async {
-    await _deliveries.recordOutcome(Delivery(id: stop.outletCode, tripId: trip.tripRef, status: draft.outcome.name));
-    if (draft.hasPhoto) {
-      await _proofs.queueProof(ProofRecord(deliveryId: stop.outletCode, objectKey: 'local/${stop.outletCode}.jpg'));
-    }
-    _results[stop.sequence] = draft;
+    await queue.enqueue(Operations.stopOutcome(
+      operationId: _operationId('outcome:${stop.stopId}'),
+      trip: trip,
+      stop: stop,
+      draft: draft,
+      occurredAt: _clock(),
+    ).toSyncEvent());
+    _results[stop.stopId] = draft;
     updates.insert(
       0,
       UpdateItem(
-        title: 'Delivery saved on this phone',
-        detail: '${stop.outletCode} ${stop.name} · ${outcomeLabel(draft.outcome)}${draft.hasPhoto ? ' + 1 photo' : ''} · waiting to upload',
+        title: 'Delivery $savedNotSent',
+        detail: '${stop.outletCode} ${stop.name} · ${outcomeLabel(draft.outcome)}',
         time: clockLabel(_clock()),
         tone: NoteTone.offline,
       ),
@@ -138,7 +232,7 @@ class DriverSession extends ChangeNotifier {
   /// unconfirmed until the driver confirms it again or explicitly departs anyway.
   Future<void> reportLoadDiscrepancy() async {
     await _queueIncident(
-      key: 'load-discrepancy-${trip.tripRef}',
+      id: _operationId('load-discrepancy'),
       category: 'GOODS',
       description: 'Load check: an item on the driver\'s load list is missing.',
     );
@@ -147,7 +241,7 @@ class DriverSession extends ChangeNotifier {
       0,
       UpdateItem(
         title: 'Missing load item reported',
-        detail: '${trip.vehicleCode} · ${trip.tripRef} · queued on this phone, not sent yet',
+        detail: '${trip.vehicleCode} · ${trip.tripRef} · $savedNotSent',
         time: clockLabel(_clock()),
         tone: NoteTone.danger,
       ),
@@ -159,7 +253,7 @@ class DriverSession extends ChangeNotifier {
   /// recorded as its own incident so it is not lost.
   Future<void> overrideLoadCheck() async {
     await _queueIncident(
-      key: 'load-override-${trip.tripRef}',
+      id: _operationId('load-override'),
       category: 'GOODS',
       description: 'Driver departed without resolving a reported missing load item.',
     );
@@ -168,7 +262,7 @@ class DriverSession extends ChangeNotifier {
       0,
       UpdateItem(
         title: 'Departed with a load discrepancy',
-        detail: '${trip.vehicleCode} · ${trip.tripRef} · decision queued on this phone, not sent yet',
+        detail: '${trip.vehicleCode} · ${trip.tripRef} · decision $savedNotSent',
         time: clockLabel(_clock()),
         tone: NoteTone.danger,
       ),
@@ -176,22 +270,21 @@ class DriverSession extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _queueIncident({required String key, required String category, required String description, StopInfo? stop}) {
-    return queue.enqueue(SyncEvent(
-      eventId: key,
-      idempotencyKey: key,
-      action: 'INCIDENT_REPORT',
-      resourceType: 'trip',
-      resourceId: trip.tripRef,
+  Future<void> _queueIncident({required String id, required String category, required String description, StopInfo? stop}) async {
+    await queue.enqueue(Operations.incident(
+      operationId: id,
+      trip: trip,
+      category: category,
+      description: description,
       occurredAt: _clock(),
-      payload: {'category': category, 'description': description, if (stop != null) 'stopId': stop.outletCode},
-    ));
+      stop: stop,
+    ).toSyncEvent());
+    _incidents++;
   }
 
   Future<void> reportProblem(ProblemReport report, {StopInfo? stop}) async {
-    final stamp = _clock().millisecondsSinceEpoch;
     await _queueIncident(
-      key: 'incident-${trip.tripRef}-${stop?.outletCode ?? 'trip'}-${report.kind.name}-$stamp',
+      id: _newId(),
       category: incidentCategory(report.kind),
       description: report.note.isEmpty ? problemLabel(report.kind) : '${problemLabel(report.kind)}: ${report.note}',
       stop: stop,
@@ -200,7 +293,7 @@ class DriverSession extends ChangeNotifier {
       0,
       UpdateItem(
         title: 'Problem reported',
-        detail: '${problemLabel(report.kind)}${stop == null ? '' : ' · ${stop.outletCode} ${stop.name}'} · queued on this phone, not sent yet',
+        detail: '${problemLabel(report.kind)}${stop == null ? '' : ' · ${stop.outletCode} ${stop.name}'} · $savedNotSent',
         time: clockLabel(_clock()),
         tone: NoteTone.danger,
       ),
@@ -214,8 +307,8 @@ class DriverSession extends ChangeNotifier {
     var delivered = 0;
     var partial = 0;
     var failed = 0;
-    for (final stop in _baseTrip.stops) {
-      final draft = _results[stop.sequence];
+    for (final stop in _baseTrip!.stops) {
+      final draft = _results[stop.stopId];
       if (draft == null) continue;
       switch (draft.outcome) {
         case DeliveryOutcome.delivered:
@@ -228,7 +321,7 @@ class DriverSession extends ChangeNotifier {
             name: stop.name,
             window: stop.window,
             status: 'Partial delivery',
-            detail: short == null || short <= 0 ? 'Dispatcher notified' : '$short cartons short - Dispatcher notified',
+            detail: short == null || short <= 0 ? 'Saved on this phone, not sent yet' : '$short cartons short - saved on this phone, not sent yet',
           ));
         case DeliveryOutcome.failed:
         case DeliveryOutcome.refused:
@@ -237,7 +330,7 @@ class DriverSession extends ChangeNotifier {
             name: stop.name,
             window: stop.window,
             status: draft.outcome == DeliveryOutcome.failed ? 'Failed delivery' : 'Refused',
-            detail: draft.notes.isEmpty ? 'Dispatcher notified' : '${draft.notes} - Dispatcher notified',
+            detail: draft.notes.isEmpty ? 'Saved on this phone, not sent yet' : '${draft.notes} - saved on this phone, not sent yet',
           ));
       }
     }
@@ -248,7 +341,7 @@ class DriverSession extends ChangeNotifier {
       failedOrRefused: failed,
       completed: completed,
       unresolved: unresolved,
-      pendingUploads: pendingPhotoUploads,
+      pendingUploads: pendingUploads,
     );
   }
 }

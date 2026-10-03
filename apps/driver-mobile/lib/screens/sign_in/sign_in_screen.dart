@@ -37,6 +37,8 @@ class SignInScreen extends StatefulWidget {
     this.savedSession,
     this.onForgotPassword,
     this.errorMessage,
+    this.identityProviderMode = false,
+    this.busy = false,
   });
 
   final void Function(String staffId, String password) onSignIn;
@@ -47,6 +49,13 @@ class SignInScreen extends StatefulWidget {
 
   /// Shown above the fields when sign-in could not proceed (announced to screen readers).
   final String? errorMessage;
+
+  /// Credentials are typed on the identity provider's own page, never in the app, so the
+  /// form is replaced by a single button that opens it.
+  final bool identityProviderMode;
+
+  /// A sign-in is in progress (the browser is open or the profile is loading).
+  final bool busy;
 
   @override
   State<SignInScreen> createState() => _SignInScreenState();
@@ -59,7 +68,11 @@ class _SignInScreenState extends State<SignInScreen> {
   bool _obscure = true;
   bool _keepSignedIn = true;
 
-  bool get _canSubmit => !widget.noSignal && _staffId.text.trim().isNotEmpty && _password.text.isNotEmpty;
+  bool get _canSubmit {
+    if (widget.noSignal || widget.busy) return false;
+    if (widget.identityProviderMode) return true;
+    return _staffId.text.trim().isNotEmpty && _password.text.isNotEmpty;
+  }
 
   @override
   void initState() {
@@ -153,43 +166,51 @@ class _SignInScreenState extends State<SignInScreen> {
                           ),
                         ),
                       ],
-                      const SizedBox(height: 20),
-                      _Field(
-                        label: 'Staff ID or email',
-                        icon: const SvgIcon(AppAssets.user, size: 18),
-                        controller: _staffId,
-                        hint: 'e.g. DRV-0318',
-                        filled: noSignal,
-                        keyboardType: TextInputType.emailAddress,
-                        textInputAction: TextInputAction.next,
-                        onSubmitted: (_) => _passwordFocus.requestFocus(),
-                        fieldKey: const Key('sign_in_staff_id'),
-                        autofillHints: const [AutofillHints.username],
-                      ),
-                      const SizedBox(height: 20),
-                      _Field(
-                        label: 'Password',
-                        icon: const SvgIcon(AppAssets.lock, size: 18),
-                        controller: _password,
-                        hint: 'Enter your password',
-                        filled: noSignal,
-                        obscure: _obscure,
-                        focusNode: _passwordFocus,
-                        textInputAction: TextInputAction.done,
-                        onSubmitted: (_) => _submit(),
-                        fieldKey: const Key('sign_in_password'),
-                        autofillHints: const [AutofillHints.password],
-                        trailing: noSignal ? null : _EyeToggle(obscured: _obscure, onPressed: () => setState(() => _obscure = !_obscure)),
-                      ),
-                      if (!noSignal) ...[
-                        const SizedBox(height: 8),
-                        _OptionsRow(
-                          keepSignedIn: _keepSignedIn,
-                          onChanged: (value) => setState(() => _keepSignedIn = value),
-                          onForgotPassword: widget.onForgotPassword,
+                      if (!widget.identityProviderMode) ...[
+                        const SizedBox(height: 20),
+                        _Field(
+                          label: 'Staff ID or email',
+                          icon: const SvgIcon(AppAssets.user, size: 18),
+                          controller: _staffId,
+                          hint: 'e.g. DRV-0318',
+                          filled: noSignal,
+                          keyboardType: TextInputType.emailAddress,
+                          textInputAction: TextInputAction.next,
+                          onSubmitted: (_) => _passwordFocus.requestFocus(),
+                          fieldKey: const Key('sign_in_staff_id'),
+                          autofillHints: const [AutofillHints.username],
                         ),
+                        const SizedBox(height: 20),
+                        _Field(
+                          label: 'Password',
+                          icon: const SvgIcon(AppAssets.lock, size: 18),
+                          controller: _password,
+                          hint: 'Enter your password',
+                          filled: noSignal,
+                          obscure: _obscure,
+                          focusNode: _passwordFocus,
+                          textInputAction: TextInputAction.done,
+                          onSubmitted: (_) => _submit(),
+                          fieldKey: const Key('sign_in_password'),
+                          autofillHints: const [AutofillHints.password],
+                          trailing: noSignal ? null : _EyeToggle(obscured: _obscure, onPressed: () => setState(() => _obscure = !_obscure)),
+                        ),
+                      ],
+                      if (!noSignal) ...[
+                        if (!widget.identityProviderMode) ...[
+                          const SizedBox(height: 8),
+                          _OptionsRow(
+                            keepSignedIn: _keepSignedIn,
+                            onChanged: (value) => setState(() => _keepSignedIn = value),
+                            onForgotPassword: widget.onForgotPassword,
+                          ),
+                        ],
                         const SizedBox(height: 8),
-                        AppButton(label: 'Sign in', onPressed: _canSubmit ? _submit : null),
+                        if (widget.identityProviderMode) const SizedBox(height: 12),
+                        AppButton(
+                          label: widget.identityProviderMode ? (widget.busy ? 'Opening sign-in…' : 'Continue to sign in') : 'Sign in',
+                          onPressed: _canSubmit ? _submit : null,
+                        ),
                         const SizedBox(height: 20),
                         const _OfflineNote(),
                       ] else ...[

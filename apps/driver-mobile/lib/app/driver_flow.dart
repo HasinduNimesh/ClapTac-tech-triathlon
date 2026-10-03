@@ -14,6 +14,7 @@ import '../screens/states/plan_conflict_screen.dart';
 import '../screens/states/sync_state_screen.dart';
 import '../screens/updates/updates_screen.dart';
 import '../theme/tokens.dart';
+import '../widgets/app_buttons.dart';
 import '../widgets/driver_shell.dart';
 import '../widgets/note_banner.dart';
 import 'driver_session.dart';
@@ -29,9 +30,14 @@ class DriverFlow extends StatelessWidget {
     return ListenableBuilder(
       listenable: session,
       builder: (context, _) {
+        if (session.restoring) {
+          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+        }
         if (!session.signedIn) {
           return SignInScreen(
             errorMessage: session.signInError,
+            identityProviderMode: session.usesIdentityProvider,
+            busy: session.signingIn,
             onSignIn: (staffId, password) => session.signIn(),
           );
         }
@@ -56,7 +62,7 @@ class _DriverHomeState extends State<_DriverHome> {
   @override
   void initState() {
     super.initState();
-    if (!session.loadResolved) {
+    if (session.hasRoute && !session.loadResolved) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _showLoadCheck();
       });
@@ -147,11 +153,18 @@ class _DriverHomeState extends State<_DriverHome> {
         stop: stop,
         earlyMinutes: 0,
         onTabSelected: _selectTab,
-        onStoppedSafely: () => Navigator.of(context).pushReplacement(MaterialPageRoute<void>(
-          builder: (context) => _stopDetails(context, stop),
-        )),
+        onStoppedSafely: () async {
+          final navigator = Navigator.of(context);
+          await session.markArrived(stop);
+          if (!mounted) return;
+          navigator.pushReplacement(MaterialPageRoute<void>(builder: (context) => _stopDetails(context, stop)));
+        },
       ),
     ));
+  }
+
+  void _proofUnavailable(ProofKind kind) {
+    _notify('Photo and signature capture is not available in this build yet, so no proof is stored.');
   }
 
   Widget _stopDetails(BuildContext context, StopInfo stop) {
@@ -159,6 +172,7 @@ class _DriverHomeState extends State<_DriverHome> {
       stop: stop,
       onTabSelected: _selectTab,
       onReportIssue: () => _reportProblem(stop),
+      onProofRequested: _proofUnavailable,
       onSave: (draft) {
         switch (draft.outcome) {
           case DeliveryOutcome.delivered:
@@ -171,14 +185,14 @@ class _DriverHomeState extends State<_DriverHome> {
                 expectedQuantity: stop.cartons,
                 unit: 'cartons',
                 initialOutcome: DeliveryOutcome.partial,
+                onProofRequested: _proofUnavailable,
                 onTabSelected: _selectTab,
-                onRejected: () => _takeBack(context, stop, DeliveryDraft(outcome: DeliveryOutcome.refused, hasPhoto: draft.hasPhoto, hasSignature: draft.hasSignature)),
+                onRejected: () => _takeBack(context, stop, const DeliveryDraft(outcome: DeliveryOutcome.refused)),
                 onSave: (partial) => _commit(context, stop, DeliveryDraft(
                   outcome: partial.outcome,
                   quantity: partial.quantity,
                   notes: draft.notes,
-                  hasPhoto: partial.hasPhoto || draft.hasPhoto,
-                  hasSignature: partial.hasSignature || draft.hasSignature,
+                  reason: partial.reason,
                 )),
               ),
             ));
@@ -202,8 +216,7 @@ class _DriverHomeState extends State<_DriverHome> {
           outcome: draft.outcome,
           quantity: draft.quantity,
           notes: reattempt ? 'Re-attempt on the next run' : 'Dispatcher asked to defer',
-          hasPhoto: draft.hasPhoto,
-          hasSignature: draft.hasSignature,
+          reason: draft.reason,
         ),
       ),
     );
@@ -219,6 +232,8 @@ class _DriverHomeState extends State<_DriverHome> {
           kind: SyncStateKind.savedOffline,
           stop: stop,
           savedAt: clockLabel(DateTime.now()),
+          outcomeText: _outcomeText(stop, draft),
+          hasPhoto: false,
           onTabSelected: _selectTab,
           onPrimary: () {
             Navigator.of(context).popUntil((route) => route.isFirst);
@@ -230,6 +245,19 @@ class _DriverHomeState extends State<_DriverHome> {
     );
   }
 
+  String _outcomeText(StopInfo stop, DeliveryDraft draft) {
+    switch (draft.outcome) {
+      case DeliveryOutcome.delivered:
+        return 'Delivered - ${stop.cartons} cartons';
+      case DeliveryOutcome.partial:
+        return 'Partial - ${draft.quantity ?? 0} of ${stop.cartons} cartons';
+      case DeliveryOutcome.refused:
+        return 'Refused - ${stop.cartons} cartons taken back';
+      case DeliveryOutcome.failed:
+        return 'Not delivered - ${stop.cartons} cartons taken back';
+    }
+  }
+
   void _openUpdate(UpdateItem item) {
     if (item.id != DriverSession.planConflictId) return;
     Navigator.of(context).push(MaterialPageRoute<void>(
@@ -239,15 +267,15 @@ class _DriverHomeState extends State<_DriverHome> {
         onReturnToRoute: () => _selectTab(DriverTab.route),
         onSendForReview: () {
           _selectTab(DriverTab.route);
-          _notify('Both versions were saved to send to dispatch.');
+          _notify('Demo only: nothing was sent to dispatch.');
         },
       ),
     ));
   }
 
-  void _finishTrip() {
+  Future<void> _finishTrip() async {
     Navigator.of(context).popUntil((route) => route.isFirst);
-    session.finishTrip();
+    await session.finishTrip();
   }
 
   @override
@@ -255,6 +283,9 @@ class _DriverHomeState extends State<_DriverHome> {
     return ListenableBuilder(
       listenable: session,
       builder: (context, _) {
+        if (!session.hasRoute && session.tab != DriverTab.updates) {
+          return _NoRoute(session: session);
+        }
         switch (session.tab) {
           case DriverTab.route:
             return RouteHomeScreen(
@@ -270,11 +301,44 @@ class _DriverHomeState extends State<_DriverHome> {
             return EndOfDayScreen(
               summary: session.summary,
               onFinishTrip: _finishTrip,
-              onRetryUpload: () => _notify('Uploads are queued on this phone and retry when you are online.'),
+              onRetryUpload: () => _notify('Nothing can be sent yet: uploading is not connected in this build.'),
               onTabSelected: session.selectTab,
             );
         }
       },
+    );
+  }
+}
+
+/// Shown when a driver is signed in but no route is available. Assigned trips are not loaded yet
+/// and sample data is only used in explicit demo builds.
+class _NoRoute extends StatelessWidget {
+  const _NoRoute({required this.session});
+
+  final DriverSession session;
+
+  @override
+  Widget build(BuildContext context) {
+    final identity = session.identity;
+    final who = identity == null
+        ? ''
+        : ' Signed in as ${identity.userId}${identity.vehicleId == null ? '' : ' (vehicle ${identity.vehicleId})'}.';
+    return DriverShell(
+      tab: session.tab,
+      onTabSelected: session.selectTab,
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Semantics(header: true, child: Text('No route loaded', style: AppText.of(22, FontWeight.w700))),
+          const SizedBox(height: 12),
+          NoteBanner(
+            title: 'Assigned trips are not connected yet',
+            text: 'This build signs you in but does not load your trips, so there is no route to show.$who',
+          ),
+          const SizedBox(height: 24),
+          AppButton(label: 'Sign out', outline: true, onPressed: () => session.finishTrip()),
+        ],
+      ),
     );
   }
 }

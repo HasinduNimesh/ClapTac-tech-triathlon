@@ -18,6 +18,8 @@ class SyncStateScreen extends StatelessWidget {
     required this.stop,
     this.savedAt = '08:42',
     this.uploadProgress = 0.75,
+    this.outcomeText,
+    this.hasPhoto = true,
     this.onPrimary,
     this.onSecondary,
     this.onTabSelected,
@@ -29,6 +31,12 @@ class SyncStateScreen extends StatelessWidget {
 
   /// 0..1, only shown while [kind] is [SyncStateKind.syncing].
   final double uploadProgress;
+
+  /// What was recorded, e.g. "Refused - 12 cartons taken back". Defaults to the delivered sample.
+  final String? outcomeText;
+
+  /// Whether a photo was stored with the outcome. Without one the screen does not mention a photo.
+  final bool hasPhoto;
   final VoidCallback? onPrimary;
   final VoidCallback? onSecondary;
   final ValueChanged<DriverTab>? onTabSelected;
@@ -64,16 +72,17 @@ class SyncStateScreen extends StatelessWidget {
           ]),
           const SizedBox(height: 10),
           _heading('Saved on this device'),
-          _description(
-            'Delivery outcome and photo are stored on this phone. They have not reached the dispatcher yet.'),
+          _description(hasPhoto
+              ? 'Delivery outcome and photo are stored on this phone. They have not reached the dispatcher yet.'
+              : 'The delivery outcome is stored on this phone. It has not reached the dispatcher yet.'),
           _SyncCard(
             color: tinted(240, 214, 147, 0.19),
             border: const Color(0xFFFBFCFF),
             stop: stop,
             rows: [
-              _CardRow.check('Delivered - ${stop.cartons} cartons', top: 52),
+              _CardRow.check(outcomeText ?? 'Delivered - ${stop.cartons} cartons', top: 52),
               _CardRow.icon(StatesAssets.rowClock, 'Saved at $savedAt', top: 80),
-              _CardRow.icon(StatesAssets.rowPhoto, 'Pending: Outcome + 1 photo', top: 108),
+              _CardRow.icon(StatesAssets.rowPhoto, hasPhoto ? 'Pending: Outcome + 1 photo' : 'Pending: Outcome', top: 108),
             ],
           ),
           const SizedBox(height: 46),
