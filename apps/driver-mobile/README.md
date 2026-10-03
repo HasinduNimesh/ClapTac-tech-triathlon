@@ -65,6 +65,16 @@ When the identity provider issues a refresh token (normally only if `offline_acc
 
 Without a refresh token (the default scopes against a provider that does not issue one without `offline_access`), an expired access token still means signing in again. Signing out removes the tokens from the phone but does not revoke the refresh token at the provider.
 
+## No signal
+
+`lib/connectivity` follows the phone's network (`connectivity_plus`). When the phone has none, or the last attempt to reach Waypoint failed:
+
+- signing in shows the no-signal variant ("Waiting for signal…") and switches back by itself when the signal returns, because the browser sign-in needs the network
+- the route and the stop screen show that there is no connection and that what the driver records is saved on the phone and sent later; the stop screen switches to its offline variant and back while it is open
+- when the network returns the app sends what is waiting and retries a route that failed to load and a trip that could not start, instead of waiting for the next timer tick
+
+Nothing the driver does needs the network: the app opens with a stored session (see "Staying signed in" if token refresh is merged), records deliveries and proof on the phone, and sends them later.
+
 ## Not built yet
 
 Do not describe this build as connected to the cloud: sign-in and loading the route are real, almost everything after that is not.
@@ -76,7 +86,7 @@ Do not describe this build as connected to the cloud: sign-in and loading the ro
 - **Server gaps.** Until PR #28 is in the app's base branch, partial quantity remains in the `note`; no distinct "re-attempt next run" or "defer" operation exists (also in the `note`), and there is no structured driver load-discrepancy workflow (a missing item is a `GOODS` incident). Contracts and RBAC for these need deciding before they can work as the screens show.
 - **Load check.** Confirming only marks the load confirmed on this phone. Reporting a missing item keeps the route locked until the driver confirms again or explicitly departs anyway, which is queued as a second incident.
 - **Plan and messages.** Plan acknowledgement (`POST /api/v1/planning/plans/{id}/acknowledgements`) and dispatcher trip messages exist on the server but are not used. The plan review screen ("send both versions for review") has no matching API and is demo-only.
-- Connectivity is not detected, so the no-signal sign-in variant is not triggered automatically. 
+- Detecting connectivity tells the app only whether the phone has a network, not whether Waypoint is reachable (a Wi-Fi network with no internet counts as connected); failed requests are treated as offline too. Tokens are not refreshed: when the access token expires the driver signs in again.
 
 ## Layout
 
