@@ -5,6 +5,23 @@ enum DeliveryOutcome { delivered, partial, failed, refused }
 /// Which kind of proof the driver asked to capture.
 enum ProofKind { photo, signature }
 
+/// A photo or signature the driver captured, kept as a file on the phone until it is uploaded.
+class CapturedProof {
+  const CapturedProof({required this.kind, required this.path, required this.mimeType, required this.capturedAt, this.receiverName = ''});
+
+  final ProofKind kind;
+
+  /// A file inside the app's own storage, so it survives a restart while the phone is offline.
+  final String path;
+
+  /// `image/jpeg` or `image/png`: the only types the server accepts.
+  final String mimeType;
+  final DateTime capturedAt;
+
+  /// Who accepted the delivery, when the driver entered a name.
+  final String receiverName;
+}
+
 enum SyncStateKind { savedOffline, syncing, synced, uploadFailed }
 
 enum ProblemKind { vehicleBreakdown, roadBlocked, outletClosed, loadIssue, safetyConcern }
@@ -129,6 +146,7 @@ class DeliveryDraft {
     this.reason,
     this.hasPhoto = false,
     this.hasSignature = false,
+    this.proofs = const [],
   });
 
   final DeliveryOutcome outcome;
@@ -140,6 +158,9 @@ class DeliveryDraft {
   final String notes;
   final bool hasPhoto;
   final bool hasSignature;
+
+  /// The captured files to upload before the outcome. Empty when nothing was captured.
+  final List<CapturedProof> proofs;
 }
 
 const _weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];

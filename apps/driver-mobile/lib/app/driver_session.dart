@@ -277,6 +277,9 @@ class DriverSession extends ChangeNotifier {
       final stopId = operation['stopId'] as String?;
       if (type == OperationType.arrived && stopId != null) {
         _operationIds['arrived:$stopId'] = event.idempotencyKey;
+      } else if (type == OperationType.proofUpload && stopId != null) {
+        final kind = (operation['payload'] as Map?)?['proofType'] == 'SIGNATURE' ? ProofKind.signature : ProofKind.photo;
+        _operationIds['proof:$stopId:${kind.name}'] = event.idempotencyKey;
       } else if (type == OperationType.routeCompleted) {
         _operationIds['route-completed'] = event.idempotencyKey;
       } else if (type == OperationType.stopOutcome && stopId != null) {
@@ -345,11 +348,26 @@ class DriverSession extends ChangeNotifier {
   }
 
   /// Ends the trip and signs out. If every stop was recorded, route completion is queued first.
-  /// What is already queued stays queued: finishing the trip does not discard anything unsent.
-  Future<void> finishTrip() async {
+  ///
+  /// With a real sync queue it first tries to send everything that is waiting, including the route
+  /// completion, because sign-out stops the sync worker. If something could not be sent (no signal,
+  /// or an update the server refused) the driver stays signed in and the number of unsent updates is
+  /// returned, so the screen can ask. Pass [force] to sign out anyway: nothing is discarded, the
+  /// updates stay saved on this phone and are sent the next time this driver signs in.
+  ///
+  /// Returns 0 when the driver was signed out.
+  Future<int> finishTrip({bool force = false}) async {
     if (routeComplete) {
       await queue.enqueue(Operations.routeCompleted(operationId: _operationId('route-completed'), trip: trip, occurredAt: _clock()).toSyncEvent());
-      _kickSync();
+    }
+    final syncing = worker;
+    if (syncing != null && queue is SqliteSyncQueue && signedIn && !force) {
+      await syncing.syncNow();
+      await _refreshPending();
+      if (_pendingCount > 0) {
+        notifyListeners();
+        return _pendingCount;
+      }
     }
     worker?.stop();
     signedIn = false;
@@ -366,6 +384,7 @@ class DriverSession extends ChangeNotifier {
     _incidents = 0;
     updates.removeWhere((item) => item.id != planConflictId);
     notifyListeners();
+    return 0;
   }
 
   /// The stored sign-in is no longer accepted: go back to sign-in instead of showing a dead end.
@@ -434,12 +453,20 @@ class DriverSession extends ChangeNotifier {
   /// requires proof for delivered and partial outcomes, so those will be rejected when sent until
   /// capture exists.
   Future<void> recordDelivery(StopInfo stop, DeliveryDraft draft) async {
+    // Captured proof is queued first, in order, because the server wants it before it accepts a
+    // delivered or partial outcome. The outcome depends on the last proof.
+    String? lastProofId;
+    for (final proof in draft.proofs) {
+      lastProofId = _operationId('proof:${stop.stopId}:${proof.kind.name}');
+      await queue.enqueue(Operations.proofUpload(operationId: lastProofId, trip: trip, stop: stop, proof: proof, occurredAt: _clock()).toSyncEvent());
+    }
     await queue.enqueue(Operations.stopOutcome(
       operationId: _operationId('outcome:${stop.stopId}'),
       trip: trip,
       stop: stop,
       draft: draft,
       occurredAt: _clock(),
+      proofOperationId: lastProofId,
     ).toSyncEvent());
     _kickSync();
     _results[stop.stopId] = draft;
