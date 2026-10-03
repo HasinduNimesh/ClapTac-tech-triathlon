@@ -32,7 +32,7 @@ def clean_spec(raw: dict | None, fallback_name: str = "New dashboard") -> tuple[
     cards, rejected = [], []
     items = raw.get("cards") if isinstance(raw.get("cards"), list) else []
     for item in items:
-        if item not in CARDS:
+        if not isinstance(item, str) or item not in CARDS:
             rejected.append(f"unsupported card {str(item)[:30]!r}")
         elif item not in cards:
             cards.append(item)

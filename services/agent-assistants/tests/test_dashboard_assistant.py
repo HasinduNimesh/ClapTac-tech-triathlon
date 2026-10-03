@@ -45,6 +45,11 @@ class DashboardAssistantTest(unittest.TestCase):
         self.assertEqual(body["draft"]["filter"], "all")
         self.assertEqual(len(body["rejected"]), 2)
 
+    def test_malformed_cards_are_rejected_without_crashing(self):
+        body, _ = run({"name": "x", "cards": [{"type": "count"}, ["receipts"], 7, None, "short"], "filter": ["all"], "question": None, "reply": "ok"})
+        self.assertEqual(body["draft"], {"name": "x", "cards": ["short"], "filter": "all"})
+        self.assertEqual(len(body["rejected"]), 4)
+
     def test_name_is_trimmed_and_falls_back(self):
         spec, _ = clean_spec({"name": "  " + "n" * 200, "cards": ["chilled"]})
         self.assertEqual(len(spec["name"]), 60)
