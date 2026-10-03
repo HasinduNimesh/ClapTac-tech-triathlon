@@ -1,3 +1,5 @@
+export type LiveLocation = { tripId: string; vehicleId: string; latitude: number; longitude: number; timestamp: string };
+
 export type DeliveryStop = {
   id: string;
   runId: string;

@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiJSON, Order } from "../api/client";
+import { LiveLocation } from "../api/delivery";
 import { useAuth } from "../auth/AuthContext";
 
 export type Tracking = {
   stage: string;
   order: Order;
   planning: { state?: string; planRef?: string; reasonCode?: string; reasonComment?: string; plannedArrivalAt?: string };
-  delivery?: { runStatus: string; outcome?: string; reason?: string };
+  delivery?: { runStatus: string; vehicleId?: string; depot?: string; location?: LiveLocation; outcome?: string; reason?: string };
   receipt?: { status: string; receivedUnits: number; expectedUnits: number };
 };
 
@@ -35,13 +36,21 @@ export function useOrderTrackings() {
       setRows(ok);
       setSkipped(settled.length - ok.length);
     } catch {
-      if (request === latest.current) setLoadFailed(true);
+      if (request === latest.current) {
+        setLoadFailed(true);
+        setRows((current) => current.map((row) => ({ ...row, delivery: row.delivery ? { ...row.delivery, location: undefined } : undefined })));
+      }
     } finally {
       if (request === latest.current) setLoading(false);
     }
   }, [token]);
 
   useEffect(() => { void reload(); }, [reload]);
+  useEffect(() => {
+    if (!rows.some((row) => row.delivery?.runStatus === "in_progress")) return;
+    const timer = window.setInterval(() => { void reload(); }, 15_000);
+    return () => window.clearInterval(timer);
+  }, [rows, reload]);
   useEffect(() => () => { latest.current += 1; }, []);
 
   return { rows, loading, loadFailed, skipped, reload };

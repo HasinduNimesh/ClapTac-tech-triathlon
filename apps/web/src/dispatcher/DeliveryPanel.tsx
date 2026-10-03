@@ -2,7 +2,8 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import { ApiError, apiJSON } from "../api/client";
 import { ESTIMATES_UNAVAILABLE_MESSAGE, hasUsablePrediction, standardArrivalAt, validArrivalAt, validServiceMinutes } from "../api/estimateAvailability.mjs";
 import { todayInSriLanka } from "../api/date.mjs";
-import { DeliveryTripDetail, DeliveryTripSummary, LatenessProbability } from "../api/delivery";
+import { DeliveryTripDetail, DeliveryTripSummary, LatenessProbability, LiveLocation } from "../api/delivery";
+import { LiveLocationMap } from "../components/LiveLocationMap";
 import { depotLabel } from "../api/loading";
 import { useAuth } from "../auth/AuthContext";
 import { PlanDetail } from "../api/planning";
@@ -26,6 +27,7 @@ export function DeliveryPanel() {
   const [date, setDate] = useState(todayInSriLanka);
   const [trips, setTrips] = useState<DeliveryTripSummary[]>([]);
   const [detail, setDetail] = useState<DeliveryTripDetail | null>(null);
+  const [location, setLocation] = useState<LiveLocation | null>(null);
   const [plan, setPlan] = useState<PlanDetail | null>(null);
   const [refreshedAt, setRefreshedAt] = useState("");
   const [error, setError] = useState("");
@@ -57,6 +59,22 @@ export function DeliveryPanel() {
   useEffect(() => {
     void load();
   }, [token]);
+
+  useEffect(() => {
+    if (!detail?.tripId || detail.status !== "in_progress") { setLocation(null); return; }
+    let active = true;
+    let latestRequest = 0;
+    const refresh = async () => {
+      const request = ++latestRequest;
+      try {
+        const body = await apiJSON<{ location: LiveLocation | null }>("/delivery/trips/" + encodeURIComponent(detail.tripId) + "/location", token);
+        if (active && request === latestRequest) setLocation(body.location || null);
+      } catch { if (active && request === latestRequest) setLocation(null); }
+    };
+    void refresh();
+    const timer = window.setInterval(() => { void refresh(); }, 15_000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [detail?.tripId, detail?.status, token]);
 
   async function load(e?: FormEvent) {
     e?.preventDefault();
@@ -186,6 +204,7 @@ export function DeliveryPanel() {
             const planned = plan?.allocations?.find((item) => item.tripId === detail.tripId && item.orderId === stop.orderId)?.plannedArrivalAt;
             return !validArrivalAt(planned);
           })) && <p role="status">{ESTIMATES_UNAVAILABLE_MESSAGE}</p>}
+          <LiveLocationMap key={detail.tripId} location={location} />
           <h3>
             {detail.run?.planRef} Â· {depotLabel(detail.run?.depot)} Â· {t(detail.status)}
           </h3>
