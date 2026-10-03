@@ -104,3 +104,7 @@ The Hackathon build follows the Designathon workflow (order → plan/allocate/de
 - A public URL, DNS zone, TLS certificate, production cluster, durable DB/object storage, and production secret store have not been supplied. Kubernetes files are deployment inputs and need target-specific release configuration.
 - Assistant provider is optional and not configured by default. Planning feasibility remains deterministic; sensitive assistant writes require explicit human approval and service-side reauthorization.
 - See [known deployment requirements](docs/architecture.md), [AI disclosure](docs/ai-disclosure.md), and the [submission runbook](docs/submission.md).
+
+## A3 habit helper and A4 workflow builder
+
+Store Managers and Dispatchers can open **My automations**. A3 offers evidence-backed order prefills or personal planning review flags and remembers Yes/No responses. A4 drafts a weekly workflow, tests it, and activates only after **Turn on**. Scheduled workflows run independently of the optional LLM. See [setup, screen-recording script, test commands and scope](docs/a3-a4-demo.md).
