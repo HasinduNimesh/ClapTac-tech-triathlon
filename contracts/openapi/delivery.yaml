@@ -34,12 +34,23 @@ paths:
   /delivery/trips/{tripId}:
     get:
       operationId: getDeliveryTrip
-      description: Drivers prepare a run from the loading READY snapshot on first get. Dispatchers receive a read-only view and never mutate loading.
+      description: Drivers prepare a run from the loading READY snapshot on first get. Dispatchers receive a read-only view and never mutate loading. Each stop snapshots expectedUnits from its order load; unitLabel is "units" because the order model does not define cartons or another physical unit. Historical stops without a matching loading record omit expectedUnits.
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: "#/components/parameters/TripID"
       responses:
-        "200": { description: Run and stops }
+        "200":
+          description: Run and stops
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tripId: { type: string }
+                  run: { type: object }
+                  stops:
+                    type: array
+                    items: { $ref: "#/components/schemas/DeliveryStop" }
   /delivery/trips/{tripId}/prepare:
     post:
       operationId: prepareDeliveryRun
@@ -201,6 +212,28 @@ paths:
         "401": { description: Unauthenticated }
         "403": { description: Missing internal-read scope }
 components:
+  schemas:
+    DeliveryStop:
+      type: object
+      description: One immutable delivery stop prepared from a loading READY order.
+      required: [id, runId, allocationId, orderId, outletId, stopSequence, status, unitLabel]
+      properties:
+        id: { type: string, description: "Server stop ID for arrival, proof, and outcome calls." }
+        runId: { type: string }
+        allocationId: { type: string }
+        orderId: { type: string }
+        orderRef: { type: string }
+        outletId: { type: string }
+        stopSequence: { type: integer }
+        status: { type: string }
+        expectedUnits:
+          type: integer
+          minimum: 1
+          description: Expected order units snapshotted from loading; omitted if unknown for historical data.
+        unitLabel:
+          type: string
+          example: units
+          description: Generic order units. Do not render as cartons without a source for that unit.
   securitySchemes:
     bearerAuth:
       type: http
