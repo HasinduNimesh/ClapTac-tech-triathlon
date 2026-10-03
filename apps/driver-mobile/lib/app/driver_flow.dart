@@ -76,9 +76,10 @@ class _DriverHomeState extends State<_DriverHome> {
     showTruckCheckoutSheet(
       context,
       trip: session.trip,
-      onConfirm: () {
-        session.confirmLoad();
-        _notify('Load confirmed on this phone. Nothing has been sent to dispatch.');
+      onConfirm: () async {
+        await session.confirmLoad();
+        if (!mounted) return;
+        _notify(_afterLoadDecision('Load confirmed'));
       },
       onMissingItem: _reportMissingLoadItem,
     );
@@ -106,9 +107,25 @@ class _DriverHomeState extends State<_DriverHome> {
     if (departAnyway == true) {
       await session.overrideLoadCheck();
       if (!mounted) return;
-      _notify('Departure recorded on this phone only. It has not been sent to dispatch.');
+      _notify(_afterLoadDecision('Departure recorded'));
     } else {
       _showLoadCheck();
+    }
+  }
+
+  /// What the driver is told after confirming the load or departing anyway, including whether the
+  /// trip actually started on the server.
+  String _afterLoadDecision(String decision) {
+    switch (session.tripStartState) {
+      case TripStartState.started:
+        return '$decision and trip started.';
+      case TripStartState.waiting:
+        return '$decision on this phone. The trip is not started yet: it starts when Waypoint can be reached.';
+      case TripStartState.refused:
+        return '$decision on this phone, but the trip did not start. ${session.tripStartMessage ?? ''}'.trim();
+      case TripStartState.starting:
+      case TripStartState.notStarted:
+        return '$decision on this phone. Nothing has been sent to dispatch.';
     }
   }
 

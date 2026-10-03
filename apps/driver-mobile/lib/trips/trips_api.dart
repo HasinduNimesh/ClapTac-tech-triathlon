@@ -149,6 +149,9 @@ TripInfo tripFromJson(Map<String, Object?> json) {
     stops: stops,
     completedStops: done,
     completedStopIds: completedStopIds,
+    planId: run['planId'] as String? ?? '',
+    planVersion: (json['currentPlanVersion'] as num?)?.toInt() ?? (run['planVersion'] as num?)?.toInt() ?? 0,
+    runStatus: run['status'] as String? ?? json['status'] as String? ?? '',
   );
 }
 

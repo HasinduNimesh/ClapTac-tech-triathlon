@@ -228,7 +228,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Depart anyway'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('Departure recorded on this phone only'), findsOneWidget);
+    expect(find.textContaining('Departure recorded on this phone'), findsOneWidget);
     events = await queue.pending();
     expect(events.map((e) => e.idempotencyKey).toSet(), hasLength(2));
     expect(events.every((e) => e.action == 'INCIDENT_REPORT' && (e.payload['payload'] as Map)['category'] == 'GOODS'), isTrue);
