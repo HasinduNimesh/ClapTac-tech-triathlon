@@ -63,7 +63,7 @@ class SyncStateScreen extends StatelessWidget {
             icon: StatesAssets.wifiOff,
             iconSize: 33.25,
             title: 'Offline',
-            subtitle: 'You’re currently offline.',
+            subtitle: 'Saved on this phone; not sent yet.',
           ),
           const SizedBox(height: 13),
           const StateIllustration(circle: StatesAssets.circleNeutral, glyphs: [
@@ -73,8 +73,8 @@ class SyncStateScreen extends StatelessWidget {
           const SizedBox(height: 10),
           _heading('Saved on this device'),
           _description(hasPhoto
-              ? 'Delivery outcome and photo are stored on this phone. They have not reached the dispatcher yet.'
-              : 'The delivery outcome is stored on this phone. It has not reached the dispatcher yet.'),
+              ? 'Delivery outcome and photo are stored on this phone. Check Updates for their sync status.'
+              : 'The delivery outcome is stored on this phone. Check Updates for its sync status.'),
           _SyncCard(
             color: tinted(240, 214, 147, 0.19),
             border: const Color(0xFFFBFCFF),
