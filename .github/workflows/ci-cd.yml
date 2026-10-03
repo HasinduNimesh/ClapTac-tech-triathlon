@@ -14,8 +14,73 @@ concurrency:
   cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 jobs:
+  changes:
+    name: Select checks
+    runs-on: ubuntu-latest
+    outputs:
+      go: ${{ steps.paths.outputs.go }}
+      web: ${{ steps.paths.outputs.web }}
+      mobile: ${{ steps.paths.outputs.mobile }}
+      docker: ${{ steps.paths.outputs.docker }}
+      targets: ${{ steps.paths.outputs.targets }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Select affected components
+        id: paths
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          go=false web=false mobile=false docker=false
+          backend_image=false web_image=false all_images=false
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            go=true web=true mobile=true docker=true all_images=true
+          else
+            base="$BASE_SHA"
+            if [[ ! "$base" =~ ^[0-9a-f]{40}$ ]] || [[ "$base" =~ ^0+$ ]]; then
+              base="$(git rev-parse "$GITHUB_SHA^")"
+            fi
+            while IFS= read -r path; do
+              case "$path" in
+                .github/workflows/*|Makefile)
+                  go=true web=true mobile=true docker=true all_images=true ;;
+                docker-compose*.yml|infrastructure/*|tools/dev-oidc/*)
+                  docker=true all_images=true ;;
+                apps/driver-mobile/*)
+                  mobile=true ;;
+                apps/web/*)
+                  web=true docker=true web_image=true ;;
+                go.mod|go.sum|Dockerfile|services/*|pkg/*)
+                  go=true docker=true backend_image=true ;;
+                database/*|contracts/*|scripts/*)
+                  go=true ;;
+              esac
+            done < <(git diff --name-only "$base" "$GITHUB_SHA")
+          fi
+          targets=""
+          if [[ "$all_images" == false ]]; then
+            if [[ "$backend_image" == true ]]; then
+              targets="order-service planning-service fleet-service loading-service delivery-service shared-service integration-service agent-orchestrator"
+            fi
+            if [[ "$web_image" == true ]]; then
+              targets="${targets:+$targets }web"
+            fi
+          fi
+          {
+            echo "go=$go"
+            echo "web=$web"
+            echo "mobile=$mobile"
+            echo "docker=$docker"
+            echo "targets=$targets"
+          } >> "$GITHUB_OUTPUT"
+
   go:
     name: Go services
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -29,6 +94,8 @@ jobs:
 
   web:
     name: Web app
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -46,6 +113,8 @@ jobs:
 
   mobile:
     name: Driver app
+    needs: changes
+    if: needs.changes.outputs.mobile == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -62,16 +131,28 @@ jobs:
 
   docker:
     name: Compose images
+    needs: changes
+    if: needs.changes.outputs.docker == 'true'
     runs-on: ubuntu-latest
+    env:
+      BUILD_TARGETS: ${{ needs.changes.outputs.targets }}
     steps:
       - uses: actions/checkout@v4
       - run: docker compose config --quiet
-      - run: docker compose build
+      - name: Build affected images
+        shell: bash
+        run: |
+          if [[ -z "$BUILD_TARGETS" ]]; then
+            docker compose build
+          else
+            read -r -a targets <<< "$BUILD_TARGETS"
+            docker compose build "${targets[@]}"
+          fi
 
   deploy:
     name: Deploy to Azure VM
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
-    needs: [go, web, mobile, docker]
+    needs: [changes, go, web, mobile, docker]
     runs-on: ubuntu-latest
     environment: production
     timeout-minutes: 30
