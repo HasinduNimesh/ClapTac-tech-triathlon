@@ -33,7 +33,7 @@ void main() {
       expect(find.text('Offline'), findsOneWidget);
       expect(find.text('Saved on this device'), findsOneWidget);
       expect(find.text('OUT108 - Dehiwala'), findsOneWidget);
-      expect(find.text('Delivered - 12 cartons'), findsOneWidget);
+      expect(find.text('Delivered - 12 units'), findsOneWidget);
       expect(find.text('Saved at 08:42'), findsOneWidget);
       expect(find.text('Pending: Outcome + 1 photo'), findsOneWidget);
       expect(hasLiveRegion(tester), isTrue);
@@ -154,7 +154,7 @@ void main() {
       expect(find.text('Nugegoda'), findsOneWidget);
       expect(find.text('Kirulapone'), findsOneWidget);
       expect(find.text('Partial delivery'), findsOneWidget);
-      expect(find.text('2 cartons short - Dispatcher notified'), findsOneWidget);
+      expect(find.text('2 units short - Dispatcher notified'), findsOneWidget);
       expect(find.text('1 upload waiting to be sent'), findsOneWidget);
       expect(find.text('Saved on this phone. One upload has not been sent yet.'), findsOneWidget);
 

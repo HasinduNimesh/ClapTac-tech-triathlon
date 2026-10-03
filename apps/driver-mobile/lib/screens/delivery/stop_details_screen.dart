@@ -62,7 +62,7 @@ class _StopDetailsScreenState extends State<StopDetailsScreen> {
     widget.onSave(
       DeliveryDraft(
         outcome: _outcome,
-        quantity: _outcome == DeliveryOutcome.delivered ? widget.stop.cartons : null,
+        quantity: _outcome == DeliveryOutcome.delivered ? widget.stop.units : null,
         notes: _notes.text.trim(),
         hasPhoto: _hasPhoto,
         hasSignature: _hasSignature,
@@ -172,10 +172,10 @@ class _StopDetailsScreenState extends State<StopDetailsScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text('${stop.outletCode} - ${stop.name}', style: deliveryText(13, FontWeight.w700)),
+                      Text(stop.label, style: deliveryText(13, FontWeight.w700)),
                       const SizedBox(height: 4),
                       Text(stop.window, style: deliveryText(13, FontWeight.w400)),
-                      Text('${stop.cartons} cartons', style: deliveryText(13, FontWeight.w400)),
+                      Text(stop.unitsText, style: deliveryText(13, FontWeight.w400)),
                     ],
                   ),
                 ),
@@ -205,7 +205,7 @@ class _StopDetailsScreenState extends State<StopDetailsScreen> {
               imageWidth: 55,
               imageHeight: 46,
               title: stop.goods,
-              caption: 'Expected: ${stop.cartons}',
+              caption: 'Expected: ${stop.units ?? 'not recorded'}',
             ),
           ),
           const SizedBox(height: 11),

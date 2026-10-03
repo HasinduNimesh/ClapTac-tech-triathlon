@@ -35,8 +35,8 @@ const _twice = TripInfo(
   depot: 'Depot',
   window: '08:00-11:00',
   stops: [
-    StopInfo(stopId: 'stop-a', sequence: 1, outletCode: 'OUT1', name: 'Fresh', windowStart: '08:00', windowEnd: '09:00', cartons: 10, accessNote: '', contactNote: '', goods: 'Ambient'),
-    StopInfo(stopId: 'stop-b', sequence: 2, outletCode: 'OUT1', name: 'Fresh', windowStart: '10:00', windowEnd: '11:00', cartons: 4, accessNote: '', contactNote: '', goods: 'Chilled'),
+    StopInfo(stopId: 'stop-a', sequence: 1, outletCode: 'OUT1', name: 'Fresh', windowStart: '08:00', windowEnd: '09:00', units: 10, accessNote: '', contactNote: '', goods: 'Ambient'),
+    StopInfo(stopId: 'stop-b', sequence: 2, outletCode: 'OUT1', name: 'Fresh', windowStart: '10:00', windowEnd: '11:00', units: 4, accessNote: '', contactNote: '', goods: 'Chilled'),
   ],
 );
 
@@ -159,7 +159,7 @@ void main() {
       await session.recordDelivery(_twice.stops[0], const DeliveryDraft(outcome: DeliveryOutcome.partial, quantity: 6));
       await session.recordDelivery(_twice.stops[1], const DeliveryDraft(outcome: DeliveryOutcome.refused, notes: 'Store closed'));
       final details = session.summary.unresolved.map((r) => r.detail).toList();
-      expect(details, ['4 cartons short - saved on this phone, not sent yet', 'Store closed - saved on this phone, not sent yet']);
+      expect(details, ['4 units short - saved on this phone, not sent yet', 'Store closed - saved on this phone, not sent yet']);
       expect(details.join(), isNot(contains('notified')));
     });
 
@@ -231,4 +231,7 @@ class _NoAuth implements AuthGateway {
 
   @override
   Future<void> signOut() async {}
+
+  @override
+  Future<String?> accessToken() async => 'token';
 }

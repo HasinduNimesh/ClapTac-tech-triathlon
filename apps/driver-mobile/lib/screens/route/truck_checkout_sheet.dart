@@ -31,10 +31,11 @@ Future<void> showTruckCheckoutSheet(
         for (final stop in trip.stops)
           LoadCheckLine(
               title:
-                  'Stop ${stop.sequence} · ${stop.name} · ${stop.cartons} cartons on board'),
+                  'Stop ${stop.sequence} · ${stop.name} · ${stop.unitsText} on board'),
       ];
   final details = [
-    '${trip.vehicleCode} · ${trip.plate}',
+    trip.vehicleCode,
+    if (trip.plate.isNotEmpty) trip.plate,
     trip.tripRef,
     if (planVersion != null) 'Plan $planVersion',
     if (sealNumber != null) 'Seal $sealNumber',

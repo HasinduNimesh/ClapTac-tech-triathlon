@@ -159,7 +159,7 @@ class _RecordDeliveryScreenState extends State<RecordDeliveryScreen> {
               children: [
                 Semantics(header: true, child: Text('Record delivery', style: AppText.of(23, FontWeight.w700, height: 1.35))),
                 Text(
-                  '${stop.outletCode} · ${widget.orderRef} · $_effectiveQuantity of $expected received',
+                  '${[stop.outletCode, widget.orderRef].where((part) => part.isNotEmpty).join(' · ')} · $_effectiveQuantity of $expected received',
                   style: AppText.of(13, FontWeight.w400, color: AppColors.muted, height: 1.35),
                 ),
               ],

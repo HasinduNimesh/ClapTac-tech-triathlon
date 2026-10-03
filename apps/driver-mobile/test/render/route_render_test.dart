@@ -18,7 +18,7 @@ const _safeStop = StopInfo(
   name: 'Kirulapone',
   windowStart: '05:30',
   windowEnd: '07:30',
-  cartons: 120,
+  units: 120,
   accessNote: 'Rear entrance · van-only access',
   contactNote: 'Call the store on arrival · shared loading bay',
   goods: 'Chilled dairy',

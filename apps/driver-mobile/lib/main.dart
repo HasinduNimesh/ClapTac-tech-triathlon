@@ -11,24 +11,29 @@ import 'auth/oidc_client.dart';
 import 'auth/profile_api.dart';
 import 'offline/local_database.dart';
 import 'sync/sync.dart';
+import 'trips/trip_source.dart';
+import 'trips/trips_api.dart';
 import 'theme/app_theme.dart';
 
-AuthGateway? _buildAuthGateway() {
+({AuthGateway? auth, TripSource? trips}) _buildServices() {
   final config = AuthConfig.fromEnvironment();
-  if (!config.isConfigured) return null;
-  return OidcAuthGateway(
+  if (!config.isConfigured) return (auth: null, trips: null);
+  final auth = OidcAuthGateway(
     config: config,
     client: AppAuthOidcClient(config),
     profiles: ProfileApi(client: http.Client(), baseUrl: config.apiBaseUrl),
     store: SecureAuthStore(),
   );
+  return (auth: auth, trips: ApiTripSource(api: TripsApi(client: http.Client(), baseUrl: config.apiBaseUrl), auth: auth));
 }
 
 void main() {
   final demo = DemoFlags.fromEnvironment();
+  final services = _buildServices();
   runApp(WaypointDriverApp(
     // Real sign-in when OIDC_ISSUER and API_BASE_URL are provided; otherwise sign-in stays disabled.
-    auth: _buildAuthGateway(),
+    auth: services.auth,
+    trips: services.trips,
     database: InMemoryLocalDatabase(),
     queue: InMemorySyncQueue(),
     // Demo switches are forced off in release builds (see DemoFlags).
@@ -47,6 +52,7 @@ class WaypointDriverApp extends StatefulWidget {
     this.demoAuth = false,
     this.demoRoute = false,
     this.auth,
+    this.trips,
   });
 
   final LocalDatabase database;
@@ -55,6 +61,7 @@ class WaypointDriverApp extends StatefulWidget {
   final bool demoAuth;
   final bool demoRoute;
   final AuthGateway? auth;
+  final TripSource? trips;
 
   @override
   State<WaypointDriverApp> createState() => _WaypointDriverAppState();
@@ -68,6 +75,7 @@ class _WaypointDriverAppState extends State<WaypointDriverApp> {
     demoAuth: widget.demoAuth,
     demoRoute: widget.demoRoute,
     auth: widget.auth,
+    trips: widget.trips,
   );
 
   @override

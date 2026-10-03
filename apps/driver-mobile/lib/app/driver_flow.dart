@@ -59,14 +59,16 @@ class _DriverHome extends StatefulWidget {
 class _DriverHomeState extends State<_DriverHome> {
   DriverSession get session => widget.session;
 
-  @override
-  void initState() {
-    super.initState();
-    if (session.hasRoute && !session.loadResolved) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _showLoadCheck();
-      });
-    }
+  /// The load check opens once per route, whether the route was there from the start or arrived
+  /// later from the server.
+  bool _loadCheckOpened = false;
+
+  void _openLoadCheckOnce() {
+    if (_loadCheckOpened || !session.hasRoute || session.loadResolved) return;
+    _loadCheckOpened = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _showLoadCheck();
+    });
   }
 
   void _showLoadCheck() {
@@ -178,12 +180,17 @@ class _DriverHomeState extends State<_DriverHome> {
           case DeliveryOutcome.delivered:
             _commit(context, stop, draft);
           case DeliveryOutcome.partial:
+            final expected = stop.units;
+            if (expected == null) {
+              _notify('The expected quantity for this stop is not recorded, so a partial delivery cannot be entered. Report a problem instead.');
+              return;
+            }
             Navigator.of(context).push(MaterialPageRoute<void>(
               builder: (context) => RecordDeliveryScreen(
                 stop: stop,
                 orderRef: stop.orderRef,
-                expectedQuantity: stop.cartons,
-                unit: 'cartons',
+                expectedQuantity: expected,
+                unit: stop.unitLabel,
                 initialOutcome: DeliveryOutcome.partial,
                 onProofRequested: _proofUnavailable,
                 onTabSelected: _selectTab,
@@ -248,13 +255,13 @@ class _DriverHomeState extends State<_DriverHome> {
   String _outcomeText(StopInfo stop, DeliveryDraft draft) {
     switch (draft.outcome) {
       case DeliveryOutcome.delivered:
-        return 'Delivered - ${stop.cartons} cartons';
+        return 'Delivered - ${stop.unitsText}';
       case DeliveryOutcome.partial:
-        return 'Partial - ${draft.quantity ?? 0} of ${stop.cartons} cartons';
+        return 'Partial - ${draft.quantity ?? 0} of ${stop.unitsText}';
       case DeliveryOutcome.refused:
-        return 'Refused - ${stop.cartons} cartons taken back';
+        return 'Refused - ${stop.unitsText} taken back';
       case DeliveryOutcome.failed:
-        return 'Not delivered - ${stop.cartons} cartons taken back';
+        return 'Not delivered - ${stop.unitsText} taken back';
     }
   }
 
@@ -284,8 +291,10 @@ class _DriverHomeState extends State<_DriverHome> {
       listenable: session,
       builder: (context, _) {
         if (!session.hasRoute && session.tab != DriverTab.updates) {
+          _loadCheckOpened = false;
           return _NoRoute(session: session);
         }
+        _openLoadCheckOnce();
         switch (session.tab) {
           case DriverTab.route:
             return RouteHomeScreen(
@@ -310,8 +319,9 @@ class _DriverHomeState extends State<_DriverHome> {
   }
 }
 
-/// Shown when a driver is signed in but no route is available. Assigned trips are not loaded yet
-/// and sample data is only used in explicit demo builds.
+/// Shown when a driver is signed in but there is no route to show: it is still loading, it could
+/// not be loaded, or the server has no trip for this driver today. Sample data is only used in
+/// explicit demo builds.
 class _NoRoute extends StatelessWidget {
   const _NoRoute({required this.session});
 
@@ -323,19 +333,35 @@ class _NoRoute extends StatelessWidget {
     final who = identity == null
         ? ''
         : ' Signed in as ${identity.userId}${identity.vehicleId == null ? '' : ' (vehicle ${identity.vehicleId})'}.';
+    final error = session.tripsError;
+    final loading = session.tripsLoading;
     return DriverShell(
       tab: session.tab,
       onTabSelected: session.selectTab,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Semantics(header: true, child: Text('No route loaded', style: AppText.of(22, FontWeight.w700))),
+          Semantics(header: true, child: Text(loading ? 'Loading your route' : 'No route loaded', style: AppText.of(22, FontWeight.w700))),
           const SizedBox(height: 12),
-          NoteBanner(
-            title: 'Assigned trips are not connected yet',
-            text: 'This build signs you in but does not load your trips, so there is no route to show.$who',
-          ),
+          if (loading)
+            const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator()))
+          else if (error != null)
+            NoteBanner(title: 'Could not load your route', text: error, tone: NoteTone.danger)
+          else if (session.trips == null)
+            NoteBanner(
+              title: 'Assigned trips are not connected',
+              text: 'This build signs you in but does not load your trips, so there is no route to show.$who',
+            )
+          else
+            NoteBanner(
+              title: 'No trip for you today',
+              text: 'Waypoint has no loaded trip for your vehicle today. Ask dispatch if you expected one.$who',
+            ),
           const SizedBox(height: 24),
+          if (!loading && session.trips != null) ...[
+            AppButton(label: 'Try again', onPressed: session.loadTrips),
+            const SizedBox(height: 12),
+          ],
           AppButton(label: 'Sign out', outline: true, onPressed: () => session.finishTrip()),
         ],
       ),

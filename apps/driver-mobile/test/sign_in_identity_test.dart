@@ -34,6 +34,9 @@ class FakeGateway implements AuthGateway {
 
   @override
   Future<void> signOut() async => signOuts++;
+
+  @override
+  Future<String?> accessToken() async => 'token';
 }
 
 Future<void> _boot(WidgetTester tester, FakeGateway gateway, {bool demoRoute = false}) async {

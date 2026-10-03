@@ -21,6 +21,9 @@ abstract class AuthGateway {
   Future<DriverProfile?> restore();
 
   Future<void> signOut();
+
+  /// The access token for API calls, or null when there is none or it has expired.
+  Future<String?> accessToken();
 }
 
 class OidcAuthGateway implements AuthGateway {
@@ -71,6 +74,13 @@ class OidcAuthGateway implements AuthGateway {
       return null;
     }
     return stored.profile;
+  }
+
+  @override
+  Future<String?> accessToken() async {
+    final stored = await _store.read();
+    if (stored == null || stored.tokens.isExpired(_clock())) return null;
+    return stored.tokens.accessToken;
   }
 
   @override
