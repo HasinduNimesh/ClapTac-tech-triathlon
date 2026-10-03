@@ -16,6 +16,8 @@ export function validServiceMinutes(value) {
 
 export function hasUsablePrediction(items) {
   return Array.isArray(items) && items.some((item) => item?.status === "ESTIMATED") &&
-    items.every((item) => item?.status !== "ESTIMATED" ||
-      (Number.isFinite(item.probability) && item.probability >= 0 && item.probability <= 1));
+    items.every((item) => item && typeof item === "object" &&
+      (item.status !== "ESTIMATED" ||
+        (Number.isFinite(item.probability) && item.probability >= 0 && item.probability <= 1)) &&
+      (item.calibrationStatus !== "EVALUATED" || item.brierScore == null || Number.isFinite(item.brierScore)));
 }

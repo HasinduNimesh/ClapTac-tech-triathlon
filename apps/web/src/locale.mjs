@@ -897,6 +897,25 @@ const storeManagerDashboardLabels = {
   },
 };
 
+Object.assign(labels.si, {
+  "Map": "සිතියම",
+  "Truck at": "ට්‍රක් රථය පිහිටා ඇත්තේ",
+  "Truck position unavailable": "ට්‍රක් රථයේ පිහිටීම ලබාගත නොහැක",
+  "Last location update": "අවසන් ස්ථාන යාවත්කාලීන කිරීම",
+  "stale": "පැරණි",
+  "Live location unavailable.": "සජීවී ස්ථානය ලබාගත නොහැක.",
+  "Coordinates unavailable": "ඛණ්ඩාංක ලබාගත නොහැක",
+});
+Object.assign(labels.ta, {
+  "Map": "வரைபடம்",
+  "Truck at": "லாரி இருக்கும் இடம்",
+  "Truck position unavailable": "லாரியின் இருப்பிடம் கிடைக்கவில்லை",
+  "Last location update": "கடைசி இருப்பிடப் புதுப்பிப்பு",
+  "stale": "பழையது",
+  "Live location unavailable.": "நேரடி இருப்பிடம் கிடைக்கவில்லை.",
+  "Coordinates unavailable": "ஆயத்தொலைவுகள் கிடைக்கவில்லை",
+});
+
 function lookupTranslation(locale, source) { return labels[locale]?.[source] ?? disruptionLabels[locale]?.[source] ?? driverPrivacyLabels[locale]?.[source] ?? loaderLabels[locale]?.[source] ?? loaderOfflineLabels[locale]?.[source] ?? loaderStatusLabels[locale]?.[source] ?? loaderScannerLabels[locale]?.[source] ?? storeLabels[locale]?.[source] ?? storeTrackingLabels[locale]?.[source] ?? dispatcherLabels[locale]?.[source] ?? planningLabels[locale]?.[source] ?? breakdownLabels[locale]?.[source] ?? auditLabels[locale]?.[source] ?? masterDataLabels[locale]?.[source] ?? liveOpsLabels[locale]?.[source] ?? loadingOpsLabels[locale]?.[source] ?? operationalValueLabels[locale]?.[source] ?? masterNoticeLabels[locale]?.[source] ?? policyConflictLabels[locale]?.[source] ?? followUpLabels[locale]?.[source] ?? forecastLabels[locale]?.[source] ?? serviceTimeLabels[locale]?.[source] ?? etaLabels[locale]?.[source] ?? latenessLabels[locale]?.[source] ?? notificationLabels[locale]?.[source] ?? coldChainLabels[locale]?.[source] ?? custodyLabels[locale]?.[source] ?? deferralLabels[locale]?.[source] ?? storeManagerDashboardLabels[locale]?.[source]; }
 
 const countMessages = [

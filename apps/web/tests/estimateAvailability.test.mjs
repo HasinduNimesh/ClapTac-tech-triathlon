@@ -28,4 +28,6 @@ test("missing or invalid forecast and prediction data selects standard times", (
   assert.equal(hasUsablePrediction([{ status: "ESTIMATED", probability: 2 }]), false);
   assert.equal(hasUsablePrediction([]), false);
   assert.equal(hasUsablePrediction(undefined), false);
+  assert.equal(hasUsablePrediction([null, { status: "ESTIMATED", probability: 0.4 }]), false);
+  assert.equal(hasUsablePrediction([{ status: "ESTIMATED", probability: 0.4, calibrationStatus: "EVALUATED", brierScore: "bad" }]), false);
 });

@@ -129,8 +129,11 @@ export function DeliveryPanel() {
       try {
         const history = await apiJSON<{ items: LatenessProbability[] }>(`/delivery/trips/${tripId}/lateness-history`, token);
         const items = Array.isArray(history.items) ? history.items : [];
-        setLatenessHistory(items);
-        setLatenessHistoryState(hasUsablePrediction(items) ? "ready" : "unavailable");
+        const safeItems = items.filter((item) => item && typeof item === "object" &&
+          (item.status !== "ESTIMATED" || (Number.isFinite(item.probability) && item.probability! >= 0 && item.probability! <= 1)) &&
+          (item.calibrationStatus !== "EVALUATED" || item.brierScore == null || Number.isFinite(item.brierScore)));
+        setLatenessHistory(safeItems);
+        setLatenessHistoryState(hasUsablePrediction(safeItems) ? "ready" : "unavailable");
       } catch {
         // A failed history query must not hide current event-based trip status.
         setLatenessHistoryState("unavailable");
@@ -247,7 +250,7 @@ export function DeliveryPanel() {
                       {!s.arrivedAt && estimate.kind !== "unknown" && <small className="muted">{t(estimate.confidence)}</small>}
                       {!s.arrivedAt && estimate.kind !== "unknown" && arrivalRange && <small className="muted">{t("Calibrated historical arrival range")}: {arrivalRange.lower.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}â€“{arrivalRange.upper.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} Â· {t("nominal 80% interval")}; {arrivalRange.sampleCount} {t("paired arrivals")}; {arrivalRange.holdoutCount} {t("holdout arrivals")}; {arrivalRange.coverage == null ? t("coverage unavailable") : `${(arrivalRange.coverage * 100).toFixed(1)}% ${t("holdout coverage")}`} Â· {arrivalRange.version} Â· {t("Historical schedule residuals by depot, brand, and temperature; adjusted around the event-based ETA.")}</small>}
                       {!s.arrivedAt && estimate.kind !== "unknown" && !arrivalRange && <small className="muted">{t("Arrival range withheld")}: {t(lateness?.arrivalRangeStatus || (latenessHistoryState === "unavailable" ? "ARRIVAL_HISTORY_UNAVAILABLE" : "INSUFFICIENT_HISTORY"))} Â· {lateness?.arrivalRangeSamples ?? 0} {t("paired arrivals")}, {lateness?.arrivalRangeHoldouts ?? 0} {t("holdout arrivals")}</small>}
-                      {!s.arrivedAt && <small className="muted" aria-live="polite">{latenessHistoryState === "loading" ? t("Loading arrival historyâ€¦") : latenessHistoryState === "unavailable" ? t("Arrival history is unavailable.") : lateness?.probability != null ? `${t("Late arrival probability")}: ${(lateness.probability * 100).toFixed(1)}% Â· ${lateness.sampleCount} ${t("past stops")}` : `${t("Insufficient history; probability withheld.")} Â· n=${lateness?.sampleCount ?? 0}`}</small>}
+                      {!s.arrivedAt && <small className="muted" aria-live="polite">{latenessHistoryState === "loading" ? t("Loading arrival history…") : latenessHistoryState === "unavailable" ? t("Arrival history is unavailable.") : lateness?.probability != null ? `${t("Late arrival probability")}: ${(lateness.probability * 100).toFixed(1)}% Â· ${lateness.sampleCount} ${t("past stops")}` : `${t("Insufficient history; probability withheld.")} Â· n=${lateness?.sampleCount ?? 0}`}</small>}
                     </td>
                     <td>{s.outcomeReceivedAt ? `${t("Outcome received")} ${new Date(s.outcomeReceivedAt).toLocaleString()}` : s.arrivedReceivedAt ? `${t("Arrival received")} ${new Date(s.arrivedReceivedAt).toLocaleString()}` : t("No driver update yet")}</td>
                   </tr>
