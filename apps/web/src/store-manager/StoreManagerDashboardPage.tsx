@@ -1,8 +1,7 @@
 import { Link, useSearchParams } from "react-router-dom";
-import { useAuth } from "../auth/AuthContext";
 import { DashboardGrid } from "./DashboardCards";
 import { DashboardMenu } from "./DashboardMenu";
-import { loadDashboards } from "./dashboards";
+import { useDashboards } from "./dashboards";
 import { useLocale } from "../i18n";
 import iconHistory from "../assets/store-manager/icon-history.svg";
 import iconTruck from "../assets/store-manager/icon-truck.svg";
@@ -32,12 +31,9 @@ function nextStep(row: Tracking, t: (key: string) => string) {
 
 export function StoreManagerDashboardPage() {
   const { t } = useLocale();
-  const { profile } = useAuth();
   const [params, setParams] = useSearchParams();
   const { rows, loading, loadFailed, skipped, reload } = useOrderTrackings();
-  const userId = profile?.userId || "anonymous";
-  const outletId = profile?.outletIds?.[0] || "outlet";
-  const dashboards = loadDashboards(userId, outletId);
+  const { dashboards } = useDashboards();
   const selected = dashboards.find((d) => d.id === params.get("dashboard"));
   const heroActions = (
     <>

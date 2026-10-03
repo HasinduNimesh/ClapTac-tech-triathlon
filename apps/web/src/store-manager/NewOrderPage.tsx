@@ -7,6 +7,9 @@ import { useLocale } from "../i18n";
 import { formatDay } from "./orderStage.mjs";
 import { CutoffNotice, StoreManagerHero } from "./StoreManagerHero";
 import iconCheck from "../assets/store-manager/icon-check.svg";
+import { useHelpersAvailable } from "../api/assistants";
+import { OrderTextHelper } from "./OrderTextHelper";
+import type { FormFill } from "./orderDraft.mjs";
 
 function failureMessage(error: unknown, fallback: string) {
   if (error instanceof ApiError) {
@@ -33,9 +36,22 @@ export function NewOrderPage() {
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const inFlight = useRef(false);
+  const helpers = useHelpersAvailable(user?.access_token);
+  const [filledFrom, setFilledFrom] = useState("");
 
   const outlet = profile?.outletIds?.[0] || "";
   const goods = temp === "chilled" ? t("Chilled") : t("Ambient");
+
+  function fillFromText(fill: FormFill, neededBy: string | null) {
+    setTemp(fill.temperature);
+    setUnits(String(fill.orderUnits));
+    setWeight(String(fill.orderWeightKg));
+    setVolume(String(fill.orderVolumeM3));
+    if (neededBy && neededBy >= minDate) setDate(neededBy);
+    setFilledFrom(fill.temperature);
+    setError("");
+    document.getElementById("delivery-details-heading")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 
   function reset() {
     setCreated(null);
@@ -43,6 +59,7 @@ export function NewOrderPage() {
     setWeight("");
     setVolume("");
     setError("");
+    setFilledFrom("");
   }
 
   async function onSubmit(event: FormEvent) {
@@ -119,10 +136,18 @@ export function NewOrderPage() {
         <CutoffNotice />
       </StoreManagerHero>
 
+      {helpers?.order && user?.access_token && (
+        // Kept outside the order form so Enter in these fields can never submit an order.
+        <div className="sm-page-body sm-helper-wrap">
+          <OrderTextHelper token={user.access_token} onFill={fillFromText} />
+        </div>
+      )}
+
       <form className="sm-page-body sm-order-form" onSubmit={onSubmit} aria-describedby={error ? "order-error" : undefined}>
         {error && <p id="order-error" className="status-bad sm-form-error" role="alert">{error}</p>}
         <div className="sm-order-form-grid">
           <div className="sm-order-form-main">
+            {filledFrom && <p className="sm-info-banner sm-helper-filled" role="status">{t("The form below was filled in from your text. Check every value before you submit.")}</p>}
             <section className="sm-form-card" aria-labelledby="delivery-details-heading">
               <h2 id="delivery-details-heading" className="sm-form-card-title">{t("Delivery details")}</h2>
               <p className="sm-form-card-sub muted">{t("Your outlet is set from your account. Contact your dispatcher if this is wrong.")}</p>
