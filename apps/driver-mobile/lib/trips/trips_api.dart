@@ -131,8 +131,12 @@ TripInfo tripFromJson(Map<String, Object?> json) {
 
   // Stops the server already finished (a resumed run) count as done, in order.
   var done = 0;
+  final completedStopIds = <String>{};
   for (final item in stopsJson) {
-    if (item is Map<String, Object?> && item['status'] == 'completed') done++;
+    if (item is Map<String, Object?> && item['status'] == 'completed') {
+      done++;
+      if (item['id'] is String) completedStopIds.add(item['id'] as String);
+    }
   }
 
   return TripInfo(
@@ -144,6 +148,7 @@ TripInfo tripFromJson(Map<String, Object?> json) {
     window: opens.isEmpty || closes.isEmpty ? '' : '${opens.first}-${closes.last}',
     stops: stops,
     completedStops: done,
+    completedStopIds: completedStopIds,
   );
 }
 

@@ -304,13 +304,13 @@ class _DriverHomeState extends State<_DriverHome> {
               onTabSelected: session.selectTab,
             );
           case DriverTab.updates:
-            return UpdatesScreen(items: session.updates, onOpen: _openUpdate, onTabSelected: session.selectTab);
+            return UpdatesScreen(items: session.visibleUpdates, onOpen: _openUpdate, onTabSelected: session.selectTab);
           case DriverTab.summary:
             if (!session.routeComplete) return _InProgressSummary(trip: session.trip, onTabSelected: session.selectTab);
             return EndOfDayScreen(
               summary: session.summary,
               onFinishTrip: _finishTrip,
-              onRetryUpload: () => _notify('Nothing can be sent yet: uploading is not connected in this build.'),
+              onRetryUpload: () => session.retrySync(),
               onTabSelected: session.selectTab,
             );
         }

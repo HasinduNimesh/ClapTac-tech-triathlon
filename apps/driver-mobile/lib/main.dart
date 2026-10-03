@@ -11,20 +11,28 @@ import 'auth/oidc_client.dart';
 import 'auth/profile_api.dart';
 import 'offline/local_database.dart';
 import 'sync/sync.dart';
+import 'sync/sqlite_sync_queue.dart';
+import 'sync/sync_worker.dart';
 import 'trips/trip_source.dart';
 import 'trips/trips_api.dart';
 import 'theme/app_theme.dart';
 
-({AuthGateway? auth, TripSource? trips}) _buildServices() {
+({AuthGateway? auth, TripSource? trips, SyncQueue queue, DeliverySyncWorker? worker}) _buildServices() {
   final config = AuthConfig.fromEnvironment();
-  if (!config.isConfigured) return (auth: null, trips: null);
+  if (!config.isConfigured) return (auth: null, trips: null, queue: InMemorySyncQueue(), worker: null);
   final auth = OidcAuthGateway(
     config: config,
     client: AppAuthOidcClient(config),
     profiles: ProfileApi(client: http.Client(), baseUrl: config.apiBaseUrl),
     store: SecureAuthStore(),
   );
-  return (auth: auth, trips: ApiTripSource(api: TripsApi(client: http.Client(), baseUrl: config.apiBaseUrl), auth: auth));
+  final queue = SqliteSyncQueue();
+  return (
+    auth: auth,
+    trips: ApiTripSource(api: TripsApi(client: http.Client(), baseUrl: config.apiBaseUrl), auth: auth),
+    queue: queue,
+    worker: DeliverySyncWorker(queue: queue, auth: auth, client: http.Client(), baseUrl: config.apiBaseUrl),
+  );
 }
 
 void main() {
@@ -35,7 +43,8 @@ void main() {
     auth: services.auth,
     trips: services.trips,
     database: InMemoryLocalDatabase(),
-    queue: InMemorySyncQueue(),
+    queue: services.queue,
+    worker: services.worker,
     // Demo switches are forced off in release builds (see DemoFlags).
     demoAuth: demo.auth,
     demoRoute: demo.route,
@@ -53,6 +62,7 @@ class WaypointDriverApp extends StatefulWidget {
     this.demoRoute = false,
     this.auth,
     this.trips,
+    this.worker,
   });
 
   final LocalDatabase database;
@@ -62,6 +72,7 @@ class WaypointDriverApp extends StatefulWidget {
   final bool demoRoute;
   final AuthGateway? auth;
   final TripSource? trips;
+  final DeliverySyncWorker? worker;
 
   @override
   State<WaypointDriverApp> createState() => _WaypointDriverAppState();
@@ -76,6 +87,7 @@ class _WaypointDriverAppState extends State<WaypointDriverApp> {
     demoRoute: widget.demoRoute,
     auth: widget.auth,
     trips: widget.trips,
+    worker: widget.worker,
   );
 
   @override
@@ -86,6 +98,7 @@ class _WaypointDriverAppState extends State<WaypointDriverApp> {
 
   @override
   void dispose() {
+    widget.worker?.stop();
     _session.dispose();
     super.dispose();
   }

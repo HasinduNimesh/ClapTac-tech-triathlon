@@ -72,6 +72,7 @@ class TripInfo {
     required this.window,
     required this.stops,
     this.completedStops = 0,
+    this.completedStopIds = const {},
   });
 
   /// The server's trip and delivery-run ids, used when operations are sent.
@@ -85,6 +86,7 @@ class TripInfo {
   final String window;
   final List<StopInfo> stops;
   final int completedStops;
+  final Set<String> completedStopIds;
 
   /// "VEH001", or "VEH001 - WP LB-4521" when a plate is known.
   String get vehicleLabel => plate.isEmpty ? vehicleCode : '$vehicleCode - $plate';

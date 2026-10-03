@@ -9,6 +9,8 @@ import '../screens/states/end_of_day_screen.dart';
 import '../screens/updates/updates_screen.dart';
 import '../sync/operations.dart';
 import '../sync/sync.dart';
+import '../sync/sqlite_sync_queue.dart';
+import '../sync/sync_worker.dart';
 import '../trips/trip_source.dart';
 import '../widgets/driver_shell.dart';
 import '../widgets/note_banner.dart';
@@ -17,14 +19,13 @@ String _two(int value) => value.toString().padLeft(2, '0');
 
 String clockLabel(DateTime time) => '${_two(time.hour)}:${_two(time.minute)}';
 
-/// What the app tells the driver about anything that is only queued on the phone.
-const savedNotSent = 'saved on this phone, not sent yet';
+/// A local action may be sent in the background; Updates shows its current state.
+const savedNotSent = 'saved on this phone';
 
 /// App state for the signed-in driver: today's trip, what has been recorded on this phone, and the
 /// updates list.
 ///
-/// Everything the driver does is queued as a delivery sync operation keyed by the server's trip
-/// and stop ids. Nothing is sent: there is no sync worker yet, and the queue is in memory.
+/// Driver operations are queued with their server IDs and stable operation IDs.
 class DriverSession extends ChangeNotifier {
   DriverSession({
     required this.database,
@@ -37,9 +38,16 @@ class DriverSession extends ChangeNotifier {
     this.demoRoute = false,
     this.auth,
     this.trips,
+    this.worker,
   })  : _initialTrip = trip ?? ((demoRoute || (auth == null && demoAuth)) ? sampleTrip : null),
         _clock = clock ?? DateTime.now,
         _newId = newId ?? newOperationId {
+    worker?.onProgress = (progress, detail) {
+      syncProgress = progress;
+      syncDetail = detail;
+      if (signedIn) _refreshPending();
+      notifyListeners();
+    };
     if (demoUpdates) {
       updates.add(const UpdateItem(
         id: planConflictId,
@@ -55,6 +63,13 @@ class DriverSession extends ChangeNotifier {
 
   final LocalDatabase database;
   final SyncQueue queue;
+  final DeliverySyncWorker? worker;
+
+  @override
+  void dispose() {
+    worker?.onProgress = null;
+    super.dispose();
+  }
 
   /// Accept any credentials. Only for demos and tests: staff accounts are not connected yet.
   final bool demoAuth;
@@ -80,6 +95,9 @@ class DriverSession extends ChangeNotifier {
   final Map<String, DeliveryDraft> _results = {};
   final List<UpdateItem> updates = [];
   int _incidents = 0;
+  int _pendingCount = 0;
+  SyncProgress syncProgress = SyncProgress.idle;
+  String? syncDetail;
 
   bool signedIn = false;
   bool signingIn = false;
@@ -109,6 +127,7 @@ class DriverSession extends ChangeNotifier {
       window: base.window,
       stops: base.stops,
       completedStops: base.completedStops + _results.length,
+      completedStopIds: base.completedStopIds,
     );
   }
 
@@ -118,8 +137,49 @@ class DriverSession extends ChangeNotifier {
 
   bool get routeComplete => hasRoute && trip.completedStops >= _baseTrip!.stops.length;
 
-  /// Delivery records and reports that are queued but not sent. Nothing is sent yet.
-  int get pendingUploads => _results.length + _incidents;
+  int get pendingUploads => queue is SqliteSyncQueue ? _pendingCount : _results.length + _incidents;
+
+  List<UpdateItem> get visibleUpdates {
+    if (worker == null) return updates;
+    final (title, detail, tone) = switch (syncProgress) {
+      SyncProgress.idle => ('Sync up to date', 'No unsent updates are waiting.', NoteTone.success),
+      SyncProgress.syncing => ('Syncing', 'Sending saved updates to Waypoint in order.', NoteTone.info),
+      SyncProgress.waitingForSignIn => ('Sign-in needed', 'Saved updates remain on this phone until you sign in.', NoteTone.amber),
+      SyncProgress.waitingForTripStart => ('Trip not started', 'Saved stop updates will sync after the plan is acknowledged and the trip is started.', NoteTone.amber),
+      SyncProgress.waitingForProof => ('Proof needed', 'The outcome stays on this phone until its photo or signature is uploaded.', NoteTone.amber),
+      SyncProgress.offline => ('Waiting for connection', syncDetail ?? 'Saved updates will retry when Waypoint can be reached.', NoteTone.offline),
+      SyncProgress.needsAttention => ('Sync needs attention', syncDetail ?? 'A saved update needs review before later updates can sync.', NoteTone.danger),
+    };
+    return [UpdateItem(title: title, detail: detail, time: clockLabel(_clock()), tone: tone), ...updates];
+  }
+
+  Future<void> _refreshPending() async {
+    if (queue is! SqliteSyncQueue || identity == null || !signedIn) return;
+    try {
+      _pendingCount = (await queue.pending()).length;
+      if (signedIn) notifyListeners();
+    } on StateError {
+      // Sign-out can clear the queue owner while a refresh is in flight.
+    }
+  }
+
+  Future<void> _useIdentity(DriverProfile profile) async {
+    if (queue is SqliteSyncQueue) {
+      await (queue as SqliteSyncQueue).useOwner(profile.userId);
+      await _refreshPending();
+    }
+    worker?.start();
+  }
+
+  void _kickSync() {
+    _refreshPending();
+    worker?.syncNow();
+  }
+
+  Future<void> retrySync() async {
+    await worker?.syncNow();
+    await _refreshPending();
+  }
 
   bool get usesIdentityProvider => auth != null;
 
@@ -137,6 +197,7 @@ class DriverSession extends ChangeNotifier {
     if (profile != null) {
       identity = profile;
       signedIn = true;
+      await _useIdentity(profile);
     }
     notifyListeners();
     if (profile != null) await loadTrips();
@@ -159,16 +220,63 @@ class DriverSession extends ChangeNotifier {
     if (loaded != null) {
       _baseTrip = loaded;
       loadCheck = LoadCheck.unchecked;
+      await _restoreQueuedActions(loaded);
     } else if (result.signInExpired) {
       // The stored sign-in is no longer accepted: go back to sign-in instead of showing a dead end.
+      worker?.stop();
+      signedIn = false;
+      if (queue is SqliteSyncQueue) await (queue as SqliteSyncQueue).useOwner(null);
       await auth?.signOut();
       identity = null;
-      signedIn = false;
       signInError = result.failure;
     } else {
       tripsError = result.failure;
     }
     notifyListeners();
+  }
+
+  /// Rebuild the local route overlay and stable operation IDs from SQLite after
+  /// a process restart. Server-completed stops are not counted a second time.
+  Future<void> _restoreQueuedActions(TripInfo loaded) async {
+    if (queue is! SqliteSyncQueue) return;
+    _results.clear();
+    _operationIds.clear();
+    final pending = await queue.pending();
+    final completedIds = loaded.completedStopIds;
+    for (final event in pending) {
+      final operation = event.payload;
+      if (operation['tripId'] != loaded.tripId) continue;
+      final type = operation['type'];
+      final stopId = operation['stopId'] as String?;
+      if (type == OperationType.arrived && stopId != null) {
+        _operationIds['arrived:$stopId'] = event.idempotencyKey;
+      } else if (type == OperationType.routeCompleted) {
+        _operationIds['route-completed'] = event.idempotencyKey;
+      } else if (type == OperationType.stopOutcome && stopId != null) {
+        _operationIds['outcome:$stopId'] = event.idempotencyKey;
+        if (completedIds.contains(stopId)) continue;
+        final payload = operation['payload'];
+        if (payload is! Map) continue;
+        final fields = payload.cast<String, Object?>();
+        final outcome = switch (fields['code']) {
+          'DELIVERED' => DeliveryOutcome.delivered,
+          'PARTIAL' => DeliveryOutcome.partial,
+          'FAILED' => DeliveryOutcome.failed,
+          'REFUSED' => DeliveryOutcome.refused,
+          _ => null,
+        };
+        if (outcome == null) continue;
+        final note = fields['note'] as String? ?? '';
+        final quantityMatch = RegExp(r'^Received (\d+) of [^.]+\.\s*').firstMatch(note);
+        _results[stopId] = DeliveryDraft(
+          outcome: outcome,
+          quantity: (fields['deliveredUnits'] as num?)?.toInt() ??
+              (quantityMatch == null ? null : int.tryParse(quantityMatch.group(1)!)),
+          notes: quantityMatch == null ? note : note.substring(quantityMatch.end),
+          reason: fields['reason'] as String?,
+        );
+      }
+    }
   }
 
   /// Returns whether the driver was let in. A real sign-in goes through the identity provider
@@ -191,6 +299,7 @@ class DriverSession extends ChangeNotifier {
       }
       identity = profile;
       signedIn = true;
+      await _useIdentity(profile);
       tab = DriverTab.route;
       notifyListeners();
       await loadTrips();
@@ -213,11 +322,14 @@ class DriverSession extends ChangeNotifier {
   Future<void> finishTrip() async {
     if (routeComplete) {
       await queue.enqueue(Operations.routeCompleted(operationId: _operationId('route-completed'), trip: trip, occurredAt: _clock()).toSyncEvent());
+      _kickSync();
     }
+    worker?.stop();
+    signedIn = false;
+    if (queue is SqliteSyncQueue) await (queue as SqliteSyncQueue).useOwner(null);
     final gateway = auth;
     if (gateway != null) await gateway.signOut();
     identity = null;
-    signedIn = false;
     loadCheck = LoadCheck.unchecked;
     tab = DriverTab.route;
     _results.clear();
@@ -241,8 +353,9 @@ class DriverSession extends ChangeNotifier {
   }
 
   /// The driver parked at the stop. The server needs an arrival before it accepts an outcome.
-  Future<void> markArrived(StopInfo stop) {
-    return queue.enqueue(Operations.arrived(operationId: _operationId('arrived:${stop.stopId}'), trip: trip, stop: stop, occurredAt: _clock()).toSyncEvent());
+  Future<void> markArrived(StopInfo stop) async {
+    await queue.enqueue(Operations.arrived(operationId: _operationId('arrived:${stop.stopId}'), trip: trip, stop: stop, occurredAt: _clock()).toSyncEvent());
+    _kickSync();
   }
 
   /// Queues the outcome as a `STOP_OUTCOME`. No proof is attached: photo and signature capture is
@@ -257,6 +370,7 @@ class DriverSession extends ChangeNotifier {
       draft: draft,
       occurredAt: _clock(),
     ).toSyncEvent());
+    _kickSync();
     _results[stop.stopId] = draft;
     updates.insert(
       0,
@@ -322,6 +436,7 @@ class DriverSession extends ChangeNotifier {
       occurredAt: _clock(),
       stop: stop,
     ).toSyncEvent());
+    _kickSync();
     _incidents++;
   }
 
