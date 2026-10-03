@@ -60,11 +60,31 @@ export type DeliveryTripSummary = {
   runId?: string;
 };
 
+export type TruckCheckout = {
+  planVersion: number;
+  status: "blocked" | "confirmed";
+  confirmedOrderIds: string[];
+  missingOrderIds: string[];
+  checkedBy: string;
+  checkedAt: string;
+};
+
+export type CheckoutLoadItem = {
+  orderId: string;
+  orderRef?: string;
+  stopSequence: number;
+  expectedUnits: number;
+  loadingStatus: string;
+  shortfallSummary?: unknown[];
+};
+
 export type DeliveryTripDetail = {
   tripId: string;
   status: string;
   run: DeliveryRun;
   stops: DeliveryStop[];
+  loadList?: CheckoutLoadItem[];
+  checkout?: TruckCheckout | null;
   currentPlanVersion?: number;
   planAcknowledgements?: {actorId:string;actorRole:string;acknowledgedAt:string}[];
 };

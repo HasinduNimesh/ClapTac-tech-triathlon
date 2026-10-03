@@ -897,6 +897,31 @@ const storeManagerDashboardLabels = {
   },
 };
 
+Object.assign(labels.si, {
+  "Truck check-out": "ට්‍රක් රථය පිටත් කිරීමේ පරීක්ෂාව",
+  "Current load list unavailable. Refresh the trip before departure.": "වත්මන් පැටවුම් ලැයිස්තුව නොමැත. පිටත් වීමට පෙර ගමන නැවුම් කරන්න.",
+  "On board": "රථයේ ඇත",
+  "Missing": "නොමැත",
+  "Check-out blocked. Loader and dispatcher alerted.": "පිටත් කිරීම අවහිරයි. පැටවුම්කරුට සහ යැවීම් කළමනාකරුට දන්වා ඇත.",
+  "Check-out recorded": "පිටත් කිරීමේ පරීක්ෂාව සටහන් කර ඇත",
+  "Confirm check-out": "පිටත් කිරීම තහවුරු කරන්න",
+  "Driver reported missing goods at check-out": "රියදුරු පිටත් කිරීමේදී භාණ්ඩ නොමැති බව වාර්තා කළේය",
+  "Check-out blocked. Review this load with dispatch.": "පිටත් කිරීම අවහිරයි. යැවීම් අංශය සමඟ පැටවුම පරීක්ෂා කරන්න.",
+  "Check-out blocked. Review this load with the loader.": "පිටත් කිරීම අවහිරයි. පැටවුම්කරු සමඟ පැටවුම පරීක්ෂා කරන්න.",
+});
+Object.assign(labels.ta, {
+  "Truck check-out": "லாரி புறப்பாடு சரிபார்ப்பு",
+  "Current load list unavailable. Refresh the trip before departure.": "தற்போதைய ஏற்றப்பட்ட பட்டியல் கிடைக்கவில்லை. புறப்படும் முன் பயணத்தைப் புதுப்பிக்கவும்.",
+  "On board": "வண்டியில் உள்ளது",
+  "Missing": "காணவில்லை",
+  "Check-out blocked. Loader and dispatcher alerted.": "புறப்பாடு தடுக்கப்பட்டது. ஏற்றுபவருக்கும் அனுப்புநருக்கும் அறிவிக்கப்பட்டது.",
+  "Check-out recorded": "புறப்பாடு சரிபார்ப்பு பதிவு செய்யப்பட்டது",
+  "Confirm check-out": "புறப்பாட்டை உறுதிசெய்",
+  "Driver reported missing goods at check-out": "புறப்பாட்டின் போது பொருட்கள் காணவில்லை என்று ஓட்டுநர் தெரிவித்தார்",
+  "Check-out blocked. Review this load with dispatch.": "புறப்பாடு தடுக்கப்பட்டது. அனுப்புநருடன் ஏற்றத்தைச் சரிபார்க்கவும்.",
+  "Check-out blocked. Review this load with the loader.": "புறப்பாடு தடுக்கப்பட்டது. ஏற்றுபவருடன் ஏற்றத்தைச் சரிபார்க்கவும்.",
+});
+
 function lookupTranslation(locale, source) { return labels[locale]?.[source] ?? disruptionLabels[locale]?.[source] ?? driverPrivacyLabels[locale]?.[source] ?? loaderLabels[locale]?.[source] ?? loaderOfflineLabels[locale]?.[source] ?? loaderStatusLabels[locale]?.[source] ?? loaderScannerLabels[locale]?.[source] ?? storeLabels[locale]?.[source] ?? storeTrackingLabels[locale]?.[source] ?? dispatcherLabels[locale]?.[source] ?? planningLabels[locale]?.[source] ?? breakdownLabels[locale]?.[source] ?? auditLabels[locale]?.[source] ?? masterDataLabels[locale]?.[source] ?? liveOpsLabels[locale]?.[source] ?? loadingOpsLabels[locale]?.[source] ?? operationalValueLabels[locale]?.[source] ?? masterNoticeLabels[locale]?.[source] ?? policyConflictLabels[locale]?.[source] ?? followUpLabels[locale]?.[source] ?? forecastLabels[locale]?.[source] ?? serviceTimeLabels[locale]?.[source] ?? etaLabels[locale]?.[source] ?? latenessLabels[locale]?.[source] ?? notificationLabels[locale]?.[source] ?? coldChainLabels[locale]?.[source] ?? custodyLabels[locale]?.[source] ?? deferralLabels[locale]?.[source] ?? storeManagerDashboardLabels[locale]?.[source]; }
 
 const countMessages = [

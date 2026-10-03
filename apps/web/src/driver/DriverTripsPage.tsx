@@ -33,6 +33,7 @@ export function DriverTripsPage() {
   const [error, setError] = useState("");
   const [banner, setBanner] = useState<SyncBanner>({ kind: "ok", text: "" });
   const [reason, setReason] = useState("");
+  const [onboard, setOnboard] = useState<Record<string, "yes" | "no">>({});
   const [note, setNote] = useState("");
   const [temperatureC, setTemperatureC] = useState("");
   const [techCustody, setTechCustody] = useState<Record<string,{sealId:string;serials:string;condition:string}>>({});
@@ -214,6 +215,7 @@ export function DriverTripsPage() {
   }
 
   async function openTrip(tripId: string) {
+    setOnboard({});
     await run(async () => {
       try {
         const body = await apiJSON<DeliveryTripDetail>(`/delivery/trips/${tripId}`, token);
@@ -267,8 +269,25 @@ export function DriverTripsPage() {
     } catch(e) { setError(e instanceof ApiError ? `${e.status}: ${t(e.message)}` : t("Update failed. Please try again.")); }
   }
 
+  async function checkOutTruck() {
+    if (!detail?.run?.planVersion || !detail.loadList?.length || detail.currentPlanVersion !== detail.run.planVersion) return;
+    const items = detail.loadList;
+    if (!items.every(item => onboard[item.orderId])) return;
+    await run(async () => {
+      const result = await apiJSON<{ checkout: NonNullable<DeliveryTripDetail["checkout"]> }>(
+        "/delivery/trips/" + encodeURIComponent(detail.tripId) + "/checkout", token, {
+          method: "POST",
+          body: JSON.stringify({
+            planVersion: detail.run.planVersion,
+            confirmedOrderIds: items.filter(item => onboard[item.orderId] === "yes").map(item => item.orderId),
+          }),
+        });
+      setDetail(current => current?.tripId === detail.tripId ? { ...current, checkout: result.checkout } : current);
+    });
+  }
+
   async function startRun() {
-    if (!detail) return;
+    if (!detail || detail.checkout?.status !== "confirmed" || detail.checkout.planVersion !== detail.run.planVersion) return;
     await run(async () => {
       const operationId = newOperationId();
       try {
@@ -649,8 +668,20 @@ export function DriverTripsPage() {
             <strong>{t("Next stop ·")} {nextStop.stopSequence}. {stopLabel(nextStop)}</strong>
             <span>{nextStop.plannedWindowOpen ? `${t("Window")} ${nextStop.plannedWindowOpen}–${nextStop.plannedWindowClose || ""} · ` : ""}{t("Tap only when safely stopped")}</span>
           </button>}
+          {!inProgress && !completed && <section className="card" aria-label={t("Truck check-out")}>
+            <h4>{t("Truck check-out")}</h4>
+            {!detail.loadList?.length || detail.currentPlanVersion !== detail.run.planVersion ? <p role="alert">{t("Current load list unavailable. Refresh the trip before departure.")}</p> :
+              <ul>{detail.loadList.map(item => <li key={item.orderId}>
+                <span>{item.stopSequence}. {item.orderRef || item.orderId} - {item.expectedUnits} {t("units")}</span>
+                <label><input type="radio" name={"onboard-" + item.orderId} checked={onboard[item.orderId] === "yes"} onChange={() => setOnboard(current => ({ ...current, [item.orderId]: "yes" }))} />{t("On board")}</label>
+                <label><input type="radio" name={"onboard-" + item.orderId} checked={onboard[item.orderId] === "no"} onChange={() => setOnboard(current => ({ ...current, [item.orderId]: "no" }))} />{t("Missing")}</label>
+              </li>)}</ul>}
+            {detail.checkout?.status === "blocked" && <p role="alert" className="status-bad">{t("Check-out blocked. Loader and dispatcher alerted.")}</p>}
+            {detail.checkout?.status === "confirmed" && detail.checkout.planVersion === detail.run.planVersion && <p role="status" className="status-ok">{t("Check-out recorded")} - {new Date(detail.checkout.checkedAt).toLocaleString()}</p>}
+            {detail.checkout?.status !== "confirmed" && <button type="button" className="tap" onClick={checkOutTruck} disabled={!navigator.onLine || !driverAcknowledged || !detail.loadList?.length || !detail.loadList.every(item => onboard[item.orderId]) || detail.currentPlanVersion !== detail.run.planVersion}>{t("Confirm check-out")}</button>}
+          </section>}
           {!inProgress && !completed && (
-            <button type="button" className="tap primary" onClick={startRun} disabled={!driverAcknowledged}>
+            <button type="button" className="tap primary" onClick={startRun} disabled={!driverAcknowledged || detail.checkout?.status !== "confirmed" || detail.checkout.planVersion !== detail.run.planVersion}>
               {t("Start run")}
             </button>
           )}

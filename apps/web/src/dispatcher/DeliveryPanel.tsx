@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { ApiError, apiJSON } from "../api/client";
 import { todayInSriLanka } from "../api/date.mjs";
-import { DeliveryTripDetail, DeliveryTripSummary, LatenessProbability } from "../api/delivery";
+import { DeliveryTripDetail, DeliveryTripSummary, LatenessProbability, TruckCheckout } from "../api/delivery";
 import { depotLabel } from "../api/loading";
 import { useAuth } from "../auth/AuthContext";
 import { PlanDetail } from "../api/planning";
@@ -25,6 +25,7 @@ export function DeliveryPanel() {
   const [date, setDate] = useState(todayInSriLanka);
   const [trips, setTrips] = useState<DeliveryTripSummary[]>([]);
   const [detail, setDetail] = useState<DeliveryTripDetail | null>(null);
+  const [checkoutAlert, setCheckoutAlert] = useState<TruckCheckout | null>(null);
   const [plan, setPlan] = useState<PlanDetail | null>(null);
   const [refreshedAt, setRefreshedAt] = useState("");
   const [error, setError] = useState("");
@@ -88,6 +89,22 @@ export function DeliveryPanel() {
       setHasLoaded(true);
     }
   }
+
+  useEffect(() => {
+    if (!detail?.tripId || !token) { setCheckoutAlert(null); return; }
+    setCheckoutAlert(null);
+    let active = true;
+    const tripId = detail.tripId;
+    const loadAlert = async () => {
+      try {
+        const result = await apiJSON<{ checkout: TruckCheckout | null }>("/delivery/trips/" + encodeURIComponent(tripId) + "/checkout", token);
+        if (active) setCheckoutAlert(result.checkout?.status === "blocked" ? result.checkout : null);
+      } catch { if (active) setCheckoutAlert(null); }
+    };
+    void loadAlert();
+    const timer = window.setInterval(() => { void loadAlert(); }, 15_000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [detail?.tripId, token]);
 
   async function openTrip(tripId: string) {
     setError("");
@@ -176,6 +193,7 @@ export function DeliveryPanel() {
           <h3>
             {detail.run?.planRef} · {depotLabel(detail.run?.depot)} · {t(detail.status)}
           </h3>
+          {checkoutAlert && <p className="status-bad" role="alert">{t("Driver reported missing goods at check-out")}: {checkoutAlert.missingOrderIds.map(id => detail.stops.find(stop => stop.orderId === id)?.orderRef || id).join(", ")}. {t("Check-out blocked. Review this load with the loader.")}</p>}
           <table>
             <thead>
               <tr>

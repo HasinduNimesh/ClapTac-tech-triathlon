@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { ApiError, apiJSON } from "../api/client";
+import { TruckCheckout } from "../api/delivery";
 import { todayLocal } from "../api/date";
 import { depotLabel, isIncomplete, LoadingTripDetail, LoadingTripSummary, newIdempotencyKey } from "../api/loading";
 import { useAuth } from "../auth/AuthContext";
@@ -19,6 +20,7 @@ export function LoadingPage() {
   const [date, setDate] = useState(todayLocal);
   const [trips, setTrips] = useState<LoadingTripSummary[]>([]);
   const [detail, setDetail] = useState<LoadingTripDetail | null>(null);
+  const [checkoutAlert, setCheckoutAlert] = useState<TruckCheckout | null>(null);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [issueType, setIssueType] = useState("MISSING");
@@ -51,6 +53,22 @@ export function LoadingPage() {
     }).catch(() => { if (active) setOwnerState("blocked"); });
     return () => { active = false; };
   }, [ownerId]);
+
+  useEffect(() => {
+    if (!detail?.tripId || !token || !online) { setCheckoutAlert(null); return; }
+    setCheckoutAlert(null);
+    let active = true;
+    const tripId = detail.tripId;
+    const loadAlert = async () => {
+      try {
+        const result = await apiJSON<{ checkout: TruckCheckout | null }>("/delivery/trips/" + encodeURIComponent(tripId) + "/checkout", token);
+        if (active) setCheckoutAlert(result.checkout?.status === "blocked" ? result.checkout : null);
+      } catch { if (active) setCheckoutAlert(null); }
+    };
+    void loadAlert();
+    const timer = window.setInterval(() => { void loadAlert(); }, 15_000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [detail?.tripId, token, online]);
 
   async function refreshFromServer(tripId: string) {
     if (!navigator.onLine) throw new TypeError("Connection lost while refreshing the loading manifest.");
@@ -348,6 +366,7 @@ export function LoadingPage() {
             {depotLabel(detail.depot)} · {t(detail.status || detail.loadingStatus || "pending")} · {detail.loadedCount ?? 0} {t("loaded")} ·{" "}
             {detail.shortfallCount ?? 0} {t("short")} · {detail.pendingCount ?? 0} {t("pending")}
           </p>
+          {checkoutAlert && <p className="status-bad" role="alert">{t("Driver reported missing goods at check-out")}: {checkoutAlert.missingOrderIds.map(id => detail.orders?.find(order => order.orderId === id)?.orderRef || id).join(", ")}. {t("Check-out blocked. Review this load with dispatch.")}</p>}
           {detail.status === "pending" && (
             <button type="button" className="tap primary" onClick={start}>
               {t("Start loading")}
