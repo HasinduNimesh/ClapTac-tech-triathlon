@@ -48,10 +48,22 @@ Configure it per build with `--dart-define` (see `lib/auth/auth_config.dart`):
 | `OIDC_RESOURCE` | the API the token is for, an absolute URI such as `https://waypoint.claptac.dev/api/v1`; sent as the `resource` parameter (ThunderID rejected the bare `waypoint-api` value) |
 | `OIDC_CLIENT_ID` | default `waypoint-driver` |
 | `OIDC_REDIRECT_URI` | default `dev.claptac.waypointdriver:/oauth2redirect`; the scheme must match `appAuthRedirectScheme` in `android/app/build.gradle.kts` and may not contain an underscore |
+| `OIDC_SCOPES` | space-separated scopes, default `openid profile`. Add `offline_access` (`"openid profile offline_access"`) so the provider issues a refresh token, once the ThunderID client allows it; see "Staying signed in" below |
 
 Without `OIDC_ISSUER` and `API_BASE_URL`, sign-in is disabled. Plain HTTP is only accepted in debug builds, for a local identity server; release builds refuse it. The identity provider side is described in `infrastructure/thunder/README.md`.
 
 The demo switches `DEMO_AUTH` (any credentials, no identity provider), `DEMO_ROUTE` (show the sample route after a real sign-in) and `DEMO_UPDATES` (a sample plan update) are forced off in release builds, whatever is passed.
+
+## Staying signed in
+
+When the identity provider issues a refresh token (normally only if `offline_access` is requested, see `OIDC_SCOPES`), the app keeps it in secure storage next to the access token and uses it instead of sending the driver back to the browser:
+
+- an expired access token, or one within 60 seconds of expiring, is refreshed before it is used; the rotated tokens are stored, and simultaneous callers (the sync worker, loading the route, starting the trip) share one refresh
+- if the provider refuses the refresh token (revoked, already used, expired) the session ends and the driver signs in again
+- if there is no connection when a refresh is needed, that is treated as being offline, not as a sign-out: queued updates stay on the phone and the refresh is retried on the next attempt
+- the app opens with an expired access token as long as there is a refresh token, so it works without signal and refreshes when something needs the server
+
+Without a refresh token (the default scopes against a provider that does not issue one without `offline_access`), an expired access token still means signing in again. Signing out removes the tokens from the phone but does not revoke the refresh token at the provider.
 
 ## Not built yet
 
@@ -64,7 +76,7 @@ Do not describe this build as connected to the cloud: sign-in and loading the ro
 - **Server gaps.** Until PR #28 is in the app's base branch, partial quantity remains in the `note`; no distinct "re-attempt next run" or "defer" operation exists (also in the `note`), and there is no structured driver load-discrepancy workflow (a missing item is a `GOODS` incident). Contracts and RBAC for these need deciding before they can work as the screens show.
 - **Load check.** Confirming only marks the load confirmed on this phone. Reporting a missing item keeps the route locked until the driver confirms again or explicitly departs anyway, which is queued as a second incident.
 - **Plan and messages.** Plan acknowledgement (`POST /api/v1/planning/plans/{id}/acknowledgements`) and dispatcher trip messages exist on the server but are not used. The plan review screen ("send both versions for review") has no matching API and is demo-only.
-- Connectivity is not detected, so the no-signal sign-in variant is not triggered automatically. Tokens are not refreshed: when the access token expires the driver signs in again.
+- Connectivity is not detected, so the no-signal sign-in variant is not triggered automatically. 
 
 ## Layout
 
