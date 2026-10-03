@@ -256,7 +256,7 @@ class _SyncCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final children = <Widget>[
       Positioned(left: 9, top: 8, width: 40, height: 38, child: Image.asset(AppAssets.mapPin, fit: BoxFit.cover, excludeFromSemantics: true)),
-      Positioned(left: 65, top: 18, child: figmaText('${stop.outletCode} - ${stop.name}', weight: FontWeight.w700, lineHeight: 19)),
+      Positioned(left: 65, top: 18, child: figmaText(stop.label, weight: FontWeight.w700, lineHeight: 19)),
     ];
     for (final row in rows) {
       children.addAll(_build(row));

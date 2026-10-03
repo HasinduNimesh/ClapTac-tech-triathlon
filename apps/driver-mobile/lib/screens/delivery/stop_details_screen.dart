@@ -172,7 +172,7 @@ class _StopDetailsScreenState extends State<StopDetailsScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text('${stop.outletCode} - ${stop.name}', style: deliveryText(13, FontWeight.w700)),
+                      Text(stop.label, style: deliveryText(13, FontWeight.w700)),
                       const SizedBox(height: 4),
                       Text(stop.window, style: deliveryText(13, FontWeight.w400)),
                       Text(stop.unitsText, style: deliveryText(13, FontWeight.w400)),

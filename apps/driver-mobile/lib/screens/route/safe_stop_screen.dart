@@ -68,7 +68,7 @@ class SafeStopScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('${stop.outletCode} · ${stop.name}',
+                Text(stop.labelWith(' · '),
                     style: AppText.of(16, FontWeight.w700, height: 1.35)),
                 const SizedBox(height: 4),
                 Text('Requested window ${stop.windowStart}–${stop.windowEnd}',

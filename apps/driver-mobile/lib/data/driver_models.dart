@@ -49,7 +49,13 @@ class StopInfo {
   final String goods;
   final String orderRef;
 
-  String get window => '$windowStart - $windowEnd';
+  String get window => windowStart.isEmpty && windowEnd.isEmpty ? 'No time window' : '$windowStart - $windowEnd';
+
+  /// The outlet as shown to the driver, without a dangling separator when the server sent no
+  /// outlet code or name: "OUT108 - Dehiwala", "OUT108 · Dehiwala", "OUT108 Dehiwala".
+  String labelWith(String separator) => [outletCode, name].where((part) => part.isNotEmpty).join(separator);
+
+  String get label => labelWith(' - ');
 
   /// "12 units", or an honest "quantity not recorded".
   String get unitsText => units == null ? 'Quantity not recorded' : '$units $unitLabel';

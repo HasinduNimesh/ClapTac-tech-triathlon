@@ -169,8 +169,8 @@ StopInfo _stopFromJson(Map<String, Object?> json) {
   return StopInfo(
     stopId: text('id'),
     sequence: (json['stopSequence'] as num?)?.toInt() ?? 0,
-    outletCode: outletId,
-    name: name.isEmpty ? outletId : name,
+    outletCode: name.isNotEmpty ? outletId : '',
+    name: name.isNotEmpty ? name : (outletId.isNotEmpty ? outletId : (text('orderRef').isNotEmpty ? text('orderRef') : 'Stop ${(json['stopSequence'] as num?)?.toInt() ?? 0}')),
     windowStart: clock('plannedWindowOpen'),
     windowEnd: clock('plannedWindowClose'),
     units: (json['expectedUnits'] as num?)?.toInt(),

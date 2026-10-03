@@ -126,6 +126,23 @@ void main() {
       expect(stop.unitsText, 'Quantity not recorded');
       expect(stop.accessNote, 'No access instructions recorded');
       expect(stop.name, 'OUT1');
+      expect(stop.label, 'OUT1');
+      expect(stop.window, 'No time window');
+    });
+
+    test('a stop with no outlet details is still named, without a dangling separator', () {
+      final stop = tripFromJson(_detail(stops: [
+        {'id': 'stop-9', 'stopSequence': 3, 'status': 'pending'},
+      ])).stops.single;
+      expect(stop.name, 'Stop 3');
+      expect(stop.label, 'Stop 3');
+      expect(stop.labelWith(' · '), 'Stop 3');
+    });
+
+    test('an outlet with a code and a name reads "code - name"', () {
+      final stop = tripFromJson(_detail()).stops.first;
+      expect(stop.label, 'OUT108 - Dehiwala');
+      expect(stop.labelWith(' · '), 'OUT108 · Dehiwala');
     });
 
     test('without a plan reference the trip is named by a short id, not a full uuid', () {

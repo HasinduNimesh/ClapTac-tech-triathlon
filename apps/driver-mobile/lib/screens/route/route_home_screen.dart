@@ -285,7 +285,7 @@ class _NextStopCard extends StatelessWidget {
                         fontWeight: FontWeight.w700,
                         color: RouteColors.nextStopLabel)),
                 const SizedBox(height: 2),
-                Text('${stop.outletCode} - ${stop.name}',
+                Text(stop.label,
                     style: textStyle.copyWith(fontWeight: FontWeight.w700)),
                 const SizedBox(height: 0),
                 Text(stop.window, style: textStyle),

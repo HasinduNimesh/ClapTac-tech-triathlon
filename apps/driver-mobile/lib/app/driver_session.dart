@@ -262,7 +262,7 @@ class DriverSession extends ChangeNotifier {
       0,
       UpdateItem(
         title: 'Delivery $savedNotSent',
-        detail: '${stop.outletCode} ${stop.name} · ${outcomeLabel(draft.outcome)}',
+        detail: '${stop.labelWith(' ')} · ${outcomeLabel(draft.outcome)}',
         time: clockLabel(_clock()),
         tone: NoteTone.offline,
       ),
@@ -336,7 +336,7 @@ class DriverSession extends ChangeNotifier {
       0,
       UpdateItem(
         title: 'Problem reported',
-        detail: '${problemLabel(report.kind)}${stop == null ? '' : ' · ${stop.outletCode} ${stop.name}'} · $savedNotSent',
+        detail: '${problemLabel(report.kind)}${stop == null ? '' : ' · ${stop.labelWith(' ')}'} · $savedNotSent',
         time: clockLabel(_clock()),
         tone: NoteTone.danger,
       ),
