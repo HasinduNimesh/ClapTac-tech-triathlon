@@ -184,3 +184,54 @@ func hmacSHA256(key []byte, data string) []byte {
 	_, _ = m.Write([]byte(data))
 	return m.Sum(nil)
 }
+
+// Get reads an object back. It is not part of Store so existing Store
+// implementations keep compiling; callers that need reads ask for a Reader.
+func (m *Memory) Get(_ context.Context, key string) ([]byte, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	b, ok := m.Objects[key]
+	if !ok {
+		return nil, fmt.Errorf("object not found")
+	}
+	cp := make([]byte, len(b))
+	copy(cp, b)
+	return cp, nil
+}
+
+// Reader is a Store that can also read objects back.
+type Reader interface {
+	Store
+	Get(ctx context.Context, key string) ([]byte, error)
+}
+
+func (s S3) Get(ctx context.Context, key string) ([]byte, error) {
+	if s.Endpoint == "" || s.Bucket == "" {
+		return nil, fmt.Errorf("object store not configured")
+	}
+	base, err := url.Parse(s.Endpoint)
+	if err != nil {
+		return nil, err
+	}
+	escaped := pathEscape(s.Bucket) + "/" + pathEscape(key)
+	u := *base
+	u.Path = strings.TrimSuffix(u.Path, "/") + "/" + escaped
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	sign(req, []byte{}, s.AccessKey, s.SecretKey, s.region(), u.Host, "/"+escaped)
+	resp, err := s.http().Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 32<<20))
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("s3 GET %s: %d %s", key, resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	return body, nil
+}
