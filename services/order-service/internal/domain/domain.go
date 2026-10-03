@@ -202,6 +202,8 @@ type PlanningTracking struct {
 }
 
 type DeliveryTracking struct {
+	Depot                    string         `json:"depot,omitempty"`
+	Location                 *Location       `json:"location,omitempty"`
 	RunID                   string         `json:"runId"`
 	TripID                  string         `json:"tripId"`
 	VehicleID               string         `json:"vehicleId,omitempty"`

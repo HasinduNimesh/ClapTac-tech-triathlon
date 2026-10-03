@@ -228,6 +228,7 @@ func TestDeliveryWorkflow(t *testing.T) {
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0031_cold_chain_readings.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0038_delivery_proof_receiver_name.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0039_delivery_driver_incidents.sql"))
+	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0040_delivery_live_locations.sql"))
 
 	peers := httptest.NewServer(peerStub())
 	t.Cleanup(peers.Close)
@@ -281,10 +282,20 @@ func TestDeliveryWorkflow(t *testing.T) {
 		t.Fatalf("other driver %d", code)
 	}
 
+	pointBody := []byte(fmt.Sprintf(`{"latitude":6.9271,"longitude":79.8612,"timestamp":%q}`, time.Now().UTC().Format(time.RFC3339Nano)))
+	if code := do(t, srv, http.MethodPost, "/api/v1/delivery/trips/trip-north/location", "usr-driver", pointBody, "").status; code != http.StatusConflict { t.Fatalf("prepared trip accepted location status=%d", code) }
 	started := do(t, srv, http.MethodPost, "/api/v1/delivery/trips/trip-north/start", "usr-driver", nil, "start-1")
 	if started.status != http.StatusOK {
 		t.Fatalf("start %d %s", started.status, started.body)
 	}
+	point := do(t, srv, http.MethodPost, "/api/v1/delivery/trips/trip-north/location", "usr-driver", pointBody, "")
+	if point.status != http.StatusOK || !strings.Contains(point.body, `"vehicleId":"VEH001"`) { t.Fatalf("active point %d %s", point.status, point.body) }
+	if code := do(t, srv, http.MethodPost, "/api/v1/delivery/trips/trip-north/location", "usr-driver-other", pointBody, "").status; code != http.StatusForbidden { t.Fatalf("other driver location status=%d", code) }
+	if code := do(t, srv, http.MethodGet, "/api/v1/delivery/trips/trip-north/location", "usr-store-manager", nil, "").status; code != http.StatusForbidden { t.Fatalf("store direct location status=%d", code) }
+	visible := do(t, srv, http.MethodGet, "/api/v1/delivery/trips/trip-north/location", "usr-dispatcher", nil, "")
+	if visible.status != http.StatusOK || !strings.Contains(visible.body, `"latitude":6.9271`) { t.Fatalf("dispatcher location %d %s", visible.status, visible.body) }
+	storeScoped := do(t, srv, http.MethodGet, "/api/v1/delivery/internal/orders/ord-1", "svc-order", nil, "")
+	if storeScoped.status != http.StatusOK || !strings.Contains(storeScoped.body, `"latitude":6.9271`) { t.Fatalf("authorized order location %d %s", storeScoped.status, storeScoped.body) }
 	startReplay := do(t, srv, http.MethodPost, "/api/v1/delivery/trips/trip-north/start", "usr-driver", nil, "start-1")
 	if startReplay.status != http.StatusOK || !strings.Contains(startReplay.body, `"in_progress"`) {
 		t.Fatalf("start replay %d %s", startReplay.status, startReplay.body)
@@ -602,6 +613,11 @@ func TestDeliveryWorkflow(t *testing.T) {
 	if done.status != http.StatusOK || !strings.Contains(done.body, `"APPLIED"`) {
 		t.Fatalf("complete %d %s", done.status, done.body)
 	}
+	if code := do(t, srv, http.MethodPost, "/api/v1/delivery/trips/trip-north/location", "usr-driver", pointBody, "").status; code != http.StatusConflict { t.Fatalf("completed trip accepted location status=%d", code) }
+	endedOrder := do(t, srv, http.MethodGet, "/api/v1/delivery/internal/orders/ord-1", "svc-order", nil, "")
+	if endedOrder.status != http.StatusOK || strings.Contains(endedOrder.body, `"location"`) { t.Fatalf("completed order still exposes location %d %s", endedOrder.status, endedOrder.body) }
+	ended := do(t, srv, http.MethodGet, "/api/v1/delivery/trips/trip-north/location", "usr-dispatcher", nil, "")
+	if ended.status != http.StatusOK || !strings.Contains(ended.body, `"location":null`) { t.Fatalf("completed trip still live %d %s", ended.status, ended.body) }
 	dispatcherDetail := do(t, srv, http.MethodGet, "/api/v1/delivery/trips/trip-north", "usr-dispatcher", nil, "")
 	if dispatcherDetail.status != http.StatusOK || !strings.Contains(dispatcherDetail.body, `"outcomeCode":"DELIVERED"`) || !strings.Contains(dispatcherDetail.body, `"outcomeCode":"PARTIAL"`) || !strings.Contains(dispatcherDetail.body, `"outcomeCode":"FAILED"`) || !strings.Contains(dispatcherDetail.body, `"outcomeCode":"REFUSED"`) {
 		t.Fatalf("dispatcher did not see delivery outcomes: %d %s", dispatcherDetail.status, dispatcherDetail.body)

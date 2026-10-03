@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -71,6 +72,8 @@ func (s *stubDriver) Start(_ context.Context, _ *authorization.Profile, _ string
 	s.startOpID = opID
 	return s.detail, s.mutErr
 }
+func (s *stubDriver) UpdateLocation(context.Context, *authorization.Profile, string, float64, float64, time.Time) (domain.Location, error) { return domain.Location{}, s.mutErr }
+func (s *stubDriver) TripLocation(context.Context, *authorization.Profile, string) (*domain.Location, error) { return nil, s.getErr }
 func (s *stubDriver) Arrive(context.Context, *authorization.Profile, string, string, string, string) (map[string]any, error) {
 	return s.detail, s.mutErr
 }
