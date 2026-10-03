@@ -14,7 +14,7 @@ type Tracking = {
   stage:string;
   order:Order;
   planning:{state:string;planRef?:string;stopSequence?:number;reasonCode?:string;reasonComment?:string;plannedArrivalAt?:string;plannedServiceStartAt?:string};
-  delivery?:{runStatus:string;arrivalPrediction?:ArrivalPrediction;outcome?:string;reason?:string;completedAt?:string;proofs:{type:string;mimeType:string;pending:boolean;receiverName?:string}[];loadingShortfallSummary?:unknown[]};
+  delivery?:{runStatus:string;arrivalPrediction?:ArrivalPrediction;returnedGoods?:{goods:string;units:number;reason:string;resolution:string;followupOrderRef?:string;followupDate?:string};outcome?:string;reason?:string;completedAt?:string;proofs:{type:string;mimeType:string;pending:boolean;receiverName?:string}[];loadingShortfallSummary?:unknown[]};
   receipt?:Receipt;
   receiptIssues:ReceiptIssue[];
   custody?:CustodyEvent[];
@@ -81,6 +81,7 @@ export function TrackingPage({receiptsOnly=false}:{receiptsOnly?:boolean}){
       </form>
     </article>):items.map(row=><article className="card" key={row.order.id}>
       <h3>{row.order.orderRef} · {row.order.brand}</h3><p>{t("Requested")} {row.order.requestedDeliveryDate} · {row.order.orderUnits} {t("units")} · {t(row.stage.replace(/_/g," "))}</p>
+      {row.delivery?.returnedGoods&&<p role="status">{t("Returned goods")}: {row.delivery.returnedGoods.units} - {row.delivery.returnedGoods.goods} - {t(row.delivery.returnedGoods.reason)}. {row.delivery.returnedGoods.resolution==="REQUEST_DEFERRAL"?t("Dispatcher deferral requested"):t("Re-attempt on next run")}. {row.delivery.returnedGoods.followupOrderRef&&<>{t("Follow-up order")}: {row.delivery.returnedGoods.followupOrderRef} - {row.delivery.returnedGoods.followupDate}</>}</p>}
       {row.delivery?.arrivalPrediction&&<div role="status">
         <p>{t("Predicted arrival")}: {new Date(row.delivery.arrivalPrediction.estimatedArrivalAt).toLocaleString()} - {t(row.delivery.arrivalPrediction.lateRisk)}</p>
         {row.delivery.arrivalPrediction.arrivalRangeLower&&row.delivery.arrivalPrediction.arrivalRangeUpper&&<p>{t("Arrival range")}: {new Date(row.delivery.arrivalPrediction.arrivalRangeLower).toLocaleString()} - {new Date(row.delivery.arrivalPrediction.arrivalRangeUpper).toLocaleString()}</p>}

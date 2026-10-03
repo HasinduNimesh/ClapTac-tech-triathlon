@@ -105,6 +105,15 @@ export function OrderListPage() {
               <p role="status">{t("Arrival changed from")} {formatDay(colomboDate(prediction.previouslyCommunicatedAt))} - {colomboTime(prediction.previouslyCommunicatedAt)} {t("to")} {formatDay(colomboDate(prediction.notifiedArrivalAt))} - {colomboTime(prediction.notifiedArrivalAt)}</p>
             )}
 
+            {selected.delivery?.returnedGoods && (
+              <div className="sm-alert-card" role="status">
+                <h3 className="sm-alert-title">{t("Returned goods")}</h3>
+                <p className="sm-alert-body">{selected.delivery.returnedGoods.units} - {selected.delivery.returnedGoods.goods} - {t(selected.delivery.returnedGoods.reason)}</p>
+                <p className="sm-alert-body">{selected.delivery.returnedGoods.resolution === "REQUEST_DEFERRAL" ? t("Dispatcher deferral requested") : t("Re-attempt on next run")}</p>
+                {selected.delivery.returnedGoods.followupOrderRef && <p className="sm-alert-body">{t("Follow-up order")}: {selected.delivery.returnedGoods.followupOrderRef} - {selected.delivery.returnedGoods.followupDate}</p>}
+              </div>
+            )}
+
             {why && (
               <div className="sm-alert-card sm-deferral-note" role="status">
                 <h3 className="sm-alert-title">{t("Order deferred to a later run")}</h3>

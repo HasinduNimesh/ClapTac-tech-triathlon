@@ -35,6 +35,9 @@ export function DriverTripsPage() {
   const [reason, setReason] = useState("");
   const [onboard, setOnboard] = useState<Record<string, "yes" | "no">>({});
   const [note, setNote] = useState("");
+  const [returnGoods, setReturnGoods] = useState("");
+  const [returnUnits, setReturnUnits] = useState("");
+  const [returnResolution, setReturnResolution] = useState<"NEXT_RUN" | "REQUEST_DEFERRAL">("NEXT_RUN");
   const [temperatureC, setTemperatureC] = useState("");
   const [techCustody, setTechCustody] = useState<Record<string,{sealId:string;serials:string;condition:string}>>({});
   const [proofIds, setProofIds] = useState<Record<string, string>>({});
@@ -425,6 +428,15 @@ export function DriverTripsPage() {
           setError(t("Choose a reason for the unsuccessful delivery."));
           return;
         }
+        if (code === "REFUSED" && (!returnGoods.trim() || !Number.isInteger(Number(returnUnits)) || Number(returnUnits) < 1)) {
+          setError(t("Enter the returned goods and quantity."));
+          return;
+        }
+        const plannedUnits = detail.loadList?.find(item => item.orderId === stop.orderId)?.expectedUnits;
+        if (code === "REFUSED" && plannedUnits !== undefined && Number(returnUnits) > plannedUnits) {
+          setError(`${t("Quantity returning")}: 1-${plannedUnits}`);
+          return;
+        }
         const queued = await listQueue(ownerId);
         const proof = [...queued].reverse().find((q) => q.type === "PROOF_UPLOAD" && q.stopId === stop.id);
         const depends = proofIds[stop.id] || proof?.operationId;
@@ -445,7 +457,7 @@ export function DriverTripsPage() {
           tripId: detail.tripId,
           stopId: stop.id,
           dependsOnOperationId: depends,
-          payload: { code, reason, note, occurredAt: new Date().toISOString() },
+          payload: { code, reason, note, occurredAt: new Date().toISOString(), ...(code === "REFUSED" ? { returnedGoods: { goods: returnGoods.trim(), units: Number(returnUnits), resolution: returnResolution } } : {}) },
           createdAt: new Date().toISOString(),
         });
         setStop({ ...stop, status: "completed", outcomeCode: code });
@@ -455,6 +467,8 @@ export function DriverTripsPage() {
         await cacheDetail(updated, ownerId);
         setReason("");
         setNote("");
+        setReturnGoods("");
+        setReturnUnits("");
         await refreshBanner();
       } finally {
         setTransitionBusy(false);
@@ -799,6 +813,17 @@ export function DriverTripsPage() {
                 {t("Optional note")}
                 <input value={note} onChange={(e) => setNote(e.target.value)} />
               </label>
+              <fieldset>
+                <legend>{t("Rejected goods / take-back")}</legend>
+                <label>{t("Goods or items being returned")}<input value={returnGoods} onChange={(e) => setReturnGoods(e.target.value)} maxLength={200} /></label>
+                <label>{t("Quantity returning")}<input type="number" min="1" max={detail.loadList?.find(item => item.orderId === stop.orderId)?.expectedUnits} step="1" value={returnUnits} onChange={(e) => setReturnUnits(e.target.value)} /></label>
+                <label>{t("Follow-up choice")}
+                  <select value={returnResolution} onChange={(e) => setReturnResolution(e.target.value as "NEXT_RUN" | "REQUEST_DEFERRAL")}>
+                    <option value="NEXT_RUN">{t("Re-attempt on next run")}</option>
+                    <option value="REQUEST_DEFERRAL">{t("Request dispatcher deferral")}</option>
+                  </select>
+                </label>
+              </fieldset>
               <div className="row">
                 <button type="button" className="tap" disabled={transitionBusy} onClick={() => outcome("DELIVERED")}>
                   {t("Delivered")}

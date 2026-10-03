@@ -7,7 +7,7 @@ export type Tracking = {
   stage: string;
   order: Order;
   planning: { state?: string; planRef?: string; reasonCode?: string; reasonComment?: string; plannedArrivalAt?: string };
-  delivery?: { runStatus: string; arrivalPrediction?: ArrivalPrediction; outcome?: string; reason?: string };
+  delivery?: { runStatus: string; arrivalPrediction?: ArrivalPrediction; outcome?: string; reason?: string; returnedGoods?: { goods: string; units: number; reason: string; resolution: string; occurredAt: string; followupOrderRef?: string; followupDate?: string } };
   receipt?: { status: string; receivedUnits: number; expectedUnits: number };
 };
 

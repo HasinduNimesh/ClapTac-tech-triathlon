@@ -289,7 +289,7 @@ export function PlanningPage() {
             <tbody>
               {[...(detail.orders || [])].sort((a, b) => b.fairnessScore - a.fairnessScore || a.orderRef.localeCompare(b.orderRef)).map((order) => (
                 <tr key={order.id}>
-                  <td>{order.orderRef}</td>
+                  <td>{order.orderRef}{order.sourceSystem === "delivery-deferral-request" && <small className="status-bad"> {t("Dispatcher deferral requested")}</small>}{order.sourceSystem === "delivery-reattempt" && <small className="muted"> {t("Re-attempt on next run")}</small>}</td>
                   <td>{order.outletId}</td>
                   <td>{order.outletDeferralCount || 0}</td>
                   <td>{detail.fairness?.signalAvailable ? order.lastServedAt ? order.daysSinceLastServed : t("No prior successful delivery") : t("Unavailable")}</td>

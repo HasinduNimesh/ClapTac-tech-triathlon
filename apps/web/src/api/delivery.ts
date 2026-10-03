@@ -26,6 +26,7 @@ export type DeliveryStop = {
   outcomeCode?: string;
   outcomeReason?: string;
   outcomeNote?: string;
+  returnedGoods?: { goods: string; units: number; reason: string; resolution: string; followupOrderRef?: string; followupDate?: string };
   outcomeAt?: string;
   outcomeReceivedAt?: string;
 };

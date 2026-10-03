@@ -104,7 +104,13 @@ export function DeliveryPanel() {
       } catch { if (active) setCheckoutAlert(null); }
     };
     void loadAlert();
-    const timer = window.setInterval(() => { void loadAlert(); }, 15_000);
+    const refreshMessages = async () => {
+      try {
+        const result = await apiJSON<{ items: TripMessage[] }>("/delivery/trips/" + encodeURIComponent(tripId) + "/messages", token);
+        if (active) setMessages(result.items || []);
+      } catch { /* Keep the last visible messages. */ }
+    };
+    const timer = window.setInterval(() => { void loadAlert(); void refreshMessages(); }, 15_000);
     return () => { active = false; window.clearInterval(timer); };
   }, [detail?.tripId, token]);
 
@@ -318,7 +324,7 @@ export function DeliveryPanel() {
               <label>{t("Related stop (optional)")}<select value={messageStopId} onChange={e => setMessageStopId(e.target.value)}><option value="">{t("Whole trip")}</option>{detail.stops.map(s => <option key={s.id} value={s.id}>{s.stopSequence}. {s.outletName || s.outletId || s.orderRef}</option>)}</select></label>
               <button type="submit" disabled={!messageBody.trim() || messageSending}>{t("Send message")}</button>
             </form>
-            {messages.length === 0 ? <p>{t("No trip messages yet.")}</p> : <ul>{messages.map(m => <li key={m.id}><p>{m.body}</p><small>{t("Sent")} {new Date(m.createdAt).toLocaleString()} {t("by")} {m.sentBy}{m.stopId ? ` · ${t("linked to a stop")}` : ` · ${t("whole trip")}`}</small><p role="status">{m.acknowledgedAt ? `${t("Acknowledged by")} ${m.acknowledgedBy} · ${new Date(m.acknowledgedAt).toLocaleString()}` : t("Awaiting driver acknowledgement")}</p></li>)}</ul>}
+            {messages.length === 0 ? <p>{t("No trip messages yet.")}</p> : <ul>{messages.map(m => <li key={m.id}><p>{m.body}</p><small>{t("Sent")} {new Date(m.createdAt).toLocaleString()} {t("by")} {m.sentBy}{m.stopId ? ` · ${t("linked to a stop")}` : ` · ${t("whole trip")}`}</small><p role="status">{m.sentBy === "system:returned-goods" ? t("Rejected delivery") : m.acknowledgedAt ? `${t("Acknowledged by")} ${m.acknowledgedBy} · ${new Date(m.acknowledgedAt).toLocaleString()}` : t("Awaiting driver acknowledgement")}</p></li>)}</ul>}
           </section>
         </div>
       )}

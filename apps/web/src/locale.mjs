@@ -935,6 +935,33 @@ Object.assign(labels.ta, {
   "to": "இலிருந்து",
 });
 
+Object.assign(labels.si, {
+  "Rejected goods / take-back": "ආපසු ගන්නා ප්‍රතික්ෂේපිත භාණ්ඩ",
+  "Goods or items being returned": "ආපසු එන භාණ්ඩ හෝ අයිතම",
+  "Quantity returning": "ආපසු එන ප්‍රමාණය",
+  "Follow-up choice": "ඊළඟ පියවර තේරීම",
+  "Re-attempt on next run": "ඊළඟ ගමනේ නැවත බෙදාහරින්න",
+  "Request dispatcher deferral": "ඩිස්පැචර්ගෙන් කල් දැමීම ඉල්ලන්න",
+  "Enter the returned goods and quantity.": "ආපසු එන භාණ්ඩ හා ප්‍රමාණය ඇතුළත් කරන්න.",
+  "Returned goods": "ආපසු ලැබුණු භාණ්ඩ",
+  "Dispatcher deferral requested": "ඩිස්පැචර්ගෙන් කල් දැමීම ඉල්ලා ඇත",
+  "Follow-up order": "ඊළඟ ඇණවුම",
+  "Rejected delivery": "ප්‍රතික්ෂේපිත බෙදාහැරීම",
+});
+Object.assign(labels.ta, {
+  "Rejected goods / take-back": "திரும்பப் பெறப்படும் நிராகரிக்கப்பட்ட பொருட்கள்",
+  "Goods or items being returned": "திரும்ப வரும் பொருட்கள்",
+  "Quantity returning": "திரும்ப வரும் அளவு",
+  "Follow-up choice": "அடுத்த நடவடிக்கைத் தேர்வு",
+  "Re-attempt on next run": "அடுத்த பயணத்தில் மீண்டும் வழங்கு",
+  "Request dispatcher deferral": "அனுப்புநரிடம் ஒத்திவைப்பைக் கோரு",
+  "Enter the returned goods and quantity.": "திரும்ப வரும் பொருட்களையும் அளவையும் உள்ளிடவும்.",
+  "Returned goods": "திரும்பிய பொருட்கள்",
+  "Dispatcher deferral requested": "அனுப்புநரிடம் ஒத்திவைப்பு கோரப்பட்டது",
+  "Follow-up order": "தொடர்ச்சி ஆர்டர்",
+  "Rejected delivery": "நிராகரிக்கப்பட்ட விநியோகம்",
+});
+
 function lookupTranslation(locale, source) { return labels[locale]?.[source] ?? disruptionLabels[locale]?.[source] ?? driverPrivacyLabels[locale]?.[source] ?? loaderLabels[locale]?.[source] ?? loaderOfflineLabels[locale]?.[source] ?? loaderStatusLabels[locale]?.[source] ?? loaderScannerLabels[locale]?.[source] ?? storeLabels[locale]?.[source] ?? storeTrackingLabels[locale]?.[source] ?? dispatcherLabels[locale]?.[source] ?? planningLabels[locale]?.[source] ?? breakdownLabels[locale]?.[source] ?? auditLabels[locale]?.[source] ?? masterDataLabels[locale]?.[source] ?? liveOpsLabels[locale]?.[source] ?? loadingOpsLabels[locale]?.[source] ?? operationalValueLabels[locale]?.[source] ?? masterNoticeLabels[locale]?.[source] ?? policyConflictLabels[locale]?.[source] ?? followUpLabels[locale]?.[source] ?? forecastLabels[locale]?.[source] ?? serviceTimeLabels[locale]?.[source] ?? etaLabels[locale]?.[source] ?? latenessLabels[locale]?.[source] ?? notificationLabels[locale]?.[source] ?? coldChainLabels[locale]?.[source] ?? custodyLabels[locale]?.[source] ?? deferralLabels[locale]?.[source] ?? storeManagerDashboardLabels[locale]?.[source]; }
 
 const countMessages = [

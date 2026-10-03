@@ -92,6 +92,7 @@ export type DisruptionRisk = {
 export type PlanOrder = {
   id: string;
   orderRef: string;
+  sourceSystem?: string;
   outletId: string;
   brand: string;
   temperatureRequirement: string;
