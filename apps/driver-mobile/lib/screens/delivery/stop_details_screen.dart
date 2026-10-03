@@ -19,6 +19,7 @@ class StopDetailsScreen extends StatefulWidget {
     required this.onSave,
     this.offline = false,
     this.onReportIssue,
+    this.onProofRequested,
     this.onTabSelected,
   });
 
@@ -26,6 +27,10 @@ class StopDetailsScreen extends StatefulWidget {
   final ValueChanged<DeliveryDraft> onSave;
   final bool offline;
   final VoidCallback? onReportIssue;
+
+  /// When set, the proof buttons call this instead of toggling a "captured" state. Used while real
+  /// photo and signature capture is not available, so nothing pretends to be stored.
+  final ValueChanged<ProofKind>? onProofRequested;
   final ValueChanged<DriverTab>? onTabSelected;
 
   @override
@@ -86,7 +91,7 @@ class _StopDetailsScreenState extends State<StopDetailsScreen> {
       label: 'Take photo',
       capturedLabel: 'Photo saved',
       captured: _hasPhoto,
-      onTap: () => setState(() => _hasPhoto = !_hasPhoto),
+      onTap: widget.onProofRequested == null ? () => setState(() => _hasPhoto = !_hasPhoto) : () => widget.onProofRequested!(ProofKind.photo),
     );
     final signatureButton = ProofButton(
       image: AppAssets.signature,
@@ -95,7 +100,7 @@ class _StopDetailsScreenState extends State<StopDetailsScreen> {
       label: 'Add signature',
       capturedLabel: 'Signature added',
       captured: _hasSignature,
-      onTap: () => setState(() => _hasSignature = !_hasSignature),
+      onTap: widget.onProofRequested == null ? () => setState(() => _hasSignature = !_hasSignature) : () => widget.onProofRequested!(ProofKind.signature),
     );
     if (widget.offline && _hasPhoto) {
       return Column(

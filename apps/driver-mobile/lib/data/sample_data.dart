@@ -4,6 +4,7 @@ import 'driver_models.dart';
 /// local database and sync queue once the screens are wired to them.
 const sampleStops = <StopInfo>[
   StopInfo(
+    stopId: 'sample-stop-1',
     sequence: 1,
     outletCode: 'OUT108',
     name: 'Dehiwala',
@@ -16,6 +17,7 @@ const sampleStops = <StopInfo>[
     orderRef: 'FR-4801',
   ),
   StopInfo(
+    stopId: 'sample-stop-2',
     sequence: 2,
     outletCode: 'OUT061',
     name: 'Nugegoda',
@@ -28,6 +30,7 @@ const sampleStops = <StopInfo>[
     orderRef: 'FR-4811',
   ),
   StopInfo(
+    stopId: 'sample-stop-3',
     sequence: 3,
     outletCode: 'OUT047',
     name: 'Kirulapone',
@@ -41,7 +44,11 @@ const sampleStops = <StopInfo>[
   ),
 ];
 
+/// Sample data for demos and tests only. The ids are obviously fake so they can never be mistaken
+/// for server ids.
 const sampleTrip = TripInfo(
+  tripId: 'sample-trip-TRP02801',
+  runId: 'sample-run-TRP02801',
   vehicleCode: 'VEH017',
   plate: 'WP LB-4521',
   tripRef: 'TRP02801',

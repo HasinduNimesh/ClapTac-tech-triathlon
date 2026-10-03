@@ -65,7 +65,12 @@ void main() {
     await tester.tap(find.text('Save delivery'));
     await tester.pumpAndSettle();
     expect(find.text('Saved on this device'), findsOneWidget);
-    expect((await queue.pending()).map((e) => e.action), contains('delivery.outcome_changed'));
+    final events = await queue.pending();
+    expect(events.map((e) => e.action), ['ARRIVED', 'STOP_OUTCOME']);
+    expect(events.last.payload['stopId'], 'sample-stop-1');
+    expect(events.last.payload['stopId'], isNot('OUT108'));
+    expect((events.last.payload['payload'] as Map)['code'], 'DELIVERED');
+    expect(events.last.payload.containsKey('dependsOnOperationId'), isFalse);
 
     await tester.tap(find.text('Back to route'));
     await tester.pumpAndSettle();
@@ -168,6 +173,8 @@ void main() {
     expect(find.text('Kirulapone'), findsOneWidget);
     expect(find.textContaining('3 cartons short'), findsOneWidget);
 
+    await tester.ensureVisible(find.text('Finish trip'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Finish trip'));
     await tester.pumpAndSettle();
     expect(find.text('Drivers, Loaders and Store Manager'), findsOneWidget);
@@ -200,7 +207,7 @@ void main() {
     expect(find.textContaining('queued on this phone only'), findsOneWidget);
     var events = await queue.pending();
     expect(events.map((e) => e.action), ['INCIDENT_REPORT']);
-    expect(events.single.payload['category'], 'GOODS');
+    expect((events.single.payload['payload'] as Map)['category'], 'GOODS');
     expect(events.single.occurredAt, isNotNull);
 
     // Going back reopens the load check instead of unlocking the route.
@@ -224,7 +231,7 @@ void main() {
     expect(find.textContaining('Departure recorded on this phone only'), findsOneWidget);
     events = await queue.pending();
     expect(events.map((e) => e.idempotencyKey).toSet(), hasLength(2));
-    expect(events.every((e) => e.action == 'INCIDENT_REPORT' && e.payload['category'] == 'GOODS'), isTrue);
+    expect(events.every((e) => e.action == 'INCIDENT_REPORT' && (e.payload['payload'] as Map)['category'] == 'GOODS'), isTrue);
 
     await tester.pump(const Duration(seconds: 6));
     await tester.pumpAndSettle();
@@ -259,7 +266,8 @@ void main() {
 
     final events = await queue.pending();
     expect(events.where((e) => e.action == 'INCIDENT_REPORT'), hasLength(1));
-    expect(events.single.payload['category'], 'VEHICLE');
+    expect((events.single.payload['payload'] as Map)['category'], 'VEHICLE');
+    expect(events.single.payload['stopId'], 'sample-stop-1');
     expect(events.single.occurredAt, isNotNull);
     expect(find.textContaining('has not been sent to dispatch yet'), findsOneWidget);
 
@@ -267,6 +275,6 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Updates'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('queued on this phone, not sent yet'), findsOneWidget);
+    expect(find.textContaining('saved on this phone, not sent yet'), findsOneWidget);
   });
 }

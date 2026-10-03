@@ -2,6 +2,9 @@
 /// records in `shared/models.dart` so screens stay easy to build and test.
 enum DeliveryOutcome { delivered, partial, failed, refused }
 
+/// Which kind of proof the driver asked to capture.
+enum ProofKind { photo, signature }
+
 enum SyncStateKind { savedOffline, syncing, synced, uploadFailed }
 
 enum ProblemKind { vehicleBreakdown, roadBlocked, outletClosed, loadIssue, safetyConcern }
@@ -15,6 +18,7 @@ class ProblemReport {
 
 class StopInfo {
   const StopInfo({
+    this.stopId = '',
     required this.sequence,
     required this.outletCode,
     required this.name,
@@ -27,6 +31,9 @@ class StopInfo {
     this.orderRef = '',
   });
 
+  /// The server's id for this stop. Delivery operations are keyed by it, not by the outlet code,
+  /// because one outlet can be visited more than once.
+  final String stopId;
   final int sequence;
   final String outletCode;
   final String name;
@@ -43,6 +50,8 @@ class StopInfo {
 
 class TripInfo {
   const TripInfo({
+    this.tripId = '',
+    this.runId = '',
     required this.vehicleCode,
     required this.plate,
     required this.tripRef,
@@ -52,6 +61,9 @@ class TripInfo {
     this.completedStops = 0,
   });
 
+  /// The server's trip and delivery-run ids, used when operations are sent.
+  final String tripId;
+  final String runId;
   final String vehicleCode;
   final String plate;
   final String tripRef;
@@ -68,11 +80,16 @@ class DeliveryDraft {
     required this.outcome,
     this.quantity,
     this.notes = '',
+    this.reason,
     this.hasPhoto = false,
     this.hasSignature = false,
   });
 
   final DeliveryOutcome outcome;
+
+  /// The server's reason code for a failed or refused delivery (OUTLET_CLOSED, ACCESS_BLOCKED,
+  /// RECEIVER_UNAVAILABLE, GOODS_REJECTED, VEHICLE_ISSUE, OTHER). Null means "use the default".
+  final String? reason;
   final int? quantity;
   final String notes;
   final bool hasPhoto;

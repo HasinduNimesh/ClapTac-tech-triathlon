@@ -125,8 +125,8 @@ class EndOfDayScreen extends StatelessWidget {
             const SizedBox(height: 7),
             DismissibleNote(
               text: pending == 1
-                  ? 'Delivery records saved. One proof upload is pending.'
-                  : 'Delivery records saved. $pending proof uploads are pending.',
+                  ? 'Saved on this phone. One upload has not been sent yet.'
+                  : 'Saved on this phone. $pending uploads have not been sent yet.',
               textStyle: AppText.of(10, FontWeight.w400, height: 19 / 10),
             ),
           ],
@@ -297,7 +297,7 @@ class _PendingRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final text = count == 1 ? '1 photo waiting to be uploaded' : '$count photos waiting to be uploaded';
+    final text = count == 1 ? '1 upload waiting to be sent' : '$count uploads waiting to be sent';
     return Row(
       children: [
         Expanded(

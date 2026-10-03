@@ -19,6 +19,7 @@ class RecordDeliveryScreen extends StatefulWidget {
     this.onRejected,
     this.onTabSelected,
     this.initialOutcome = DeliveryOutcome.delivered,
+    this.onProofRequested,
   });
 
   final StopInfo stop;
@@ -31,6 +32,9 @@ class RecordDeliveryScreen extends StatefulWidget {
 
   /// Which outcome card starts selected (e.g. partial when arriving from stop details).
   final DeliveryOutcome initialOutcome;
+
+  /// When set, the proof buttons call this instead of toggling a "captured" state.
+  final ValueChanged<ProofKind>? onProofRequested;
 
   @override
   State<RecordDeliveryScreen> createState() => _RecordDeliveryScreenState();
@@ -116,7 +120,17 @@ class _RecordDeliveryScreenState extends State<RecordDeliveryScreen> {
   void _save() {
     if (!_valid) return;
     widget.onSave(
-      DeliveryDraft(outcome: _outcome, quantity: _effectiveQuantity, hasPhoto: _hasPhoto, hasSignature: _hasSignature),
+      DeliveryDraft(
+        outcome: _outcome,
+        quantity: _effectiveQuantity,
+        reason: switch (_choice) {
+          _Choice.rejected => 'GOODS_REJECTED',
+          _Choice.unavailable => 'OUTLET_CLOSED',
+          _ => null,
+        },
+        hasPhoto: _hasPhoto,
+        hasSignature: _hasSignature,
+      ),
     );
   }
 
@@ -234,7 +248,7 @@ class _RecordDeliveryScreenState extends State<RecordDeliveryScreen> {
                     label: 'Add photo',
                     doneLabel: 'Photo added',
                     done: _hasPhoto,
-                    onTap: () => setState(() => _hasPhoto = !_hasPhoto),
+                    onTap: widget.onProofRequested == null ? () => setState(() => _hasPhoto = !_hasPhoto) : () => widget.onProofRequested!(ProofKind.photo),
                   ),
                 ),
                 const SizedBox(width: 14),
@@ -246,7 +260,7 @@ class _RecordDeliveryScreenState extends State<RecordDeliveryScreen> {
                     label: 'Name / signature',
                     doneLabel: 'Signature added',
                     done: _hasSignature,
-                    onTap: () => setState(() => _hasSignature = !_hasSignature),
+                    onTap: widget.onProofRequested == null ? () => setState(() => _hasSignature = !_hasSignature) : () => widget.onProofRequested!(ProofKind.signature),
                   ),
                 ),
               ],

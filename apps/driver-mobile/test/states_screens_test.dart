@@ -155,8 +155,8 @@ void main() {
       expect(find.text('Kirulapone'), findsOneWidget);
       expect(find.text('Partial delivery'), findsOneWidget);
       expect(find.text('2 cartons short - Dispatcher notified'), findsOneWidget);
-      expect(find.text('1 photo waiting to be uploaded'), findsOneWidget);
-      expect(find.text('Delivery records saved. One proof upload is pending.'), findsOneWidget);
+      expect(find.text('1 upload waiting to be sent'), findsOneWidget);
+      expect(find.text('Saved on this phone. One upload has not been sent yet.'), findsOneWidget);
 
       await tapVisible(tester, find.text('Retry Upload'));
       await tapVisible(tester, find.text('Finish trip'));
@@ -221,8 +221,8 @@ void main() {
       );
       await pumpScreen(tester, EndOfDayScreen(summary: summary, onFinishTrip: () {}), size: tall);
 
-      expect(find.text('3 photos waiting to be uploaded'), findsOneWidget);
-      expect(find.text('Delivery records saved. 3 proof uploads are pending.'), findsOneWidget);
+      expect(find.text('3 uploads waiting to be sent'), findsOneWidget);
+      expect(find.text('Saved on this phone. 3 uploads have not been sent yet.'), findsOneWidget);
     });
   });
 
