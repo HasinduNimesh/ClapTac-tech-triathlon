@@ -1,3 +1,4 @@
+import { PriorityReviews } from "../automations/PriorityReviews";
 import { FormEvent, useState } from "react";
 import { ApiError, apiJSON } from "../api/client";
 import { todayInSriLanka } from "../api/date.mjs";
@@ -222,6 +223,7 @@ export function PlanningPage() {
 
   return (
     <section className="card">
+      <PriorityReviews />
       <h2>{t("Daily Plan")}</h2>
       {error && <p className="status-bad" role="alert">{error}</p>}
       {info && <p className="status-ok" role="status">{info}</p>}

@@ -1,3 +1,4 @@
+import { AutomationInbox } from "../automations/AutomationInbox";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
@@ -72,6 +73,7 @@ export function StoreManagerNotificationsPage() {
       </StoreManagerHero>
 
       <div className="sm-page-body">
+        <AutomationInbox />
         {loadFailed && (
           <div className="sm-load-error" role="alert">
             <span>{t("Orders could not be loaded. Check your connection and try again.")}</span>

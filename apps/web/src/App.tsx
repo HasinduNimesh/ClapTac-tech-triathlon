@@ -1,3 +1,5 @@
+import { AutomationsPage } from "./automations/AutomationsPage";
+import { HabitHelper } from "./automations/HabitHelper";
 import { lazy, Suspense } from "react";
 import { Route, Routes } from "react-router-dom";
 import { AuthProvider } from "./auth/AuthContext";
@@ -30,10 +32,12 @@ function AppRoutes() {
   const { t } = useLocale();
   return (
     <Suspense fallback={<p role="status">{t("Loading screen…")}</p>}>
+      <HabitHelper />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route element={<RoleGate role="STORE_MANAGER"><StoreManagerLayout /></RoleGate>}>
           <Route path="/store-manager" element={<StoreManagerDashboardPage />} />
+          <Route path="/store-manager/automations" element={<AutomationsPage />} />
           <Route path="/store-manager/orders" element={<OrderListPage />} />
           <Route path="/store-manager/orders/new" element={<NewOrderPage />} />
           <Route path="/store-manager/tracking" element={<TrackingPage />} />
@@ -45,6 +49,7 @@ function AppRoutes() {
           <Route path="/" element={<HomePage />} />
           <Route path="/auth/callback" element={<CallbackPage />} />
           <Route path="/dispatcher" element={<RoleGate role="DISPATCHER"><DispatcherPage /></RoleGate>} />
+          <Route path="/dispatcher/automations" element={<RoleGate role="DISPATCHER"><AutomationsPage /></RoleGate>} />
           <Route path="/dispatcher/orders" element={<RoleGate role="DISPATCHER"><OrderQueuePage /></RoleGate>} />
           <Route path="/dispatcher/planning" element={<RoleGate role="DISPATCHER"><PlanningPage /></RoleGate>} />
           <Route path="/dispatcher/audit" element={<RoleGate role="DISPATCHER"><AuditPage /></RoleGate>} />

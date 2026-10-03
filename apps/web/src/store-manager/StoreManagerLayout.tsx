@@ -54,6 +54,7 @@ export function StoreManagerLayout() {
           <span className="sm-nav-icon" aria-hidden="true"><img src={iconBell} alt="" width={15} height={16} /></span>
           {t("Notifications")}
         </NavLink>
+        <NavLink to="/store-manager/automations" className="sm-nav-item" onClick={() => setNavOpen(false)}>{t("My automations")}</NavLink>
         <span className="sm-nav-item sm-nav-item--static">
           <span className="sm-nav-icon" aria-hidden="true"><img src={iconHelp} alt="" width={6} height={18} /></span>
           {t("Help & Guide")}
