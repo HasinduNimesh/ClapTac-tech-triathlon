@@ -89,6 +89,17 @@ export type DeliveryTripDetail = {
   planAcknowledgements?: {actorId:string;actorRole:string;acknowledgedAt:string}[];
 };
 
+export type ArrivalPrediction = {
+  stopId: string;
+  estimatedArrivalAt: string;
+  previouslyCommunicatedAt?: string;
+  notifiedArrivalAt?: string;
+  arrivalRangeLower?: string;
+  arrivalRangeUpper?: string;
+  lateRisk: string;
+  updatedAt: string;
+};
+
 export type LatenessProbability = {
   depot: string;
   brand: string;

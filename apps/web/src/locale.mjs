@@ -922,6 +922,19 @@ Object.assign(labels.ta, {
   "Check-out blocked. Review this load with the loader.": "புறப்பாடு தடுக்கப்பட்டது. ஏற்றுபவருடன் ஏற்றத்தைச் சரிபார்க்கவும்.",
 });
 
+Object.assign(labels.si, {
+  "Predicted arrival": "පුරෝකථිත පැමිණීම",
+  "Arrival range": "පැමිණීමේ කාල පරාසය",
+  "Arrival changed from": "පැමිණීම වෙනස් වූයේ",
+  "to": "සිට",
+});
+Object.assign(labels.ta, {
+  "Predicted arrival": "கணிக்கப்பட்ட வருகை",
+  "Arrival range": "வருகை நேர வரம்பு",
+  "Arrival changed from": "வருகை மாறியது",
+  "to": "இலிருந்து",
+});
+
 function lookupTranslation(locale, source) { return labels[locale]?.[source] ?? disruptionLabels[locale]?.[source] ?? driverPrivacyLabels[locale]?.[source] ?? loaderLabels[locale]?.[source] ?? loaderOfflineLabels[locale]?.[source] ?? loaderStatusLabels[locale]?.[source] ?? loaderScannerLabels[locale]?.[source] ?? storeLabels[locale]?.[source] ?? storeTrackingLabels[locale]?.[source] ?? dispatcherLabels[locale]?.[source] ?? planningLabels[locale]?.[source] ?? breakdownLabels[locale]?.[source] ?? auditLabels[locale]?.[source] ?? masterDataLabels[locale]?.[source] ?? liveOpsLabels[locale]?.[source] ?? loadingOpsLabels[locale]?.[source] ?? operationalValueLabels[locale]?.[source] ?? masterNoticeLabels[locale]?.[source] ?? policyConflictLabels[locale]?.[source] ?? followUpLabels[locale]?.[source] ?? forecastLabels[locale]?.[source] ?? serviceTimeLabels[locale]?.[source] ?? etaLabels[locale]?.[source] ?? latenessLabels[locale]?.[source] ?? notificationLabels[locale]?.[source] ?? coldChainLabels[locale]?.[source] ?? custodyLabels[locale]?.[source] ?? deferralLabels[locale]?.[source] ?? storeManagerDashboardLabels[locale]?.[source]; }
 
 const countMessages = [

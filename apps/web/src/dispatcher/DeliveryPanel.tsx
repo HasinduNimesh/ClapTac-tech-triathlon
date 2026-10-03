@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { ApiError, apiJSON } from "../api/client";
 import { todayInSriLanka } from "../api/date.mjs";
-import { DeliveryTripDetail, DeliveryTripSummary, LatenessProbability, TruckCheckout } from "../api/delivery";
+import { ArrivalPrediction, DeliveryTripDetail, DeliveryTripSummary, LatenessProbability, TruckCheckout } from "../api/delivery";
 import { depotLabel } from "../api/loading";
 import { useAuth } from "../auth/AuthContext";
 import { PlanDetail } from "../api/planning";
@@ -25,6 +25,8 @@ export function DeliveryPanel() {
   const [date, setDate] = useState(todayInSriLanka);
   const [trips, setTrips] = useState<DeliveryTripSummary[]>([]);
   const [detail, setDetail] = useState<DeliveryTripDetail | null>(null);
+  const [arrivalChanges, setArrivalChanges] = useState<Record<string, ArrivalPrediction>>({});
+  const publishingArrivals = useRef(false);
   const [checkoutAlert, setCheckoutAlert] = useState<TruckCheckout | null>(null);
   const [plan, setPlan] = useState<PlanDetail | null>(null);
   const [refreshedAt, setRefreshedAt] = useState("");
@@ -106,7 +108,71 @@ export function DeliveryPanel() {
     return () => { active = false; window.clearInterval(timer); };
   }, [detail?.tripId, token]);
 
+  useEffect(() => {
+    if (!detail?.tripId || detail.status !== "in_progress" || !token) return;
+    let active = true;
+    const tripId = detail.tripId;
+    const poll = async () => {
+      try {
+        const latest = await apiJSON<DeliveryTripDetail>("/delivery/trips/" + encodeURIComponent(tripId), token);
+        if (active && latest.tripId === tripId) setDetail(latest);
+      } catch { /* The last good trip view remains usable. */ }
+    };
+    const timer = window.setInterval(() => { void poll(); }, 15_000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [detail?.tripId, detail?.status, token]);
+
+  useEffect(() => {
+    if (!detail || detail.status !== "in_progress" || !detail.run?.planVersion ||
+      detail.currentPlanVersion !== detail.run.planVersion || !plan ||
+      (plan.plan.currentVersion != null && plan.plan.currentVersion !== detail.run.planVersion) ||
+      publishingArrivals.current) return;
+    publishingArrivals.current = true;
+    let active = true;
+    const publish = async () => {
+      try {
+        for (const [index, stop] of detail.stops.entries()) {
+          if (!active || stop.status !== "pending") continue;
+          const previous = previousReportedStop(detail.stops, index);
+          const allocation = plan.allocations?.find(item => item.tripId === detail.tripId && item.orderId === stop.orderId);
+          const previousAllocation = previous && plan.allocations?.find(item => item.tripId === detail.tripId && item.orderId === previous.orderId);
+          const estimate = estimateArrival({
+            plannedArrivalAt: allocation?.plannedArrivalAt,
+            plannedDepartureAt: previousAllocation?.plannedDepartureAt,
+            previousOutcomeAt: previous?.outcomeAt || previous?.outcomeReceivedAt,
+            previousArrivedAt: previous?.arrivedAt,
+            serviceMinutesPerStop: serviceTime.minutes,
+            windowCloseAt: stop.plannedWindowClose,
+            deliveryDate: detail.run.deliveryDate,
+            now: estimateNow,
+          });
+          if (!estimate.eta || !estimate.risk) continue;
+          const lateness = latenessHistory.find(item => item.brand === (stop.brand || "") && item.temperatureRequirement === (stop.temperatureRequirement || ""));
+          const range = calibratedArrivalRange(estimate, lateness);
+          try {
+            const result = await apiJSON<{ prediction: ArrivalPrediction }>(
+              "/delivery/trips/" + encodeURIComponent(detail.tripId) + "/stops/" + encodeURIComponent(stop.id) + "/arrival-prediction", token, {
+                method: "POST",
+                body: JSON.stringify({
+                  planVersion: detail.run.planVersion,
+                  sourceEventAt: previous?.outcomeReceivedAt || previous?.arrivedReceivedAt || previous?.outcomeAt || previous?.arrivedAt,
+                  estimatedArrivalAt: estimate.eta,
+                  arrivalRangeLower: range?.lower.toISOString(),
+                  arrivalRangeUpper: range?.upper.toISOString(),
+                  lateRisk: estimate.risk,
+                }),
+              });
+            if (active) setArrivalChanges(current => ({ ...current, [stop.id]: result.prediction }));
+          } catch { /* A failed publish cannot hide the local ETA. */ }
+        }
+      } finally { publishingArrivals.current = false; }
+    };
+    void publish();
+    return () => { active = false; };
+  }, [detail, plan, serviceTime, latenessHistory, estimateNow, token]);
+
   async function openTrip(tripId: string) {
+    setArrivalChanges({});
     setError("");
     setLatenessHistory([]);
     setLatenessHistoryState("loading");
@@ -231,6 +297,7 @@ export function DeliveryPanel() {
                     <td>
                       {s.arrivedAt ? `${t("Arrived")} ${new Date(s.arrivedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : `${t(estimate.label)} · ${t(estimate.risk || "schedule unavailable")}`}
                       {!s.arrivedAt && estimate.kind !== "unknown" && <small className="muted">{t(estimate.confidence)}</small>}
+                      {arrivalChanges[s.id]?.previouslyCommunicatedAt && arrivalChanges[s.id]?.notifiedArrivalAt && <small className="muted">{t("Arrival changed from")} {new Date(arrivalChanges[s.id].previouslyCommunicatedAt!).toLocaleString()} {t("to")} {new Date(arrivalChanges[s.id].notifiedArrivalAt!).toLocaleString()}</small>}
                       {!s.arrivedAt && estimate.kind !== "unknown" && arrivalRange && <small className="muted">{t("Calibrated historical arrival range")}: {arrivalRange.lower.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}–{arrivalRange.upper.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · {t("nominal 80% interval")}; {arrivalRange.sampleCount} {t("paired arrivals")}; {arrivalRange.holdoutCount} {t("holdout arrivals")}; {arrivalRange.coverage == null ? t("coverage unavailable") : `${(arrivalRange.coverage * 100).toFixed(1)}% ${t("holdout coverage")}`} · {arrivalRange.version} · {t("Historical schedule residuals by depot, brand, and temperature; adjusted around the event-based ETA.")}</small>}
                       {!s.arrivedAt && estimate.kind !== "unknown" && !arrivalRange && <small className="muted">{t("Arrival range withheld")}: {t(lateness?.arrivalRangeStatus || (latenessHistoryState === "unavailable" ? "ARRIVAL_HISTORY_UNAVAILABLE" : "INSUFFICIENT_HISTORY"))} · {lateness?.arrivalRangeSamples ?? 0} {t("paired arrivals")}, {lateness?.arrivalRangeHoldouts ?? 0} {t("holdout arrivals")}</small>}
                       {!s.arrivedAt && <small className="muted" aria-live="polite">{latenessHistoryState === "loading" ? t("Loading arrival history…") : latenessHistoryState === "unavailable" ? t("Arrival history is unavailable.") : lateness?.probability != null ? `${t("Late arrival probability")}: ${(lateness.probability * 100).toFixed(1)}% · ${lateness.sampleCount} ${t("past stops")}` : `${t("Insufficient history; probability withheld.")} · n=${lateness?.sampleCount ?? 0}`}</small>}
