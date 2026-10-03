@@ -75,6 +75,16 @@ Without a refresh token (the default scopes against a provider that does not iss
 
 Nothing the driver does needs the network: the app opens with a stored session (see "Staying signed in" if token refresh is merged), records deliveries and proof on the phone, and sends them later.
 
+## Messages from dispatch
+
+Dispatch can send a message about the trip, or about one stop. The app reads them (`GET /api/v1/delivery/trips/{id}/messages`) when the route loads and every 30 seconds while signed in, and:
+
+- lists them in the **Updates** tab, unread first and newest first, with times on Waypoint's clock (Asia/Colombo)
+- tells the driver, wherever they are in the app, when a new one arrives (what was already waiting at sign-in is not announced)
+- opens one in full, with which stop it is about, and lets the driver **acknowledge** it (`POST .../messages/{id}/ack`; repeating it is harmless)
+
+A missed refresh never removes what was already shown. **Acknowledging needs a connection:** offline, the message stays unread and the dialog says so; it is not queued for later like deliveries and proof are. Messages are not shown before the trip has a run on the server.
+
 ## Not built yet
 
 Do not describe this build as connected to the cloud: sign-in and loading the route are real, almost everything after that is not.
@@ -85,7 +95,7 @@ Do not describe this build as connected to the cloud: sign-in and loading the ro
 - **Proof.** Photo and signature capture does not exist: the buttons explain that and store nothing, and no proof is queued. The server requires a finalized proof (a separate multipart upload) for DELIVERED and PARTIAL, so those outcomes would be rejected if sent today.
 - **Server gaps.** Until PR #28 is in the app's base branch, partial quantity remains in the `note`; no distinct "re-attempt next run" or "defer" operation exists (also in the `note`), and there is no structured driver load-discrepancy workflow (a missing item is a `GOODS` incident). Contracts and RBAC for these need deciding before they can work as the screens show.
 - **Load check.** Confirming only marks the load confirmed on this phone. Reporting a missing item keeps the route locked until the driver confirms again or explicitly departs anyway, which is queued as a second incident.
-- **Plan and messages.** Plan acknowledgement (`POST /api/v1/planning/plans/{id}/acknowledgements`) and dispatcher trip messages exist on the server but are not used. The plan review screen ("send both versions for review") has no matching API and is demo-only.
+- **Plan changes.** The plan is acknowledged when the trip starts, but a plan that changes mid-trip is not detected. The plan review screen ("send both versions for review") has no matching API and is demo-only.
 - Detecting connectivity tells the app only whether the phone has a network, not whether Waypoint is reachable (a Wi-Fi network with no internet counts as connected); failed requests are treated as offline too. Tokens are not refreshed: when the access token expires the driver signs in again.
 
 ## Layout

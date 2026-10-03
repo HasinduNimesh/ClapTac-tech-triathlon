@@ -7,6 +7,7 @@ import '../connectivity/connectivity_monitor.dart';
 import '../auth/profile_api.dart';
 import '../data/driver_models.dart';
 import '../data/sample_data.dart';
+import '../messages/messages.dart';
 import '../offline/local_database.dart';
 import '../screens/states/end_of_day_screen.dart';
 import '../screens/updates/updates_screen.dart';
@@ -22,6 +23,13 @@ import '../widgets/note_banner.dart';
 String _two(int value) => value.toString().padLeft(2, '0');
 
 String clockLabel(DateTime time) => '${_two(time.hour)}:${_two(time.minute)}';
+
+/// Waypoint's business clock (Asia/Colombo, fixed UTC+05:30), for times the server decided, so they
+/// read the same whatever timezone the phone is set to.
+String businessClockLabel(DateTime time) => clockLabel(time.toUtc().add(const Duration(hours: 5, minutes: 30)));
+
+/// Updates entries that stand for a dispatcher message have an id starting with this.
+const messageUpdatePrefix = 'msg:';
 
 /// A local action remains queued until Waypoint confirms it was applied.
 const savedNotSent = 'saved on this phone, not sent yet';
@@ -45,6 +53,8 @@ class DriverSession extends ChangeNotifier {
     this.worker,
     this.starter,
     this.connectivity,
+    this.messageSource,
+    this.messagePollInterval = const Duration(seconds: 30),
   })  : _initialTrip = trip ?? ((demoRoute || (auth == null && demoAuth)) ? sampleTrip : null),
         _clock = clock ?? DateTime.now,
         _newId = newId ?? newOperationId {
@@ -106,6 +116,81 @@ class DriverSession extends ChangeNotifier {
     await _refreshPending();
   }
 
+  /// Reads and acknowledges dispatch's messages about the trip. Null in demo and test sessions.
+  final MessageSource? messageSource;
+  final Duration messagePollInterval;
+  Timer? _messageTimer;
+  bool _fetchingMessages = false;
+
+  /// What dispatch has sent about this trip, oldest first.
+  List<DispatcherMessage> messages = const [];
+
+  /// Counts up whenever a message the driver has not seen before arrives, so the screen can tell them.
+  int newMessageSerial = 0;
+  final Set<String> _seenMessageIds = {};
+
+  int get unreadMessages => messages.where((message) => !message.acknowledged).length;
+
+  /// Reads the trip's messages. Called when the route loads, on a timer, and when the connection
+  /// returns. A failure keeps what was already shown: messages are never lost by a missed refresh.
+  Future<void> refreshMessages() async {
+    final source = messageSource;
+    if (source == null || !signedIn || !hasRoute || _fetchingMessages) return;
+    final tripId = _baseTrip!.tripId;
+    _fetchingMessages = true;
+    final result = await source.load(tripId);
+    _fetchingMessages = false;
+    if (!signedIn || _baseTrip?.tripId != tripId) return;
+    final loaded = result.messages;
+    if (loaded == null) {
+      if (result.signInExpired) await _signInExpired(result.failure);
+      notifyListeners();
+      return;
+    }
+    // The first read after signing in is not news: only messages that arrive afterwards are.
+    final firstRead = _seenMessageIds.isEmpty && messages.isEmpty;
+    var arrived = false;
+    for (final message in loaded) {
+      if (_seenMessageIds.add(message.id) && !message.acknowledged && !firstRead) arrived = true;
+    }
+    messages = loaded;
+    if (arrived) newMessageSerial++;
+    notifyListeners();
+  }
+
+  /// Marks a message as read on the server. Needs a connection: when there is none the message stays
+  /// unread and the reason is returned for the driver. Returns null when it worked.
+  Future<String?> acknowledgeMessage(String messageId) async {
+    final source = messageSource;
+    final index = messages.indexWhere((message) => message.id == messageId);
+    if (source == null || index < 0) return 'That message is no longer available.';
+    if (messages[index].acknowledged) return null;
+    final result = await source.acknowledge(messages[index].tripId.isEmpty ? _baseTrip!.tripId : messages[index].tripId, messageId);
+    if (result.signInExpired) {
+      await _signInExpired(result.failure);
+      notifyListeners();
+      return result.failure;
+    }
+    if (!result.isDone) return result.failure;
+    messages = [for (final message in messages) message.id == messageId ? message.asAcknowledged() : message];
+    notifyListeners();
+    return null;
+  }
+
+  void _startMessagePolling() {
+    _messageTimer?.cancel();
+    if (messageSource == null) return;
+    _messageTimer = Timer.periodic(messagePollInterval, (_) => unawaited(refreshMessages()));
+    unawaited(refreshMessages());
+  }
+
+  void _stopMessagePolling() {
+    _messageTimer?.cancel();
+    _messageTimer = null;
+    messages = const [];
+    _seenMessageIds.clear();
+  }
+
   final LocalDatabase database;
   final SyncQueue queue;
   final DeliverySyncWorker? worker;
@@ -116,6 +201,7 @@ class DriverSession extends ChangeNotifier {
   @override
   void dispose() {
     unawaited(_connectivitySubscription?.cancel());
+    _messageTimer?.cancel();
     worker?.onProgress = null;
     super.dispose();
   }
@@ -197,7 +283,7 @@ class DriverSession extends ChangeNotifier {
   int get pendingUploads => queue is SqliteSyncQueue ? _pendingCount : _results.length + _incidents;
 
   List<UpdateItem> get visibleUpdates {
-    if (worker == null) return updates;
+    if (worker == null) return [..._messageItems, ...updates];
     final (title, detail, tone) = switch (syncProgress) {
       SyncProgress.idle => ('Sync up to date', 'No unsent updates are waiting.', NoteTone.success),
       SyncProgress.syncing => ('Syncing', 'Sending saved updates to Waypoint in order.', NoteTone.info),
@@ -207,7 +293,22 @@ class DriverSession extends ChangeNotifier {
       SyncProgress.offline => ('Waiting for connection', syncDetail ?? 'Saved updates will retry when Waypoint can be reached.', NoteTone.offline),
       SyncProgress.needsAttention => ('Sync needs attention', syncDetail ?? 'A saved update needs review before later updates can sync.', NoteTone.danger),
     };
-    return [UpdateItem(title: title, detail: detail, time: clockLabel(_clock()), tone: tone), ...updates];
+    return [UpdateItem(title: title, detail: detail, time: clockLabel(_clock()), tone: tone), ..._messageItems, ...updates];
+  }
+
+  /// Dispatch's messages as Updates entries, unread ones first. Opening one shows it in full and, when
+  /// it is unread, offers to acknowledge it.
+  List<UpdateItem> get _messageItems {
+    final unread = [for (final message in messages.reversed) if (!message.acknowledged) message];
+    final read = [for (final message in messages.reversed) if (message.acknowledged) message];
+    UpdateItem item(DispatcherMessage message) => UpdateItem(
+          id: '$messageUpdatePrefix${message.id}',
+          title: message.acknowledged ? 'Message from dispatch' : 'Message from dispatch - please acknowledge',
+          detail: message.body,
+          time: businessClockLabel(message.createdAt),
+          tone: message.acknowledged ? NoteTone.success : NoteTone.amber,
+        );
+    return [for (final message in unread) item(message), for (final message in read) item(message)];
   }
 
   Future<void> _refreshPending() async {
@@ -288,6 +389,7 @@ class DriverSession extends ChangeNotifier {
         tripStartMessage = null;
       }
       await _restoreQueuedActions(loaded);
+      _startMessagePolling();
       // A reload after the server refused the start (the plan changed) tries again with the new version.
       if (sameTrip && loadResolved && !loaded.started) {
         notifyListeners();
@@ -409,6 +511,7 @@ class DriverSession extends ChangeNotifier {
         return _pendingCount;
       }
     }
+    _stopMessagePolling();
     worker?.stop();
     signedIn = false;
     if (queue is SqliteSyncQueue) await (queue as SqliteSyncQueue).useOwner(null);
@@ -429,6 +532,7 @@ class DriverSession extends ChangeNotifier {
 
   /// The stored sign-in is no longer accepted: go back to sign-in instead of showing a dead end.
   Future<void> _signInExpired(String? message) async {
+    _stopMessagePolling();
     worker?.stop();
     signedIn = false;
     if (queue is SqliteSyncQueue) await (queue as SqliteSyncQueue).useOwner(null);
