@@ -194,8 +194,13 @@ func (s Service) Prepare(ctx context.Context, profile *authorization.Profile, tr
 	for _, o := range trip.Orders {
 		st := domain.Stop{
 			AllocationID: o.AllocationID, OrderID: o.OrderID, OrderRef: o.OrderRef, OutletID: o.OutletID,
-			Brand: o.Brand, StopSequence: o.StopSequence, TemperatureRequirement: o.TemperatureRequirement,
+			UnitLabel: "units",
+			Brand:     o.Brand, StopSequence: o.StopSequence, TemperatureRequirement: o.TemperatureRequirement,
 			LoadingStatus: o.LoadingStatus, LoadingShortfallSummary: o.ShortfallSummary, PlannedArrivalAt: o.PlannedArrivalAt,
+		}
+		if o.ExpectedUnits > 0 {
+			units := o.ExpectedUnits
+			st.ExpectedUnits = &units
 		}
 		if o.OutletID != "" {
 			if out, e := s.Peers.Outlet(ctx, o.OutletID); e == nil {
@@ -816,6 +821,7 @@ func loadingPreview(trip domain.LoadingTrip) map[string]any {
 		stops = append(stops, map[string]any{
 			"orderId": o.OrderID, "orderRef": o.OrderRef, "outletId": o.OutletID, "brand": o.Brand,
 			"stopSequence": o.StopSequence, "loadingStatus": o.LoadingStatus, "status": domain.StopPending,
+			"expectedUnits": o.ExpectedUnits, "unitLabel": "units",
 			"loadingShortfallSummary": o.ShortfallSummary,
 		})
 	}

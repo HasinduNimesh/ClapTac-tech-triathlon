@@ -90,6 +90,8 @@ type Stop struct {
 	AllocationID                string               `json:"allocationId"`
 	OrderID                     string               `json:"orderId"`
 	OrderRef                    string               `json:"orderRef"`
+	ExpectedUnits               *int                 `json:"expectedUnits,omitempty"`
+	UnitLabel                   string               `json:"unitLabel"`
 	OutletID                    string               `json:"outletId"`
 	Brand                       string               `json:"brand,omitempty"`
 	OutletName                  string               `json:"outletName,omitempty"`
