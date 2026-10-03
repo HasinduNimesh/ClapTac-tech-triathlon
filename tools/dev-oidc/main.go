@@ -59,7 +59,11 @@ var (
 	mu            sync.Mutex
 )
 
-// accessTokenTTL is how long an access token lives. Short values (ACCESS_TOKEN_TTL_SECONDS=60) make
+// machineTokenTTL is how long a service-to-service token lives. The services cache these for about
+// an hour, so ACCESS_TOKEN_TTL_SECONDS deliberately does not shorten them.
+const machineTokenTTL = time.Hour
+
+// accessTokenTTL is how long a signed-in person's access token lives. Short values (ACCESS_TOKEN_TTL_SECONDS=60) make
 // it easy to watch a client refresh.
 func accessTokenTTL() time.Duration {
 	if n, err := strconv.Atoi(os.Getenv("ACCESS_TOKEN_TTL_SECONDS")); err == nil && n > 0 {
@@ -230,7 +234,7 @@ func token(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid_client", http.StatusUnauthorized)
 			return
 		}
-		tok, err := sign("svc-"+r.FormValue("client_id"), r.FormValue("scope"), getenv("OIDC_AUDIENCE", "waypoint-api"), nil)
+		tok, err := signFor("svc-"+r.FormValue("client_id"), r.FormValue("scope"), getenv("OIDC_AUDIENCE", "waypoint-api"), nil, machineTokenTTL)
 		if err != nil {
 			http.Error(w, err.Error(), 500)
 			return
@@ -242,9 +246,14 @@ func token(w http.ResponseWriter, r *http.Request) {
 }
 
 func sign(sub, scope, aud string, extra map[string]any) (string, error) {
+	return signFor(sub, scope, aud, extra, accessTokenTTL())
+}
+
+// signFor signs a token that lives for ttl.
+func signFor(sub, scope, aud string, extra map[string]any, ttl time.Duration) (string, error) {
 	claims := jwt.MapClaims{
 		"sub": sub, "iss": issuer, "aud": aud,
-		"exp": time.Now().Add(accessTokenTTL()).Unix(), "iat": time.Now().Unix(),
+		"exp": time.Now().Add(ttl).Unix(), "iat": time.Now().Unix(),
 		"scope": scope,
 	}
 	for k, v := range extra {

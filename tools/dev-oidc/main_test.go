@@ -280,3 +280,20 @@ func TestAccessTokenLifetimeCanBeShortenedForTesting(t *testing.T) {
 		t.Errorf("default ttl = %v", got)
 	}
 }
+
+func TestShortUserTokenLifetimeDoesNotShortenServiceTokens(t *testing.T) {
+	setup(t)
+	t.Setenv("ACCESS_TOKEN_TTL_SECONDS", "60")
+	rec := postToken(t, url.Values{"grant_type": {"client_credentials"}, "client_id": {"waypoint-delivery-service"}, "scope": {"plans:read-internal"}})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	body := decode(t, rec)
+	if body["expires_in"].(float64) != 3600 {
+		t.Errorf("expires_in = %v, want 3600", body["expires_in"])
+	}
+	claims := claimsOf(t, body["access_token"].(string))
+	if lifetime := claims["exp"].(float64) - claims["iat"].(float64); lifetime != 3600 {
+		t.Errorf("service token lifetime = %v, want 3600", lifetime)
+	}
+}
