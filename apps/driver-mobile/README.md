@@ -21,6 +21,10 @@ Deliveries go through `DeliveryRepository` into the local database and `SyncQueu
 - Nothing is uploaded or sent to dispatch (deliveries, load discrepancies and problem reports are only queued locally, and the screens say so): `InMemoryLocalDatabase` and `InMemorySyncQueue` are used, so data is lost when the app closes, and the "synced" and "syncing" screens are never reached from the flow.
 - Photo and signature capture only toggle a "captured" state.
 - Connectivity is not detected, so the no-signal sign-in variant is not triggered automatically.
+- The signed-in driver and today's route are sample data: there is no profile lookup (`GET /api/v1/shared/profiles/me`) or assigned-trip lookup yet, so the app cannot be used for real deliveries.
+- Load check: confirming sets the load as confirmed on this phone only. Reporting a missing item queues a `GOODS` `INCIDENT_REPORT` (there is no driver-facing load-shortfall operation yet), keeps the route locked, and lets the driver either go back to the check or explicitly depart anyway, which is queued as a second incident.
+- Problem reports are queued as `INCIDENT_REPORT` operations in the shape of the delivery sync contract; they are never sent, and the screens say so.
+- Plan update review is demo data; "send for review" only changes local navigation.
 - `flutter run --dart-define=DEMO_UPDATES=true` adds a sample plan update so the plan review screen can be opened.
 
 ## Layout

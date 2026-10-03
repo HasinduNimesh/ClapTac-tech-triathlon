@@ -20,6 +20,13 @@ Future<void> _signInAndConfirmLoad(WidgetTester tester) async {
   await tester.pumpAndSettle();
   await tester.tap(find.text('Confirm load on board'));
   await tester.pumpAndSettle();
+  await _clearSnackBars(tester);
+}
+
+/// Confirmation messages float over the bottom of the screen for a few seconds.
+Future<void> _clearSnackBars(WidgetTester tester) async {
+  await tester.pump(const Duration(seconds: 4));
+  await tester.pumpAndSettle();
 }
 
 void main() {
@@ -178,7 +185,7 @@ void main() {
     expect(find.text('0 of 3 stops completed'), findsNothing);
   });
 
-  testWidgets('reporting a missing load item queues a discrepancy and says it was not sent', (tester) async {
+  testWidgets('a missing load item is queued, and the route stays locked until the driver decides', (tester) async {
     final queue = await _boot(tester);
     await tester.enterText(find.byType(TextField).first, 'DRV-0318');
     await tester.enterText(find.byType(TextField).last, 'secret');
@@ -188,10 +195,58 @@ void main() {
     await tester.tap(find.text("Something isn't on my list"));
     await tester.pumpAndSettle();
 
-    final actions = (await queue.pending()).map((e) => e.action);
-    expect(actions, contains('load.discrepancy_reported'));
-    expect(find.textContaining('has not been sent to dispatch yet'), findsOneWidget);
-    expect(find.text('0 of 3 stops completed'), findsOneWidget);
+    // The driver must make an explicit choice; nothing is confirmed or sent.
+    expect(find.text('Missing item reported'), findsOneWidget);
+    expect(find.textContaining('queued on this phone only'), findsOneWidget);
+    var events = await queue.pending();
+    expect(events.map((e) => e.action), ['INCIDENT_REPORT']);
+    expect(events.single.payload['category'], 'GOODS');
+    expect(events.single.occurredAt, isNotNull);
+
+    // Going back reopens the load check instead of unlocking the route.
+    await tester.tap(find.text('Back to load check'));
+    await tester.pumpAndSettle();
+    expect(find.text('Check the load before you leave'), findsOneWidget);
+
+    // Dismissing the sheet does not unlock the route either.
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('View Stop'));
+    await tester.pumpAndSettle();
+    expect(find.text('Check the load before you leave'), findsOneWidget);
+    expect(find.text('I’ve stopped safely'), findsNothing);
+
+    // Departing anyway is an explicit decision that is recorded too.
+    await tester.tap(find.text("Something isn't on my list"));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Depart anyway'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Departure recorded on this phone only'), findsOneWidget);
+    events = await queue.pending();
+    expect(events.map((e) => e.idempotencyKey).toSet(), hasLength(2));
+    expect(events.every((e) => e.action == 'INCIDENT_REPORT' && e.payload['category'] == 'GOODS'), isTrue);
+
+    await tester.pump(const Duration(seconds: 6));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('View Stop'));
+    await tester.pumpAndSettle();
+    expect(find.text('I’ve stopped safely'), findsOneWidget);
+  });
+
+  testWidgets('confirming the load later resolves a reported discrepancy', (tester) async {
+    await _boot(tester);
+    await tester.enterText(find.byType(TextField).first, 'DRV-0318');
+    await tester.enterText(find.byType(TextField).last, 'secret');
+    await tester.pump();
+    await tester.tap(find.text('Sign in').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text("Something isn't on my list"));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Back to load check'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Confirm load on board'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Load confirmed on this phone'), findsOneWidget);
   });
 
   testWidgets('a problem report is queued and the confirmation does not claim it was sent', (tester) async {
@@ -203,8 +258,9 @@ void main() {
     await tester.pumpAndSettle();
 
     final events = await queue.pending();
-    expect(events.where((e) => e.action == 'incident.reported'), hasLength(1));
-    expect(events.firstWhere((e) => e.action == 'incident.reported').payload['kind'], 'vehicleBreakdown');
+    expect(events.where((e) => e.action == 'INCIDENT_REPORT'), hasLength(1));
+    expect(events.single.payload['category'], 'VEHICLE');
+    expect(events.single.occurredAt, isNotNull);
     expect(find.textContaining('has not been sent to dispatch yet'), findsOneWidget);
 
     await tester.pump(const Duration(seconds: 6));

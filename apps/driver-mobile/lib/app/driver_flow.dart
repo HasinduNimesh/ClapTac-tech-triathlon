@@ -56,27 +56,64 @@ class _DriverHomeState extends State<_DriverHome> {
   @override
   void initState() {
     super.initState();
-    if (!session.loadConfirmed) {
+    if (!session.loadResolved) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || session.loadConfirmed) return;
-        showTruckCheckoutSheet(
-          context,
-          trip: session.trip,
-          onConfirm: session.confirmLoad,
-          onMissingItem: () async {
-            await session.reportLoadDiscrepancy();
-            session.confirmLoad();
-            _notify('Missing item queued on this phone. It has not been sent to dispatch yet.');
-          },
-        );
+        if (mounted) _showLoadCheck();
       });
+    }
+  }
+
+  void _showLoadCheck() {
+    if (session.loadResolved) return;
+    showTruckCheckoutSheet(
+      context,
+      trip: session.trip,
+      onConfirm: () {
+        session.confirmLoad();
+        _notify('Load confirmed on this phone. Nothing has been sent to dispatch.');
+      },
+      onMissingItem: _reportMissingLoadItem,
+    );
+  }
+
+  Future<void> _reportMissingLoadItem() async {
+    await session.reportLoadDiscrepancy();
+    if (!mounted) return;
+    final departAnyway = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Missing item reported'),
+        content: const Text(
+          'The report is queued on this phone only. It has not reached the loader or dispatch.\n\n'
+          'Do not leave until the load matches your list, unless you accept departing with it as it is.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(dialogContext).pop(false), child: const Text('Back to load check')),
+          TextButton(onPressed: () => Navigator.of(dialogContext).pop(true), child: const Text('Depart anyway')),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    if (departAnyway == true) {
+      await session.overrideLoadCheck();
+      if (!mounted) return;
+      _notify('Departure recorded on this phone only. It has not been sent to dispatch.');
+    } else {
+      _showLoadCheck();
     }
   }
 
   void _notify(String message) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+      ..showSnackBar(SnackBar(
+        content: Text(message),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 3),
+        showCloseIcon: true,
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      ));
   }
 
   void _selectTab(DriverTab tab) {
@@ -98,6 +135,10 @@ class _DriverHomeState extends State<_DriverHome> {
   }
 
   void _startStop() {
+    if (!session.loadResolved) {
+      _showLoadCheck();
+      return;
+    }
     final stop = session.trip.nextStop;
     if (stop == null) return;
     Navigator.of(context).push(MaterialPageRoute<void>(

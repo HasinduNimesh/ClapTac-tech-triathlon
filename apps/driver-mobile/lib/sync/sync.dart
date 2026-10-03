@@ -8,6 +8,7 @@ class SyncEvent {
     required this.resourceType,
     required this.resourceId,
     required this.payload,
+    this.occurredAt,
   });
 
   final String eventId;
@@ -16,6 +17,9 @@ class SyncEvent {
   final String resourceType;
   final String resourceId;
   final Map<String, Object?> payload;
+
+  /// When it happened on the phone, kept separate from when it reaches the server.
+  final DateTime? occurredAt;
 }
 
 abstract class SyncQueue {

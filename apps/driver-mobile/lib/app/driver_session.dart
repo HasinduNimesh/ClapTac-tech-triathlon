@@ -57,8 +57,7 @@ class DriverSession extends ChangeNotifier {
   final List<UpdateItem> updates = [];
 
   bool signedIn = false;
-  bool loadConfirmed = false;
-  bool loadDiscrepancyReported = false;
+  LoadCheck loadCheck = LoadCheck.unchecked;
   String? signInError;
   DriverTab tab = DriverTab.route;
 
@@ -71,6 +70,10 @@ class DriverSession extends ChangeNotifier {
         stops: _baseTrip.stops,
         completedStops: _results.length,
       );
+
+  /// The route can only be started once the load is confirmed, or the driver has
+  /// explicitly chosen to depart after reporting a discrepancy.
+  bool get loadResolved => loadCheck == LoadCheck.confirmed || loadCheck == LoadCheck.overridden;
 
   bool get routeComplete => _results.length >= _baseTrip.stops.length;
 
@@ -94,8 +97,7 @@ class DriverSession extends ChangeNotifier {
   /// Ends the trip and returns to sign-in, clearing what was recorded today.
   void finishTrip() {
     signedIn = false;
-    loadConfirmed = false;
-    loadDiscrepancyReported = false;
+    loadCheck = LoadCheck.unchecked;
     tab = DriverTab.route;
     _results.clear();
     updates.removeWhere((item) => item.id != planConflictId);
@@ -103,7 +105,7 @@ class DriverSession extends ChangeNotifier {
   }
 
   void confirmLoad() {
-    loadConfirmed = true;
+    loadCheck = LoadCheck.confirmed;
     notifyListeners();
   }
 
@@ -131,18 +133,16 @@ class DriverSession extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// The driver says something on the load list is missing. The discrepancy is queued
-  /// and the route stays available, but the load is not marked as confirmed.
+  /// The driver says something on the load list is missing. There is no driver-facing
+  /// load-shortfall operation yet, so it is queued as a GOODS incident. The load stays
+  /// unconfirmed until the driver confirms it again or explicitly departs anyway.
   Future<void> reportLoadDiscrepancy() async {
-    await queue.enqueue(SyncEvent(
-      eventId: 'load-discrepancy-${trip.tripRef}',
-      idempotencyKey: 'load-discrepancy-${trip.tripRef}',
-      action: 'load.discrepancy_reported',
-      resourceType: 'trip',
-      resourceId: trip.tripRef,
-      payload: {'vehicle': trip.vehicleCode},
-    ));
-    loadDiscrepancyReported = true;
+    await _queueIncident(
+      key: 'load-discrepancy-${trip.tripRef}',
+      category: 'GOODS',
+      description: 'Load check: an item on the driver\'s load list is missing.',
+    );
+    loadCheck = LoadCheck.discrepancy;
     updates.insert(
       0,
       UpdateItem(
@@ -155,17 +155,47 @@ class DriverSession extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> reportProblem(ProblemReport report, {StopInfo? stop}) async {
-    final stamp = _clock().millisecondsSinceEpoch;
-    final key = 'incident-${trip.tripRef}-${stop?.outletCode ?? 'trip'}-${report.kind.name}-$stamp';
-    await queue.enqueue(SyncEvent(
+  /// The driver chose to depart even though a missing item is unresolved. The decision is
+  /// recorded as its own incident so it is not lost.
+  Future<void> overrideLoadCheck() async {
+    await _queueIncident(
+      key: 'load-override-${trip.tripRef}',
+      category: 'GOODS',
+      description: 'Driver departed without resolving a reported missing load item.',
+    );
+    loadCheck = LoadCheck.overridden;
+    updates.insert(
+      0,
+      UpdateItem(
+        title: 'Departed with a load discrepancy',
+        detail: '${trip.vehicleCode} · ${trip.tripRef} · decision queued on this phone, not sent yet',
+        time: clockLabel(_clock()),
+        tone: NoteTone.danger,
+      ),
+    );
+    notifyListeners();
+  }
+
+  Future<void> _queueIncident({required String key, required String category, required String description, StopInfo? stop}) {
+    return queue.enqueue(SyncEvent(
       eventId: key,
       idempotencyKey: key,
-      action: 'incident.reported',
+      action: 'INCIDENT_REPORT',
       resourceType: 'trip',
       resourceId: trip.tripRef,
-      payload: {'kind': report.kind.name, 'note': report.note, if (stop != null) 'stop': stop.outletCode},
+      occurredAt: _clock(),
+      payload: {'category': category, 'description': description, if (stop != null) 'stopId': stop.outletCode},
     ));
+  }
+
+  Future<void> reportProblem(ProblemReport report, {StopInfo? stop}) async {
+    final stamp = _clock().millisecondsSinceEpoch;
+    await _queueIncident(
+      key: 'incident-${trip.tripRef}-${stop?.outletCode ?? 'trip'}-${report.kind.name}-$stamp',
+      category: incidentCategory(report.kind),
+      description: report.note.isEmpty ? problemLabel(report.kind) : '${problemLabel(report.kind)}: ${report.note}',
+      stop: stop,
+    );
     updates.insert(
       0,
       UpdateItem(
@@ -220,6 +250,24 @@ class DriverSession extends ChangeNotifier {
       unresolved: unresolved,
       pendingUploads: pendingPhotoUploads,
     );
+  }
+}
+
+enum LoadCheck { unchecked, confirmed, discrepancy, overridden }
+
+/// Category names used by the delivery sync contract for INCIDENT_REPORT.
+String incidentCategory(ProblemKind kind) {
+  switch (kind) {
+    case ProblemKind.vehicleBreakdown:
+      return 'VEHICLE';
+    case ProblemKind.roadBlocked:
+      return 'ROAD';
+    case ProblemKind.outletClosed:
+      return 'OUTLET';
+    case ProblemKind.loadIssue:
+      return 'GOODS';
+    case ProblemKind.safetyConcern:
+      return 'SAFETY';
   }
 }
 

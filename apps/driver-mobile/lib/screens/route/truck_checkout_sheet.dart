@@ -84,7 +84,7 @@ Future<void> showTruckCheckoutSheet(
           ),
           const SizedBox(height: 12),
           Text(
-            'Logged with your name and time. The loader and dispatcher can see it.',
+            'Kept on this phone only. It is not sent to the loader or dispatcher yet.',
             style:
                 AppText.of(12, FontWeight.w400, color: RouteColors.sheetMuted),
           ),
