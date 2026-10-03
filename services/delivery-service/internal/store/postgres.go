@@ -290,7 +290,8 @@ func (p Postgres) PrepareTx(ctx context.Context, run domain.Run, stops []domain.
 func (p Postgres) StartRun(ctx context.Context, runID, actor string) (domain.Run, error) {
 	row := p.Pool.QueryRow(ctx, `
 		UPDATE runs SET status = $2, started_by = $3, started_at = now(), updated_at = now(), version = version + 1
-		WHERE id::text = $1 AND status = $4
+		WHERE id::text = $1 AND status = $4 AND EXISTS (
+			SELECT 1 FROM delivery.run_checkouts c WHERE c.run_id=runs.id AND c.plan_version=runs.plan_version AND c.status='confirmed')
 		RETURNING `+runReturning, runID, domain.RunInProgress, actor, domain.RunPrepared)
 	return scanRun(row)
 }
@@ -455,6 +456,14 @@ func (p Postgres) OrderTracking(ctx context.Context, orderID string) (domain.Ord
 	}
 	if err != nil {
 		return t, err
+	}
+	if t.RunStatus == domain.RunInProgress {
+		prediction, e := p.ArrivalPrediction(ctx, t.StopID)
+		if e == nil { t.ArrivalPrediction = prediction }
+	}
+	if t.Outcome == domain.OutcomeRefused {
+		returned, e := p.ReturnedGoods(ctx, t.StopID)
+		if e == nil { t.ReturnedGoods = returned }
 	}
 	_ = json.Unmarshal(short, &t.LoadingShortfallSummary)
 	if t.LoadingShortfallSummary == nil {

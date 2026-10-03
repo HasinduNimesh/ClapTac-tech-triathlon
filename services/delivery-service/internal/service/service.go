@@ -282,6 +282,18 @@ func (s Service) Start(ctx context.Context, profile *authorization.Profile, trip
 	if !acknowledged {
 		return nil, fmt.Errorf("conflict: driver must acknowledge the current plan version before starting")
 	}
+	checkout, err := s.Repo.Checkout(ctx, run.ID)
+	if err != nil { return nil, err }
+	if checkout == nil || checkout.Status != "confirmed" || checkout.PlanVersion != run.PlanVersion {
+		return nil, fmt.Errorf("conflict: truck checkout required before departure")
+	}
+	if !strings.EqualFold(latest.LoadingStatus, "ready") {
+		return nil, fmt.Errorf("conflict: current load is not ready")
+	}
+	missing, err := assessCheckout(latest.Orders, checkout.ConfirmedOrderIDs)
+	if err != nil || len(missing) > 0 {
+		return nil, fmt.Errorf("conflict: current load no longer matches checkout")
+	}
 	started, err := s.Repo.StartRun(ctx, run.ID, actor(profile))
 	if err != nil {
 		if existing, e2 := s.Repo.GetByTrip(ctx, tripID); e2 == nil && existing.Status == domain.RunInProgress {
@@ -332,11 +344,11 @@ func (s Service) applyArrive(ctx context.Context, profile *authorization.Profile
 	return s.detail(ctx, run)
 }
 
-func (s Service) Outcome(ctx context.Context, profile *authorization.Profile, tripID, stopID, opID, depends, code, reason, note, occurred string) (map[string]any, error) {
-	return s.applyOutcome(ctx, profile, tripID, stopID, opID, depends, code, reason, note, occurred)
+func (s Service) Outcome(ctx context.Context, profile *authorization.Profile, tripID, stopID, opID, depends, code, reason, note, occurred string, returned domain.ReturnDetails) (map[string]any, error) {
+	return s.applyOutcome(ctx, profile, tripID, stopID, opID, depends, code, reason, note, occurred, returned)
 }
 
-func (s Service) applyOutcome(ctx context.Context, profile *authorization.Profile, tripID, stopID, opID, depends, code, reason, note, occurred string) (map[string]any, error) {
+func (s Service) applyOutcome(ctx context.Context, profile *authorization.Profile, tripID, stopID, opID, depends, code, reason, note, occurred string, returned domain.ReturnDetails) (map[string]any, error) {
 	if res, ok, err := s.replayOrReject(ctx, opID, depends); ok {
 		return res, err
 	}
@@ -354,8 +366,25 @@ func (s Service) applyOutcome(ctx context.Context, profile *authorization.Profil
 		}
 		reason = strings.ToUpper(strings.TrimSpace(reason))
 	}
+    returned.Goods = strings.TrimSpace(returned.Goods)
+    if code == domain.OutcomeRefused && !validReturnDetails(returned) {
+        return s.record(ctx, opID, run.ID, stopID, domain.OpStopOutcome, domain.ResultRejected,
+            map[string]any{"detail":"returned goods, positive units and follow-up choice required"},
+            fmt.Errorf("invalid: returned goods, positive units and follow-up choice required"))
+    }
 	if stop.Status != domain.StopArrived {
 		if stop.Status == domain.StopCompleted && stop.OutcomeCode == code {
+            if code == domain.OutcomeRefused {
+                original, err := s.Repo.ReturnedGoods(ctx, stop.ID)
+                if err != nil { return nil, err }
+                if original == nil || original.Goods != returned.Goods || original.Units != returned.Units ||
+                    original.Resolution != returned.Resolution || original.Reason != reason || original.Note != note {
+                    return s.record(ctx, opID, run.ID, stopID, domain.OpStopOutcome, domain.ResultConflict,
+                        map[string]any{"detail": "rejected delivery already recorded"},
+                        fmt.Errorf("conflict: rejected delivery already recorded"))
+                }
+                if err := s.finishReturnedGoods(ctx, stop.ID); err != nil { return nil, err }
+            }
 			_ = s.Repo.InsertOp(ctx, domain.SyncOp{OperationID: opID, RunID: run.ID, StopID: stopID, OperationType: domain.OpStopOutcome, ResultStatus: domain.ResultApplied, ResultPayload: map[string]any{"code": code}})
 			telemetry.DeliverySyncOps.WithLabelValues(domain.ResultApplied).Inc()
 			return s.detail(ctx, run)
@@ -372,16 +401,46 @@ func (s Service) applyOutcome(ctx context.Context, profile *authorization.Profil
 			return s.record(ctx, opID, run.ID, stopID, domain.OpStopOutcome, domain.ResultRejected, map[string]any{"detail": "proof required"}, fmt.Errorf("rejected: proof required before outcome"))
 		}
 	}
+    if code == domain.OutcomeRefused {
+        manifest, err := s.Peers.ReadyTrip(ctx, tripID)
+        if err != nil { return nil, err }
+        expected := 0
+        for _, order := range manifest.Orders {
+            if order.OrderID == stop.OrderID { expected = order.ExpectedUnits; break }
+        }
+        if expected < 1 || returned.Units > expected {
+            return s.record(ctx, opID, run.ID, stopID, domain.OpStopOutcome, domain.ResultRejected,
+                map[string]any{"detail":"return quantity exceeds the planned goods"},
+                fmt.Errorf("invalid: return quantity exceeds the planned goods"))
+        }
+    }
 	occurredAt := parseTime(occurred)
-	if err := s.Repo.MarkOutcome(ctx, stop.ID, code, reason, note, occurredAt); err != nil {
+    var outcomeErr error
+    if code == domain.OutcomeRefused {
+        outcomeErr = s.Repo.MarkRefusedOutcome(ctx, run, stop, opID, actor(profile), reason, note, returned, occurredAt)
+    } else {
+        outcomeErr = s.Repo.MarkOutcome(ctx, stop.ID, code, reason, note, occurredAt)
+    }
+	if err := outcomeErr; err != nil {
 		telemetry.DeliverySyncConflicts.Inc()
 		return s.record(ctx, opID, run.ID, stopID, domain.OpStopOutcome, domain.ResultConflict, map[string]any{"detail": err.Error()}, err)
 	}
+    if code == domain.OutcomeRefused {
+        if err := s.finishReturnedGoods(ctx, stop.ID); err != nil { return nil, err }
+    }
 	_ = s.Repo.InsertOp(ctx, domain.SyncOp{OperationID: opID, RunID: run.ID, StopID: stopID, OperationType: domain.OpStopOutcome, OccurredAt: &occurredAt, ResultStatus: domain.ResultApplied, ResultPayload: map[string]any{"code": code}})
 	telemetry.DeliveryStopsCompleted.Inc()
 	telemetry.DeliveryOutcomes.WithLabelValues(code).Inc()
 	telemetry.DeliverySyncOps.WithLabelValues(domain.ResultApplied).Inc()
-	s.Peers.Publish(ctx, audit.ActionDeliveryOutcomeRecorded, actor(profile), "STOP", stopID, map[string]any{"code": code, "tripId": tripID})
+    auditPayload := map[string]any{"code": code, "tripId": tripID}
+    if code == domain.OutcomeRefused {
+        auditPayload["goods"] = returned.Goods
+        auditPayload["units"] = returned.Units
+        auditPayload["reason"] = reason
+        auditPayload["resolution"] = returned.Resolution
+        auditPayload["occurredAt"] = occurredAt
+    }
+	s.Peers.Publish(ctx, audit.ActionDeliveryOutcomeRecorded, actor(profile), "STOP", stopID, auditPayload)
 	s.Peers.Publish(ctx, audit.ActionDeliverySyncApplied, actor(profile), "SYNC", opID, map[string]any{"type": domain.OpStopOutcome})
 	run, _ = s.Repo.GetByTrip(ctx, tripID)
 	return s.detail(ctx, run)
@@ -579,7 +638,13 @@ func (s Service) syncOne(ctx context.Context, profile *authorization.Profile, op
 		code, _ := op.Payload["code"].(string)
 		reason, _ := op.Payload["reason"].(string)
 		note, _ := op.Payload["note"].(string)
-		_, err := s.applyOutcome(ctx, profile, tripOf(ctx, s, op), op.StopID, op.OperationID, op.DependsOnOperationID, code, reason, note, op.OccurredAt)
+        returned := domain.ReturnDetails{}
+        if raw, ok := op.Payload["returnedGoods"].(map[string]any); ok {
+            returned.Goods, _ = raw["goods"].(string)
+            if units, ok := raw["units"].(float64); ok && units == float64(int(units)) { returned.Units = int(units) }
+            returned.Resolution, _ = raw["resolution"].(string)
+        }
+		_, err := s.applyOutcome(ctx, profile, tripOf(ctx, s, op), op.StopID, op.OperationID, op.DependsOnOperationID, code, reason, note, op.OccurredAt, returned)
 		return syncResult(op.OperationID, err)
 	case domain.OpTemperatureReading:
 		value, ok := op.Payload["valueC"].(float64)
@@ -799,15 +864,18 @@ func (s Service) guardVehicle(profile *authorization.Profile, vehicleID string) 
 func (s Service) detail(ctx context.Context, run domain.Run) (map[string]any, error) {
 	stops, _ := s.Repo.ListStops(ctx, run.ID)
 	currentVersion := run.PlanVersion
+	var loadList []domain.LoadingOrder
 	var acknowledgements []domain.PlanAcknowledgement
 	if trip, err := s.Peers.ReadyTrip(ctx, run.TripID); err == nil {
 		currentVersion = trip.PlanVersion
+		loadList = trip.Orders
 		acknowledgements = trip.PlanAcknowledgements
 	}
 	if acknowledgements == nil {
 		acknowledgements = []domain.PlanAcknowledgement{}
 	}
-	return map[string]any{"tripId": run.TripID, "run": run, "stops": stops, "status": run.Status, "currentPlanVersion": currentVersion, "planAcknowledgements": acknowledgements}, nil
+	checkout, _ := s.Repo.Checkout(ctx, run.ID)
+	return map[string]any{"tripId": run.TripID, "run": run, "stops": stops, "status": run.Status, "currentPlanVersion": currentVersion, "planAcknowledgements": acknowledgements, "loadList": loadList, "checkout": checkout}, nil
 }
 
 func loadingPreview(trip domain.LoadingTrip) map[string]any {

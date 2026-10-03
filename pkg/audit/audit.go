@@ -29,6 +29,8 @@ const (
 	ActionLoadingShortfallRemoved      = "LOADING_SHORTFALL_REMOVED"
 	ActionTripReadyForDeparture        = "TRIP_READY_FOR_DEPARTURE"
 	ActionDeliveryRunPrepared          = "DELIVERY_RUN_PREPARED"
+	ActionDeliveryCheckoutBlocked         = "DELIVERY_CHECKOUT_BLOCKED"
+	ActionDeliveryCheckoutConfirmed       = "DELIVERY_CHECKOUT_CONFIRMED"
 	ActionDeliveryRunStarted           = "DELIVERY_RUN_STARTED"
 	ActionDeliveryStopArrived          = "DELIVERY_STOP_ARRIVED"
 	ActionDeliveryOutcomeRecorded      = "DELIVERY_OUTCOME_RECORDED"

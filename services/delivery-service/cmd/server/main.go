@@ -34,13 +34,14 @@ func main() {
 
 	peers := client.Peers{
 		LoadingURL: getenv("LOADING_SERVICE_URL", "http://loading-service:8080"),
+        OrdersURL: getenv("ORDER_SERVICE_URL", "http://order-service:8080"),
 		SharedURL:  getenv("SHARED_SERVICE_URL", "http://shared-service:8080"),
 		Logger:     app.Logger,
 		M2M: &oauth.TokenSource{
 			TokenURL:     getenv("OIDC_TOKEN_URL", "http://thunderid:8090/oauth2/token"),
 			ClientID:     os.Getenv("M2M_CLIENT_ID"),
 			ClientSecret: os.Getenv("M2M_CLIENT_SECRET"),
-			Scope:        "loading:read-internal outlets:read-internal audit:write",
+			Scope:        "loading:read-internal outlets:read-internal audit:write orders:write-internal",
 		},
 	}
 	objects := objectstore.Store(objectstore.S3{

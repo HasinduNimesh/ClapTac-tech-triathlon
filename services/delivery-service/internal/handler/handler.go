@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"time"
 	"context"
 	"encoding/json"
 	"errors"
@@ -24,8 +25,11 @@ type Driver interface {
 	Get(ctx context.Context, profile *authorization.Profile, tripID string) (map[string]any, error)
 	Prepare(ctx context.Context, profile *authorization.Profile, tripID string) (map[string]any, error)
 	Start(ctx context.Context, profile *authorization.Profile, tripID, opID string) (map[string]any, error)
+	PublishArrivalPrediction(ctx context.Context, profile *authorization.Profile, tripID, stopID string, planVersion int, sourceAt *time.Time, eta time.Time, lower, upper *time.Time, risk string) (domain.ArrivalPrediction, error)
+	Checkout(ctx context.Context, profile *authorization.Profile, tripID string, planVersion int, confirmed []string) (domain.Checkout, error)
+	CheckoutStatus(ctx context.Context, profile *authorization.Profile, tripID string) (*domain.Checkout, error)
 	Arrive(ctx context.Context, profile *authorization.Profile, tripID, stopID, opID, occurred string) (map[string]any, error)
-	Outcome(ctx context.Context, profile *authorization.Profile, tripID, stopID, opID, depends, code, reason, note, occurred string) (map[string]any, error)
+	Outcome(ctx context.Context, profile *authorization.Profile, tripID, stopID, opID, depends, code, reason, note, occurred string, returned domain.ReturnDetails) (map[string]any, error)
 	UploadProof(ctx context.Context, profile *authorization.Profile, tripID, stopID, opID, proofType, mime string, body []byte, captured, receiverName string) (domain.Proof, error)
 	Complete(ctx context.Context, profile *authorization.Profile, tripID, opID, occurred string) (map[string]any, error)
 	Sync(ctx context.Context, profile *authorization.Profile, req domain.SyncRequest) []map[string]any
@@ -64,7 +68,10 @@ func (h Handler) Routes(r chi.Router) {
 		r.With(authorization.RequireWith(h.Authn, h.Profiles, authorization.PermDeliveryViewAll)).Post("/trips/{tripId}/messages", h.sendTripMessage)
 		r.With(update).Post("/trips/{tripId}/messages/{messageId}/ack", h.ackTripMessage)
 		r.With(start).Post("/trips/{tripId}/prepare", h.prepare)
+		r.With(authorization.RequireAnyWith(h.Authn, h.Profiles, authorization.PermDeliveryStart, authorization.PermDeliveryViewAll, authorization.PermLoadingView)).Get("/trips/{tripId}/checkout", h.checkoutStatus)
+		r.With(start).Post("/trips/{tripId}/checkout", h.checkout)
 		r.With(start).Post("/trips/{tripId}/start", h.start)
+		r.With(authorization.RequireWith(h.Authn, h.Profiles, authorization.PermDeliveryViewAll)).Post("/trips/{tripId}/stops/{stopId}/arrival-prediction", h.publishArrivalPrediction)
 		r.With(update).Post("/trips/{tripId}/stops/{stopId}/arrive", h.arrive)
 		r.With(proof).Post("/trips/{tripId}/stops/{stopId}/proofs", h.proof)
 		r.With(update).Post("/trips/{tripId}/stops/{stopId}/outcome", h.outcome)
@@ -198,6 +205,34 @@ func (h Handler) prepare(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, detail)
 }
 
+func (h Handler) checkoutStatus(w http.ResponseWriter, r *http.Request) {
+	checkout, err := h.Service.CheckoutStatus(r.Context(), h.profile(r), chi.URLParam(r, "tripId"))
+	if writeErr(w, err) { return }
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"checkout": checkout})
+}
+
+func (h Handler) checkout(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 16*1024)
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	var body struct {
+		PlanVersion int `json:"planVersion"`
+		ConfirmedOrderIDs []string `json:"confirmedOrderIds"`
+	}
+	if dec.Decode(&body) != nil || body.PlanVersion <= 0 || body.ConfirmedOrderIDs == nil {
+		apierrors.BadRequest(w, "invalid checkout request")
+		return
+	}
+	var extra any
+	if dec.Decode(&extra) != io.EOF {
+		apierrors.BadRequest(w, "invalid checkout request")
+		return
+	}
+	checkout, err := h.Service.Checkout(r.Context(), h.profile(r), chi.URLParam(r, "tripId"), body.PlanVersion, body.ConfirmedOrderIDs)
+	if writeErr(w, err) { return }
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"checkout": checkout})
+}
+
 func (h Handler) start(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		OperationID string `json:"operationId"`
@@ -209,6 +244,40 @@ func (h Handler) start(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, detail)
+}
+
+func (h Handler) publishArrivalPrediction(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 4096)
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	var body struct {
+		PlanVersion int `json:"planVersion"`
+		SourceEventAt string `json:"sourceEventAt"`
+		EstimatedArrivalAt string `json:"estimatedArrivalAt"`
+		ArrivalRangeLower string `json:"arrivalRangeLower"`
+		ArrivalRangeUpper string `json:"arrivalRangeUpper"`
+		LateRisk string `json:"lateRisk"`
+	}
+	if dec.Decode(&body) != nil { apierrors.BadRequest(w, "invalid arrival prediction"); return }
+	var extra any
+	if dec.Decode(&extra) != io.EOF { apierrors.BadRequest(w, "invalid arrival prediction"); return }
+	eta, err := time.Parse(time.RFC3339Nano, body.EstimatedArrivalAt)
+	if err != nil { apierrors.BadRequest(w, "invalid arrival timestamp"); return }
+	var sourceAt, lower, upper *time.Time
+	if body.SourceEventAt != "" {
+		value, parseErr := time.Parse(time.RFC3339Nano, body.SourceEventAt)
+		if parseErr != nil { apierrors.BadRequest(w, "invalid source event timestamp"); return }
+		sourceAt = &value
+	}
+	if body.ArrivalRangeLower != "" || body.ArrivalRangeUpper != "" {
+		lo, loErr := time.Parse(time.RFC3339Nano, body.ArrivalRangeLower)
+		hi, hiErr := time.Parse(time.RFC3339Nano, body.ArrivalRangeUpper)
+		if loErr != nil || hiErr != nil { apierrors.BadRequest(w, "invalid arrival range"); return }
+		lower, upper = &lo, &hi
+	}
+	prediction, err := h.Service.PublishArrivalPrediction(r.Context(), h.profile(r), chi.URLParam(r, "tripId"), chi.URLParam(r, "stopId"), body.PlanVersion, sourceAt, eta, lower, upper, body.LateRisk)
+	if writeErr(w, err) { return }
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"prediction": prediction})
 }
 
 func (h Handler) arrive(w http.ResponseWriter, r *http.Request) {
@@ -233,13 +302,14 @@ func (h Handler) outcome(w http.ResponseWriter, r *http.Request) {
 		OccurredAt           string `json:"occurredAt"`
 		OperationID          string `json:"operationId"`
 		DependsOnOperationID string `json:"dependsOnOperationId"`
+		ReturnedGoods domain.ReturnDetails `json:"returnedGoods"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		apierrors.BadRequest(w, "invalid JSON")
 		return
 	}
 	opID := first(r.Header.Get("Idempotency-Key"), body.OperationID)
-	detail, err := h.Service.Outcome(r.Context(), h.profile(r), chi.URLParam(r, "tripId"), chi.URLParam(r, "stopId"), opID, body.DependsOnOperationID, body.Code, body.Reason, body.Note, body.OccurredAt)
+	detail, err := h.Service.Outcome(r.Context(), h.profile(r), chi.URLParam(r, "tripId"), chi.URLParam(r, "stopId"), opID, body.DependsOnOperationID, body.Code, body.Reason, body.Note, body.OccurredAt, body.ReturnedGoods)
 	if writeErr(w, err) {
 		return
 	}
