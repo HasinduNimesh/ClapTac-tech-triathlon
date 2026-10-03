@@ -530,6 +530,47 @@ class DriverSession extends ChangeNotifier {
     return 0;
   }
 
+  /// Finishes the route the driver has just completed. It sends the completion and everything before
+  /// it; if that all got through it looks for another trip for this vehicle today and, if there is
+  /// one, opens it instead of signing out (the driver confirms its load as usual). With no further
+  /// trip, or when that could not be checked, it signs out: everything is already sent, and the next
+  /// sign-in finds any later trip by itself.
+  ///
+  /// When updates could not be sent the driver stays signed in with the same route and the result
+  /// says how many, exactly as [finishTrip] does.
+  Future<TripWrapUpResult> completeTrip() async {
+    final source = trips;
+    if (!routeComplete || source == null || !signedIn) {
+      final unsent = await finishTrip();
+      return unsent == 0 ? const TripWrapUpResult.signedOut() : TripWrapUpResult.unsent(unsent);
+    }
+    final finished = _baseTrip!;
+    await queue.enqueue(Operations.routeCompleted(operationId: _operationId('route-completed'), trip: trip, occurredAt: _clock()).toSyncEvent());
+    final syncing = worker;
+    if (syncing != null && queue is SqliteSyncQueue) {
+      await syncing.syncNow();
+      await _refreshPending();
+      if (_pendingCount > 0) {
+        notifyListeners();
+        return TripWrapUpResult.unsent(_pendingCount);
+      }
+    }
+    // Everything is sent, so the server no longer lists the finished trip as open.
+    _results.clear();
+    _operationIds.clear();
+    _incidents = 0;
+    await loadTrips();
+    final next = _baseTrip;
+    if (signedIn && next != null && next.tripId != finished.tripId) {
+      tab = DriverTab.route;
+      notifyListeners();
+      return TripWrapUpResult.nextTrip(finished: finished, next: next);
+    }
+    if (!signedIn) return const TripWrapUpResult.signedOut();
+    await finishTrip(force: true);
+    return const TripWrapUpResult.signedOut();
+  }
+
   /// The stored sign-in is no longer accepted: go back to sign-in instead of showing a dead end.
   Future<void> _signInExpired(String? message) async {
     _stopMessagePolling();
@@ -751,6 +792,30 @@ class DriverSession extends ChangeNotifier {
 }
 
 enum LoadCheck { unchecked, confirmed, discrepancy, overridden }
+
+enum TripWrapUp { signedOut, unsent, nextTrip }
+
+/// How finishing a route ended: the driver was signed out, updates are still unsent (and the driver
+/// is still signed in), or another trip was opened.
+class TripWrapUpResult {
+  const TripWrapUpResult.signedOut()
+      : kind = TripWrapUp.signedOut,
+        unsent = 0,
+        finished = null,
+        next = null;
+  const TripWrapUpResult.unsent(this.unsent)
+      : kind = TripWrapUp.unsent,
+        finished = null,
+        next = null;
+  const TripWrapUpResult.nextTrip({required TripInfo this.finished, required TripInfo this.next})
+      : kind = TripWrapUp.nextTrip,
+        unsent = 0;
+
+  final TripWrapUp kind;
+  final int unsent;
+  final TripInfo? finished;
+  final TripInfo? next;
+}
 
 /// `waiting`: no connection yet, will retry. `refused`: the server said no (see the message).
 enum TripStartState { notStarted, starting, waiting, started, refused }
