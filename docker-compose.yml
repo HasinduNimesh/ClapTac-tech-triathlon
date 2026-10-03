@@ -268,6 +268,18 @@ services:
       retries: 6
       start_period: 5s
 
+  loader-web:
+    build:
+      context: ./apps/loader-web
+    expose:
+      - "80"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/loader-app/"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 5s
+
   nginx:
     image: nginx:1.27-alpine
     ports:
@@ -276,6 +288,7 @@ services:
       - ./infrastructure/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
       - web
+      - loader-web
       - order-service
       - planning-service
       - fleet-service
