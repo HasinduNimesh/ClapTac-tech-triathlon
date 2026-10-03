@@ -321,7 +321,7 @@ class _DriverHomeState extends State<_DriverHome> {
 
   Future<void> _finishTrip() async {
     Navigator.of(context).popUntil((route) => route.isFirst);
-    await session.finishTrip();
+    await finishOrAsk(context, session);
   }
 
   @override
@@ -356,6 +356,29 @@ class _DriverHomeState extends State<_DriverHome> {
       },
     );
   }
+}
+
+/// Signs out, but first lets the driver know when updates are still saved only on this phone. Those
+/// are never discarded: signing out anyway keeps them queued, to be sent at the next sign-in.
+Future<void> finishOrAsk(BuildContext context, DriverSession session) async {
+  final unsent = await session.finishTrip();
+  if (unsent == 0 || !context.mounted) return;
+  final signOutAnyway = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('Updates not sent yet'),
+      content: Text(
+        '${unsent == 1 ? '1 update is' : '$unsent updates are'} still saved on this phone and could not be sent to Waypoint.\n\n'
+        'Stay signed in and reconnect to send ${unsent == 1 ? 'it' : 'them'}, or sign out now. Nothing is lost: '
+        '${unsent == 1 ? 'it' : 'they'} will be sent the next time you sign in.',
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.of(dialogContext).pop(false), child: const Text('Stay signed in')),
+        TextButton(onPressed: () => Navigator.of(dialogContext).pop(true), child: const Text('Sign out anyway')),
+      ],
+    ),
+  );
+  if (signOutAnyway == true) await session.finishTrip(force: true);
 }
 
 /// Shown when a driver is signed in but there is no route to show: it is still loading, it could
@@ -401,7 +424,7 @@ class _NoRoute extends StatelessWidget {
             AppButton(label: 'Try again', onPressed: session.loadTrips),
             const SizedBox(height: 12),
           ],
-          AppButton(label: 'Sign out', outline: true, onPressed: () => session.finishTrip()),
+          AppButton(label: 'Sign out', outline: true, onPressed: () => finishOrAsk(context, session)),
         ],
       ),
     );

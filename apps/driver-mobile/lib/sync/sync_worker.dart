@@ -35,7 +35,8 @@ class DeliverySyncWorker {
   final Duration interval;
   final Duration timeout;
   Timer? _timer;
-  bool _running = false;
+  Future<void>? _current;
+  bool _again = false;
   bool _enabled = false;
 
   void start() {
@@ -51,9 +52,27 @@ class DeliverySyncWorker {
     _timer = null;
   }
 
-  Future<void> syncNow() async {
-    if (!_enabled || _running) return;
-    _running = true;
+  /// Sends what is waiting. When a pass is already running this does not start a second one; it
+  /// asks for one more pass afterwards and completes when that is done, so a caller that needs
+  /// everything sent (finishing the trip) never returns while updates queued meanwhile are waiting.
+  Future<void> syncNow() {
+    if (!_enabled) return Future.value();
+    final running = _current;
+    if (running != null) {
+      _again = true;
+      return running;
+    }
+    return _current = _passes().whenComplete(() => _current = null);
+  }
+
+  Future<void> _passes() async {
+    do {
+      _again = false;
+      await _pass();
+    } while (_again && _enabled);
+  }
+
+  Future<void> _pass() async {
     try {
       while (_enabled) {
         final item = await _queue.first();
@@ -158,8 +177,6 @@ class DeliverySyncWorker {
       onProgress?.call(SyncProgress.offline, 'Waypoint returned unreadable data');
     } on Object catch (error) {
       onProgress?.call(SyncProgress.needsAttention, 'Sync stopped: $error');
-    } finally {
-      _running = false;
     }
   }
 
