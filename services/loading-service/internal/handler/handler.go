@@ -26,6 +26,7 @@ type Loader interface {
 	CreateIssue(ctx context.Context, profile *authorization.Profile, tripID, orderID, typ, note, key string, units int) (domain.Issue, error)
 	UpdateIssue(ctx context.Context, profile *authorization.Profile, tripID, orderID, issueID, typ, note string, units int) error
 	DeleteIssue(ctx context.Context, profile *authorization.Profile, tripID, orderID, issueID string) error
+	DecideIssue(ctx context.Context, profile *authorization.Profile, tripID, orderID, issueID, decision, note string) (domain.Issue, error)
 	Ready(ctx context.Context, profile *authorization.Profile, tripID string) (map[string]any, error)
 	InternalList(ctx context.Context, date, vehicleID string) ([]map[string]any, error)
 	InternalGet(ctx context.Context, tripID string) (map[string]any, error)
@@ -44,6 +45,7 @@ func (h Handler) Routes(r chi.Router) {
 	update := authorization.RequireWith(h.Authn, h.Profiles, authorization.PermLoadingUpdate)
 	issue := authorization.RequireWith(h.Authn, h.Profiles, authorization.PermLoadingIssue)
 	ready := authorization.RequireWith(h.Authn, h.Profiles, authorization.PermLoadingReady)
+	decide := authorization.RequireWith(h.Authn, h.Profiles, authorization.PermLoadingDecide)
 
 	r.Route("/api/v1/loading", func(r chi.Router) {
 		r.With(view).Get("/trips", h.list)
@@ -53,6 +55,7 @@ func (h Handler) Routes(r chi.Router) {
 		r.With(issue).Post("/trips/{tripId}/orders/{orderId}/issues", h.createIssue)
 		r.With(issue).Put("/trips/{tripId}/orders/{orderId}/issues/{issueId}", h.updateIssue)
 		r.With(issue).Delete("/trips/{tripId}/orders/{orderId}/issues/{issueId}", h.deleteIssue)
+		r.With(decide).Post("/trips/{tripId}/orders/{orderId}/issues/{issueId}/decision", h.decideIssue)
 		r.With(ready).Post("/trips/{tripId}/ready", h.ready)
 		internal := authorization.RequireAnyWith(h.Authn, h.Profiles, authorization.PermLoadingViewAll, authorization.PermLoadingReadInternal)
 		r.With(internal).Get("/internal/trips", h.internalList)
@@ -150,6 +153,22 @@ func (h Handler) deleteIssue(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"status": "removed"})
 }
 
+func (h Handler) decideIssue(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Decision string `json:"decision"`
+		Note     string `json:"note"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		apierrors.BadRequest(w, "invalid JSON")
+		return
+	}
+	iss, err := h.Service.DecideIssue(r.Context(), h.profile(r), chi.URLParam(r, "tripId"), chi.URLParam(r, "orderId"), chi.URLParam(r, "issueId"), body.Decision, body.Note)
+	if writeErr(w, err) {
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"issue": iss})
+}
+
 func (h Handler) ready(w http.ResponseWriter, r *http.Request) {
 	detail, err := h.Service.Ready(r.Context(), h.profile(r), chi.URLParam(r, "tripId"))
 	if writeErr(w, err) {
@@ -190,6 +209,16 @@ func writeErr(w http.ResponseWriter, err error) bool {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"type": "loading_incomplete", "title": "Conflict", "status": 409,
 			"detail": "pending orders remain", "pendingOrderIds": inc.Pending,
+		})
+		return true
+	}
+	var dec service.DecisionRequiredError
+	if errors.As(err, &dec) {
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusConflict)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"type": "dispatcher_decision_required", "title": "Conflict", "status": 409,
+			"detail": "a loader shortfall is waiting for the dispatcher's decision", "orderIds": dec.OrderIDs,
 		})
 		return true
 	}
