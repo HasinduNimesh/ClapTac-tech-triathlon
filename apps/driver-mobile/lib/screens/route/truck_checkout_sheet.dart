@@ -31,7 +31,7 @@ Future<void> showTruckCheckoutSheet(
         for (final stop in trip.stops)
           LoadCheckLine(
               title:
-                  'Stop ${stop.sequence} · ${stop.name} · ${stop.unitsText} on board'),
+                  '${stop.sequenceTitle} · ${stop.unitsText} on board'),
       ];
   final details = [
     trip.vehicleCode,
