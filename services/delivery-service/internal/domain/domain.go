@@ -116,6 +116,8 @@ type Stop struct {
 	OutcomeCode                 string               `json:"outcomeCode,omitempty"`
 	OutcomeReason               string               `json:"outcomeReason,omitempty"`
 	OutcomeNote                 string               `json:"outcomeNote,omitempty"`
+	DeliveredUnits              *int                 `json:"deliveredUnits,omitempty"`
+	ShortfallUnits              *int                 `json:"shortfallUnits,omitempty"`
 	OutcomeAt                   *time.Time           `json:"outcomeAt,omitempty"`
 	OutcomeReceivedAt           *time.Time           `json:"outcomeReceivedAt,omitempty"`
 	CompletedAt                 *time.Time           `json:"completedAt,omitempty"`
