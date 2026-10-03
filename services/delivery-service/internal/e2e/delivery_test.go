@@ -230,6 +230,7 @@ func TestDeliveryWorkflow(t *testing.T) {
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0038_delivery_proof_receiver_name.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0039_delivery_driver_incidents.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0040_delivery_stop_expected_units.sql"))
+	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0041_delivery_outcome_units.sql"))
 
 	peers := httptest.NewServer(peerStub())
 	t.Cleanup(peers.Close)

@@ -337,11 +337,11 @@ func (s Service) applyArrive(ctx context.Context, profile *authorization.Profile
 	return s.detail(ctx, run)
 }
 
-func (s Service) Outcome(ctx context.Context, profile *authorization.Profile, tripID, stopID, opID, depends, code, reason, note, occurred string) (map[string]any, error) {
-	return s.applyOutcome(ctx, profile, tripID, stopID, opID, depends, code, reason, note, occurred)
+func (s Service) Outcome(ctx context.Context, profile *authorization.Profile, tripID, stopID, opID, depends, code, reason, note, occurred string, deliveredUnits *int) (map[string]any, error) {
+	return s.applyOutcome(ctx, profile, tripID, stopID, opID, depends, code, reason, note, occurred, deliveredUnits)
 }
 
-func (s Service) applyOutcome(ctx context.Context, profile *authorization.Profile, tripID, stopID, opID, depends, code, reason, note, occurred string) (map[string]any, error) {
+func (s Service) applyOutcome(ctx context.Context, profile *authorization.Profile, tripID, stopID, opID, depends, code, reason, note, occurred string, deliveredUnits *int) (map[string]any, error) {
 	if res, ok, err := s.replayOrReject(ctx, opID, depends); ok {
 		return res, err
 	}
@@ -353,6 +353,14 @@ func (s Service) applyOutcome(ctx context.Context, profile *authorization.Profil
 	if code != domain.OutcomeDelivered && code != domain.OutcomePartial && code != domain.OutcomeNotDelivered && code != domain.OutcomeFailed && code != domain.OutcomeRefused {
 		return s.record(ctx, opID, run.ID, stopID, domain.OpStopOutcome, domain.ResultRejected, map[string]any{"detail": "invalid outcome"}, fmt.Errorf("invalid: outcome code"))
 	}
+	if deliveredUnits != nil {
+		if stop.ExpectedUnits == nil || *deliveredUnits < 0 || *deliveredUnits > *stop.ExpectedUnits ||
+			(code == domain.OutcomeDelivered && *deliveredUnits != *stop.ExpectedUnits) ||
+			(code == domain.OutcomePartial && (*deliveredUnits == 0 || *deliveredUnits == *stop.ExpectedUnits)) ||
+			(code != domain.OutcomeDelivered && code != domain.OutcomePartial && *deliveredUnits != 0) {
+			return s.record(ctx, opID, run.ID, stopID, domain.OpStopOutcome, domain.ResultRejected, map[string]any{"detail": "deliveredUnits must match the outcome and expectedUnits"}, fmt.Errorf("invalid: deliveredUnits must match outcome and expectedUnits"))
+		}
+	}
 	if code == domain.OutcomeNotDelivered || code == domain.OutcomeFailed || code == domain.OutcomeRefused {
 		if !validNonDeliveryReason(reason) {
 			return s.record(ctx, opID, run.ID, stopID, domain.OpStopOutcome, domain.ResultRejected, map[string]any{"detail": "valid reasonCode required"}, fmt.Errorf("invalid: valid reasonCode required for non-delivery"))
@@ -360,7 +368,8 @@ func (s Service) applyOutcome(ctx context.Context, profile *authorization.Profil
 		reason = strings.ToUpper(strings.TrimSpace(reason))
 	}
 	if stop.Status != domain.StopArrived {
-		if stop.Status == domain.StopCompleted && stop.OutcomeCode == code {
+		if stop.Status == domain.StopCompleted && stop.OutcomeCode == code &&
+			(deliveredUnits == nil || (stop.DeliveredUnits != nil && *deliveredUnits == *stop.DeliveredUnits)) {
 			_ = s.Repo.InsertOp(ctx, domain.SyncOp{OperationID: opID, RunID: run.ID, StopID: stopID, OperationType: domain.OpStopOutcome, ResultStatus: domain.ResultApplied, ResultPayload: map[string]any{"code": code}})
 			telemetry.DeliverySyncOps.WithLabelValues(domain.ResultApplied).Inc()
 			return s.detail(ctx, run)
@@ -378,7 +387,7 @@ func (s Service) applyOutcome(ctx context.Context, profile *authorization.Profil
 		}
 	}
 	occurredAt := parseTime(occurred)
-	if err := s.Repo.MarkOutcome(ctx, stop.ID, code, reason, note, occurredAt); err != nil {
+	if err := s.Repo.MarkOutcome(ctx, stop.ID, code, reason, note, occurredAt, deliveredUnits); err != nil {
 		telemetry.DeliverySyncConflicts.Inc()
 		return s.record(ctx, opID, run.ID, stopID, domain.OpStopOutcome, domain.ResultConflict, map[string]any{"detail": err.Error()}, err)
 	}
@@ -584,7 +593,16 @@ func (s Service) syncOne(ctx context.Context, profile *authorization.Profile, op
 		code, _ := op.Payload["code"].(string)
 		reason, _ := op.Payload["reason"].(string)
 		note, _ := op.Payload["note"].(string)
-		_, err := s.applyOutcome(ctx, profile, tripOf(ctx, s, op), op.StopID, op.OperationID, op.DependsOnOperationID, code, reason, note, op.OccurredAt)
+		var deliveredUnits *int
+		if raw, present := op.Payload["deliveredUnits"]; present {
+			number, ok := raw.(float64)
+			if !ok || number < 0 || number > 2147483647 || number != float64(int(number)) {
+				return s.recordSyncRejection(ctx, op, "deliveredUnits must be a non-negative integer")
+			}
+			units := int(number)
+			deliveredUnits = &units
+		}
+		_, err := s.applyOutcome(ctx, profile, tripOf(ctx, s, op), op.StopID, op.OperationID, op.DependsOnOperationID, code, reason, note, op.OccurredAt, deliveredUnits)
 		return syncResult(op.OperationID, err)
 	case domain.OpTemperatureReading:
 		value, ok := op.Payload["valueC"].(float64)

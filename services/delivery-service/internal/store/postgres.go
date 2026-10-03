@@ -553,12 +553,12 @@ func (p Postgres) MarkArrived(ctx context.Context, stopID string, occurredAt tim
 	return nil
 }
 
-func (p Postgres) MarkOutcome(ctx context.Context, stopID, code, reason, note string, occurredAt time.Time) error {
+func (p Postgres) MarkOutcome(ctx context.Context, stopID, code, reason, note string, occurredAt time.Time, deliveredUnits *int) error {
 	tag, err := p.Pool.Exec(ctx, `
 		UPDATE stops SET status = $2, outcome_code = $3, outcome_reason = $4, outcome_note = $5,
-			outcome_at = $6, outcome_received_at = now(), completed_at = now(), updated_at = now(), version = version + 1
-		WHERE id::text = $1 AND status = $7
-	`, stopID, domain.StopCompleted, code, reason, note, occurredAt, domain.StopArrived)
+			outcome_at = $6, delivered_units = $7, outcome_received_at = now(), completed_at = now(), updated_at = now(), version = version + 1
+		WHERE id::text = $1 AND status = $8
+	`, stopID, domain.StopCompleted, code, reason, note, occurredAt, deliveredUnits, domain.StopArrived)
 	if err != nil {
 		return err
 	}
@@ -743,7 +743,7 @@ const stopSelect = `
 		COALESCE(outlet_name,''), COALESCE(district,''), COALESCE(dock_type,''), COALESCE(parking_constraint,''),
 		stop_sequence, planned_arrival_at, COALESCE(temperature_requirement,''), chilled_temperature_min_c, chilled_temperature_max_c, COALESCE(planned_window_open,''), COALESCE(planned_window_close,''), COALESCE(access_instructions,''), access_instructions_updated_at,
 		COALESCE(loading_status,''), loading_shortfall_summary, status,
-		arrived_at, arrived_received_at, COALESCE(outcome_code,''), COALESCE(outcome_reason,''), COALESCE(outcome_note,''),
+		arrived_at, arrived_received_at, COALESCE(outcome_code,''), COALESCE(outcome_reason,''), COALESCE(outcome_note,''), delivered_units, shortfall_units,
 		outcome_at, outcome_received_at, completed_at, version
 	FROM stops`
 
@@ -768,7 +768,7 @@ func scanStop(row scanner) (domain.Stop, error) {
 	err := row.Scan(&s.ID, &s.RunID, &s.AllocationID, &s.OrderID, &s.OrderRef, &s.ExpectedUnits, &s.UnitLabel, &s.OutletID, &s.Brand,
 		&s.OutletName, &s.District, &s.DockType, &s.ParkingConstraint, &s.StopSequence, &s.PlannedArrivalAt, &s.TemperatureRequirement, &s.ChilledTemperatureMinC, &s.ChilledTemperatureMaxC,
 		&s.PlannedWindowOpen, &s.PlannedWindowClose, &s.AccessInstructions, &s.AccessInstructionsUpdatedAt, &s.LoadingStatus, &short, &s.Status,
-		&s.ArrivedAt, &s.ArrivedReceivedAt, &s.OutcomeCode, &s.OutcomeReason, &s.OutcomeNote,
+		&s.ArrivedAt, &s.ArrivedReceivedAt, &s.OutcomeCode, &s.OutcomeReason, &s.OutcomeNote, &s.DeliveredUnits, &s.ShortfallUnits,
 		&s.OutcomeAt, &s.OutcomeReceivedAt, &s.CompletedAt, &s.Version)
 	if err == pgx.ErrNoRows {
 		return s, fmt.Errorf("not found")
