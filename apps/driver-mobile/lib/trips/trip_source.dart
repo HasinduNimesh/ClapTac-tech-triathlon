@@ -35,8 +35,15 @@ class ApiTripSource implements TripSource {
   final AuthGateway auth;
   final DateTime Function() _clock;
 
-  static String dateKey(DateTime time) =>
-      '${time.year.toString().padLeft(4, '0')}-${time.month.toString().padLeft(2, '0')}-${time.day.toString().padLeft(2, '0')}';
+  /// Waypoint's business day is the Asia/Colombo calendar date (fixed UTC+05:30, no daylight
+  /// saving), the same zone the services use for delivery dates. It is computed from UTC so a
+  /// phone set to another timezone still asks for the right day.
+  static const businessOffset = Duration(hours: 5, minutes: 30);
+
+  static String dateKey(DateTime now) {
+    final business = now.toUtc().add(businessOffset);
+    return '${business.year.toString().padLeft(4, '0')}-${business.month.toString().padLeft(2, '0')}-${business.day.toString().padLeft(2, '0')}';
+  }
 
   @override
   Future<TripLoad> loadToday() async {

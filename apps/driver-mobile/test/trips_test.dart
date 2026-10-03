@@ -191,9 +191,23 @@ void main() {
     });
   });
 
+  group('business date', () {
+    test('is the Asia/Colombo calendar date whatever the phone timezone is', () {
+      // 20:00 UTC on 3 Oct is already 01:30 on 4 Oct in Colombo.
+      expect(ApiTripSource.dateKey(DateTime.utc(2026, 10, 3, 20)), '2026-10-04');
+      // 18:29 UTC is 23:59 in Colombo, still the 3rd; 18:30 UTC is midnight, the 4th.
+      expect(ApiTripSource.dateKey(DateTime.utc(2026, 10, 3, 18, 29)), '2026-10-03');
+      expect(ApiTripSource.dateKey(DateTime.utc(2026, 10, 3, 18, 30)), '2026-10-04');
+      // The same instant gives the same date from any local offset.
+      final instant = DateTime.utc(2026, 1, 1, 0, 10);
+      expect(ApiTripSource.dateKey(instant), '2026-01-01');
+      expect(ApiTripSource.dateKey(instant.subtract(const Duration(hours: 6))), '2025-12-31');
+    });
+  });
+
   group('ApiTripSource', () {
     ApiTripSource source(MockClient client, {_Auth? auth}) =>
-        ApiTripSource(api: TripsApi(baseUrl: 'http://api', client: client), auth: auth ?? _Auth(), clock: () => DateTime(2026, 10, 3, 7));
+        ApiTripSource(api: TripsApi(baseUrl: 'http://api', client: client), auth: auth ?? _Auth(), clock: () => DateTime.utc(2026, 10, 3, 7));
 
     test('loads the first trip of today that is not finished', () async {
       final paths = <String>[];
