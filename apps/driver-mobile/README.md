@@ -1,18 +1,106 @@
 # Waypoint Driver (Flutter)
 
-Offline-first route execution. Interfaces:
+Offline-first route execution. The UI follows the Figma "Driver" phone screens (390 × 844).
 
-- `LocalDatabase`
-- `SyncQueue` / `SyncEvent`
-- `ConflictResolution`
+## What is built
 
-Each sync event has a client-generated `idempotencyKey`. Retrying must not create duplicate outcomes or proof records.
+| Area | Screens |
+| --- | --- |
+| Sign in | Sign in; no-signal sign in with "Continue offline" |
+| Route | Route home; safe stop and outlet access; truck check-out sheet; report a problem sheet |
+| Delivery | Stop details (online and offline); record delivery and proof; rejected take-back sheet |
+| States | Saved on this device; syncing; synced; upload needs attention; end of day; plan update needs review |
+| Tabs | Route, Updates (no Figma frame; reuses the note banners) and Summary |
 
-Generate platform projects if they are missing:
+`lib/app/driver_flow.dart` connects them: sign in → load check → safe stop → stop details → saved on this device → route → end-of-day summary.
+
+What the driver does is queued as delivery sync operations (`lib/sync/operations.dart`), shaped like the entries of `POST /api/v1/delivery/sync` and keyed by the server's trip and stop ids, never by outlet code:
+
+| Driver action | Operation |
+| --- | --- |
+| "I've stopped safely" | `ARRIVED` (the server needs an arrival before it accepts an outcome) |
+| Save delivery | `STOP_OUTCOME` with `code` DELIVERED / PARTIAL / FAILED / REFUSED, a `reason` code for failed and refused (OUTLET_CLOSED, GOODS_REJECTED, OTHER, ...) and a `note` |
+| Finish trip (all stops recorded) | `ROUTE_COMPLETED` |
+| Report a problem, missing load item | `INCIDENT_REPORT` with `category` and `description`, `stopId` at the top level when at a stop |
+
+Every operation has a random operation id that is created once and kept, so a repeat is recognised as a duplicate.
+
+## Sign-in
+
+Sign-in uses Authorization Code + PKCE through the system browser (AppAuth). The app never sees the username or password. After the browser returns, the app calls `GET /api/v1/shared/profiles/me` with the access token and only continues for accounts whose role is `DRIVER`:
+
+- cancelled in the browser: back to the sign-in screen, no message
+- 401: "Your sign-in was not accepted"
+- 404: the account exists in the identity provider but is not set up in Waypoint
+- another role (dispatcher, loader, store manager): "This app is for drivers"
+- network or server error: "Could not reach Waypoint"
+
+The access token and profile are kept in the Android Keystore / iOS Keychain, so a signed-in driver resumes without a network call until the token expires. Finishing the trip clears them.
+
+Configure it per build with `--dart-define` (see `lib/auth/auth_config.dart`):
+
+| Define | Meaning |
+| --- | --- |
+| `OIDC_ISSUER` | identity provider, e.g. `https://id.waypoint.claptac.dev` |
+| `API_BASE_URL` | Waypoint API host, e.g. `https://waypoint.claptac.dev` |
+| `OIDC_RESOURCE` | the API the token is for, an absolute URI such as `https://waypoint.claptac.dev/api/v1`; sent as the `resource` parameter (ThunderID rejected the bare `waypoint-api` value) |
+| `OIDC_CLIENT_ID` | default `waypoint-driver` |
+| `OIDC_REDIRECT_URI` | default `dev.claptac.waypointdriver:/oauth2redirect`; the scheme must match `appAuthRedirectScheme` in `android/app/build.gradle.kts` and may not contain an underscore |
+
+Without `OIDC_ISSUER` and `API_BASE_URL`, sign-in is disabled. Plain HTTP is only accepted in debug builds, for a local identity server; release builds refuse it. The identity provider side is described in `infrastructure/thunder/README.md`.
+
+The demo switches `DEMO_AUTH` (any credentials, no identity provider), `DEMO_ROUTE` (show the sample route after a real sign-in) and `DEMO_UPDATES` (a sample plan update) are forced off in release builds, whatever is passed.
+
+## Not built yet
+
+Do not describe this build as connected to the cloud: sign-in is real, almost everything after it is not.
+
+- **Trips.** Assigned trips are not loaded (`GET /api/v1/delivery/drivers/me/trips`, `GET /api/v1/delivery/trips/{id}`). After a real sign-in the app says "No route loaded"; the sample route (with obviously fake `sample-` ids) is shown only in `DEMO_ROUTE` / `DEMO_AUTH` builds. The trip response also has no carton counts or plate number, which the screens show, so that mapping needs a decision first.
+- **Nothing is sent.** There is no sync worker, and `InMemoryLocalDatabase` / `InMemorySyncQueue` are used, so queued operations are lost when the app closes. "Saved on this phone" is true for this session only. The "syncing" and "synced" screens are never reached from the flow.
+- **Proof.** Photo and signature capture does not exist: the buttons explain that and store nothing, and no proof is queued. The server requires a finalized proof (a separate multipart upload) for DELIVERED and PARTIAL, so those outcomes would be rejected if sent today.
+- **Server gaps.** The outcome request has no field for a partial quantity (it is written in the `note`), no distinct "re-attempt next run" or "defer" operation (also in the `note`), and there is no structured driver load-discrepancy workflow (a missing item is a `GOODS` incident). Contracts and RBAC for these need deciding before they can work as the screens show.
+- **Load check.** Confirming only marks the load confirmed on this phone. Reporting a missing item keeps the route locked until the driver confirms again or explicitly departs anyway, which is queued as a second incident.
+- **Plan and messages.** Plan acknowledgement (`POST /api/v1/planning/plans/{id}/acknowledgements`) and dispatcher trip messages exist on the server but are not used. The plan review screen ("send both versions for review") has no matching API and is demo-only.
+- Connectivity is not detected, so the no-signal sign-in variant is not triggered automatically. Tokens are not refreshed: when the access token expires the driver signs in again.
+
+## Layout
+
+- `lib/theme` design tokens (Figma Foundations), theme and asset paths
+- `lib/widgets` shared hero, shell with bottom navigation, buttons, note banners
+- `lib/screens/<group>` the screens, each group with its own widgets and asset list
+- `lib/app` session state and navigation
+- `assets/images`, `assets/icons` exported from Figma; `assets/fonts` Inter (OFL)
+
+## Run
+
+The Android project is added in a separate change; until it is merged, generate the platform projects once:
 
 ```bash
-flutter create . --project-name waypoint_driver
+flutter create . --platforms=android,ios --org dev.claptac --project-name waypoint_driver
+```
+
+```bash
+flutter pub get
+# Real sign-in against an identity provider
+flutter run --dart-define=OIDC_ISSUER=https://id.example.com --dart-define=API_BASE_URL=https://api.example.com \
+  --dart-define=OIDC_RESOURCE=https://api.example.com/api/v1
+# Demo without an identity provider (debug builds only)
+flutter run --dart-define=DEMO_AUTH=true
+```
+
+A build with neither the OIDC settings nor `DEMO_AUTH` refuses to sign in. To try sign-in on a phone against the local Compose stack, see `infrastructure/thunder/README.md`. The sign-in redirect scheme must also be registered in the Android project (`appAuthRedirectScheme`), which the Android change does.
+
+## Test
+
+```bash
 flutter analyze
+flutter test
+```
+
+To write PNGs of every screen to `test/render/out/` (git-ignored) for visual review against Figma:
+
+```bash
+flutter test test/render --update-goldens --dart-define=RENDER_SCREENS=1
 ```
 
 The agent plane is not on this workflow.

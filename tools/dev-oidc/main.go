@@ -34,6 +34,7 @@ type codeRec struct {
 	Subject  string
 	Verifier string
 	ClientID string
+	Nonce    string
 	Exp      time.Time
 }
 
@@ -77,6 +78,10 @@ func discovery(w http.ResponseWriter, _ *http.Request) {
 		"code_challenge_methods_supported":      []string{"S256"},
 		"grant_types_supported":                 []string{"authorization_code", "client_credentials"},
 		"id_token_signing_alg_values_supported": []string{"RS256"},
+		// Required by OIDC Discovery; native libraries such as AppAuth reject the document without it.
+		"subject_types_supported":               []string{"public"},
+		"scopes_supported":                      []string{"openid", "profile"},
+		"token_endpoint_auth_methods_supported": []string{"none", "client_secret_post"},
 	})
 }
 
@@ -98,12 +103,13 @@ func authorize(w http.ResponseWriter, r *http.Request) {
 <input type="hidden" name="state" value="%s"/>
 <input type="hidden" name="code_challenge" value="%s"/>
 <input type="hidden" name="client_id" value="%s"/>
+<input type="hidden" name="nonce" value="%s"/>
 <p>username <input name="username"/></p>
 <p>password <input type="password" name="password"/></p>
 <button type="submit">Sign in</button>
 </form>
 <p>store-manager / dispatcher / loader / loader-kandy / driver — password: waypoint</p>
-</body></html>`, q.Get("redirect_uri"), q.Get("state"), q.Get("code_challenge"), q.Get("client_id"))
+</body></html>`, q.Get("redirect_uri"), q.Get("state"), q.Get("code_challenge"), q.Get("client_id"), q.Get("nonce"))
 		return
 	}
 	_ = r.ParseForm()
@@ -118,6 +124,7 @@ func authorize(w http.ResponseWriter, r *http.Request) {
 		Subject:  u.Subject,
 		Verifier: r.FormValue("code_challenge"),
 		ClientID: r.FormValue("client_id"),
+		Nonce:    r.FormValue("nonce"),
 		Exp:      time.Now().Add(5 * time.Minute),
 	}
 	mu.Unlock()
@@ -144,18 +151,30 @@ func token(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid_grant", http.StatusBadRequest)
 			return
 		}
-		tok, err := sign(rec.Subject, "openid profile", getenv("OIDC_AUDIENCE", "waypoint-api"))
+		tok, err := sign(rec.Subject, "openid profile", getenv("OIDC_AUDIENCE", "waypoint-api"), nil)
 		if err != nil {
 			http.Error(w, err.Error(), 500)
 			return
 		}
-		writeJSON(w, map[string]any{"access_token": tok, "token_type": "Bearer", "expires_in": 3600, "id_token": tok})
+		// The ID token is for the client (aud = client_id) and echoes the nonce, as native
+		// OIDC libraries such as AppAuth require. The access token stays scoped to the API.
+		idClaims := map[string]any{"nonce": rec.Nonce, "azp": rec.ClientID}
+		idClient := rec.ClientID
+		if idClient == "" {
+			idClient = getenv("OIDC_AUDIENCE", "waypoint-api")
+		}
+		idTok, err := sign(rec.Subject, "openid profile", idClient, idClaims)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		writeJSON(w, map[string]any{"access_token": tok, "token_type": "Bearer", "expires_in": 3600, "id_token": idTok})
 	case "client_credentials":
 		if r.FormValue("client_id") == "" {
 			http.Error(w, "invalid_client", http.StatusUnauthorized)
 			return
 		}
-		tok, err := sign("svc-"+r.FormValue("client_id"), r.FormValue("scope"), getenv("OIDC_AUDIENCE", "waypoint-api"))
+		tok, err := sign("svc-"+r.FormValue("client_id"), r.FormValue("scope"), getenv("OIDC_AUDIENCE", "waypoint-api"), nil)
 		if err != nil {
 			http.Error(w, err.Error(), 500)
 			return
@@ -166,11 +185,16 @@ func token(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func sign(sub, scope, aud string) (string, error) {
+func sign(sub, scope, aud string, extra map[string]any) (string, error) {
 	claims := jwt.MapClaims{
 		"sub": sub, "iss": issuer, "aud": aud,
 		"exp": time.Now().Add(time.Hour).Unix(), "iat": time.Now().Unix(),
 		"scope": scope,
+	}
+	for k, v := range extra {
+		if v != "" {
+			claims[k] = v
+		}
 	}
 	t := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 	t.Header["kid"] = kid
