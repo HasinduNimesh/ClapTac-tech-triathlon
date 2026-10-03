@@ -20,6 +20,11 @@ class OperationType {
   static const stopOutcome = 'STOP_OUTCOME';
   static const routeCompleted = 'ROUTE_COMPLETED';
   static const incidentReport = 'INCIDENT_REPORT';
+
+  /// Not part of the sync contract: a proof is a separate multipart upload
+  /// (`POST /api/v1/delivery/trips/{id}/stops/{id}/proofs`). It sits in the local queue between the
+  /// arrival and the outcome so the order is kept, and the sync worker sends it on its own.
+  static const proofUpload = 'PROOF_UPLOAD';
 }
 
 /// One entry of the delivery sync contract (contracts/openapi/delivery.yaml).
@@ -104,6 +109,30 @@ String? reasonFor(DeliveryDraft draft) {
 }
 
 class Operations {
+  /// A photo or signature waiting to be uploaded. The bytes stay in the file at [CapturedProof.path].
+  static OfflineOperation proofUpload({
+    required String operationId,
+    required TripInfo trip,
+    required StopInfo stop,
+    required CapturedProof proof,
+    required DateTime occurredAt,
+  }) =>
+      OfflineOperation(
+        operationId: operationId,
+        type: OperationType.proofUpload,
+        tripId: trip.tripId,
+        runId: trip.runId,
+        stopId: stop.stopId,
+        occurredAt: occurredAt,
+        payload: {
+          'proofType': proof.kind == ProofKind.photo ? 'PHOTO' : 'SIGNATURE',
+          'filePath': proof.path,
+          'mimeType': proof.mimeType,
+          'capturedAt': proof.capturedAt.toUtc().toIso8601String(),
+          if (proof.receiverName.isNotEmpty) 'receiverName': proof.receiverName,
+        },
+      );
+
   static OfflineOperation arrived({
     required String operationId,
     required TripInfo trip,
