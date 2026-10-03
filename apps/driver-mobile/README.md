@@ -73,11 +73,7 @@ Do not describe this build as connected to the cloud: sign-in is real, almost ev
 
 ## Run
 
-The Android project is added in a separate change; until it is merged, generate the platform projects once:
-
-```bash
-flutter create . --platforms=android,ios --org dev.claptac --project-name waypoint_driver
-```
+The Android project is checked in (application ID `dev.claptac.waypoint_driver`). iOS is not included; generate it with `flutter create . --platforms=ios --org dev.claptac --project-name waypoint_driver`.
 
 ```bash
 flutter pub get
@@ -88,7 +84,28 @@ flutter run --dart-define=OIDC_ISSUER=https://id.example.com --dart-define=API_B
 flutter run --dart-define=DEMO_AUTH=true
 ```
 
-A build with neither the OIDC settings nor `DEMO_AUTH` refuses to sign in. To try sign-in on a phone against the local Compose stack, see `infrastructure/thunder/README.md`. The sign-in redirect scheme must also be registered in the Android project (`appAuthRedirectScheme`), which the Android change does.
+A build with neither the OIDC settings nor `DEMO_AUTH` refuses to sign in. To try sign-in on a phone against the local Compose stack, see `infrastructure/thunder/README.md`.
+
+### Release builds
+
+A release build is signed with a private keystore and fails without one; it never falls back to the debug key. Create `android/key.properties` (git-ignored) pointing at a keystore that is also kept out of Git:
+
+```properties
+storeFile=../../../keys/waypoint-driver.jks   # relative to android/
+storePassword=...
+keyAlias=waypoint-driver
+keyPassword=...
+```
+
+```bash
+flutter build apk --release --dart-define=OIDC_ISSUER=https://id.waypoint.claptac.dev \
+  --dart-define=API_BASE_URL=https://waypoint.claptac.dev \
+  --dart-define=OIDC_RESOURCE=https://waypoint.claptac.dev/api/v1
+```
+
+For a release build that is only for testing on your own phone, `WAYPOINT_ALLOW_DEBUG_SIGNING=1 flutter build apk --release ...` signs with the debug key. Do not distribute that build. Demo switches are ignored in release builds, so do not pass them.
+
+Install with `adb install -r build/app/outputs/flutter-apk/app-release.apk`. On some Xiaomi phones, enable "Install via USB" in Developer options first.
 
 ## Test
 
