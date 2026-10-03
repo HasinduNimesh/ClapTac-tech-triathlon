@@ -20,6 +20,9 @@ class RecordDeliveryScreen extends StatefulWidget {
     this.onTabSelected,
     this.initialOutcome = DeliveryOutcome.delivered,
     this.onProofRequested,
+    this.onProofDiscarded,
+    this.requireProof = false,
+    this.initialProofs = const [],
   });
 
   final StopInfo stop;
@@ -33,8 +36,17 @@ class RecordDeliveryScreen extends StatefulWidget {
   /// Which outcome card starts selected (e.g. partial when arriving from stop details).
   final DeliveryOutcome initialOutcome;
 
-  /// When set, the proof buttons call this instead of toggling a "captured" state.
-  final ValueChanged<ProofKind>? onProofRequested;
+  /// When set, the proof buttons capture a real photo or signature and a delivered or partial
+  /// outcome cannot be saved without one. When unset they only toggle a "captured" mark.
+  final Future<CapturedProof?> Function(ProofKind kind)? onProofRequested;
+  final ValueChanged<CapturedProof>? onProofDiscarded;
+
+  /// Whether a delivered or partial outcome needs a captured proof before it can be saved, as the
+  /// server requires. Off for the design preview and builds without capture.
+  final bool requireProof;
+
+  /// Proof already captured on the previous screen, so it is not asked for twice or lost.
+  final List<CapturedProof> initialProofs;
 
   @override
   State<RecordDeliveryScreen> createState() => _RecordDeliveryScreenState();
@@ -50,8 +62,9 @@ class _RecordDeliveryScreenState extends State<RecordDeliveryScreen> {
     DeliveryOutcome.refused => _Choice.rejected,
     DeliveryOutcome.failed => _Choice.unavailable,
   };
-  bool _hasPhoto = false;
-  bool _hasSignature = false;
+  late bool _hasPhoto = widget.initialProofs.any((proof) => proof.kind == ProofKind.photo);
+  late bool _hasSignature = widget.initialProofs.any((proof) => proof.kind == ProofKind.signature);
+  late final Map<ProofKind, CapturedProof> _proofs = {for (final proof in widget.initialProofs) proof.kind: proof};
 
   static const _titles = {
     _Choice.delivered: 'Delivered',
@@ -118,8 +131,34 @@ class _RecordDeliveryScreenState extends State<RecordDeliveryScreen> {
     }
   }
 
+  Future<void> _capture(ProofKind kind) async {
+    final request = widget.onProofRequested;
+    if (request == null) return;
+    final proof = await request(kind);
+    if (proof == null || !mounted) return;
+    final replaced = _proofs[kind];
+    if (replaced != null) widget.onProofDiscarded?.call(replaced);
+    setState(() {
+      _proofs[kind] = proof;
+      if (kind == ProofKind.photo) _hasPhoto = true;
+      if (kind == ProofKind.signature) _hasSignature = true;
+    });
+  }
+
   void _save() {
     if (!_valid) return;
+    final needsProof = widget.requireProof &&
+        (_choice == _Choice.delivered || _choice == _Choice.partial) &&
+        _proofs.isEmpty;
+    if (needsProof) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(
+          content: Text('Add a photo or a signature first. A delivery is not accepted without proof.'),
+          behavior: SnackBarBehavior.floating,
+        ));
+      return;
+    }
     widget.onSave(
       DeliveryDraft(
         outcome: _outcome,
@@ -131,6 +170,7 @@ class _RecordDeliveryScreenState extends State<RecordDeliveryScreen> {
         },
         hasPhoto: _hasPhoto,
         hasSignature: _hasSignature,
+        proofs: _proofs.values.toList(),
       ),
     );
   }
@@ -249,7 +289,7 @@ class _RecordDeliveryScreenState extends State<RecordDeliveryScreen> {
                     label: 'Add photo',
                     doneLabel: 'Photo added',
                     done: _hasPhoto,
-                    onTap: widget.onProofRequested == null ? () => setState(() => _hasPhoto = !_hasPhoto) : () => widget.onProofRequested!(ProofKind.photo),
+                    onTap: widget.onProofRequested == null ? () => setState(() => _hasPhoto = !_hasPhoto) : () => _capture(ProofKind.photo),
                   ),
                 ),
                 const SizedBox(width: 14),
@@ -261,7 +301,7 @@ class _RecordDeliveryScreenState extends State<RecordDeliveryScreen> {
                     label: 'Name / signature',
                     doneLabel: 'Signature added',
                     done: _hasSignature,
-                    onTap: widget.onProofRequested == null ? () => setState(() => _hasSignature = !_hasSignature) : () => widget.onProofRequested!(ProofKind.signature),
+                    onTap: widget.onProofRequested == null ? () => setState(() => _hasSignature = !_hasSignature) : () => _capture(ProofKind.signature),
                   ),
                 ),
               ],

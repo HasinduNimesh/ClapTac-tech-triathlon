@@ -10,6 +10,8 @@ import 'auth/auth_store.dart';
 import 'auth/oidc_client.dart';
 import 'auth/profile_api.dart';
 import 'offline/local_database.dart';
+import 'proof/proof_capturer.dart';
+import 'proof/proof_store.dart';
 import 'sync/sync.dart';
 import 'sync/sqlite_sync_queue.dart';
 import 'sync/sync_worker.dart';
@@ -48,6 +50,8 @@ void main() {
     database: InMemoryLocalDatabase(),
     queue: services.queue,
     worker: services.worker,
+    // Real photos and signatures only with a real sign-in; demo builds say capture is unavailable.
+    capturer: services.auth == null ? null : DeviceProofCapturer(store: FileProofStore()),
     // Demo switches are forced off in release builds (see DemoFlags).
     demoAuth: demo.auth,
     demoRoute: demo.route,
@@ -67,6 +71,7 @@ class WaypointDriverApp extends StatefulWidget {
     this.trips,
     this.starter,
     this.worker,
+    this.capturer,
   });
 
   final LocalDatabase database;
@@ -78,6 +83,7 @@ class WaypointDriverApp extends StatefulWidget {
   final TripSource? trips;
   final TripStarter? starter;
   final DeliverySyncWorker? worker;
+  final ProofCapturer? capturer;
 
   @override
   State<WaypointDriverApp> createState() => _WaypointDriverAppState();
@@ -115,7 +121,7 @@ class _WaypointDriverAppState extends State<WaypointDriverApp> {
       title: 'Waypoint Driver',
       debugShowCheckedModeBanner: false,
       theme: buildAppTheme(),
-      home: DriverFlow(session: _session),
+      home: DriverFlow(session: _session, capturer: widget.capturer),
     );
   }
 }

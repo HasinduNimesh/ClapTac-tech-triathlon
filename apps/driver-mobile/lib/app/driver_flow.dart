@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../data/driver_models.dart';
+import '../proof/proof_capturer.dart';
 import '../screens/delivery/record_delivery_screen.dart';
 import '../screens/delivery/stop_details_screen.dart';
 import '../screens/delivery/take_back_sheet.dart';
@@ -21,9 +22,13 @@ import 'driver_session.dart';
 
 /// Signed-out → SignInScreen; signed-in → the tabbed driver home.
 class DriverFlow extends StatelessWidget {
-  const DriverFlow({super.key, required this.session});
+  const DriverFlow({super.key, required this.session, this.capturer});
 
   final DriverSession session;
+
+  /// Takes real photos and signatures. Null in demo and test builds, where the proof buttons say
+  /// that capture is not available.
+  final ProofCapturer? capturer;
 
   @override
   Widget build(BuildContext context) {
@@ -41,16 +46,17 @@ class DriverFlow extends StatelessWidget {
             onSignIn: (staffId, password) => session.signIn(),
           );
         }
-        return _DriverHome(session: session);
+        return _DriverHome(session: session, capturer: capturer);
       },
     );
   }
 }
 
 class _DriverHome extends StatefulWidget {
-  const _DriverHome({required this.session});
+  const _DriverHome({required this.session, this.capturer});
 
   final DriverSession session;
+  final ProofCapturer? capturer;
 
   @override
   State<_DriverHome> createState() => _DriverHomeState();
@@ -182,16 +188,26 @@ class _DriverHomeState extends State<_DriverHome> {
     ));
   }
 
-  void _proofUnavailable(ProofKind kind) {
-    _notify('Photo and signature capture is not available in this build yet, so no proof is stored.');
+  /// Asks for a real photo or signature, or says capture is not available in this build.
+  Future<CapturedProof?> _captureProof(ProofKind kind) async {
+    final capturer = widget.capturer;
+    if (capturer == null) {
+      _notify('Photo and signature capture is not available in this build, so no proof is stored.');
+      return null;
+    }
+    return capturer.capture(context, kind);
   }
+
+  void _discardProof(CapturedProof proof) => widget.capturer?.discard(proof);
 
   Widget _stopDetails(BuildContext context, StopInfo stop) {
     return StopDetailsScreen(
       stop: stop,
       onTabSelected: _selectTab,
       onReportIssue: () => _reportProblem(stop),
-      onProofRequested: _proofUnavailable,
+      onProofRequested: _captureProof,
+      onProofDiscarded: _discardProof,
+      requireProof: widget.capturer != null,
       onSave: (draft) {
         switch (draft.outcome) {
           case DeliveryOutcome.delivered:
@@ -209,7 +225,10 @@ class _DriverHomeState extends State<_DriverHome> {
                 expectedQuantity: expected,
                 unit: stop.unitLabel,
                 initialOutcome: DeliveryOutcome.partial,
-                onProofRequested: _proofUnavailable,
+                onProofRequested: _captureProof,
+                onProofDiscarded: _discardProof,
+                requireProof: widget.capturer != null,
+                initialProofs: draft.proofs,
                 onTabSelected: _selectTab,
                 onRejected: () => _takeBack(context, stop, const DeliveryDraft(outcome: DeliveryOutcome.refused)),
                 onSave: (partial) => _commit(context, stop, DeliveryDraft(
@@ -217,6 +236,9 @@ class _DriverHomeState extends State<_DriverHome> {
                   quantity: partial.quantity,
                   notes: draft.notes,
                   reason: partial.reason,
+                  hasPhoto: partial.hasPhoto,
+                  hasSignature: partial.hasSignature,
+                  proofs: partial.proofs,
                 )),
               ),
             ));
@@ -257,7 +279,7 @@ class _DriverHomeState extends State<_DriverHome> {
           stop: stop,
           savedAt: clockLabel(DateTime.now()),
           outcomeText: _outcomeText(stop, draft),
-          hasPhoto: false,
+          hasPhoto: draft.hasPhoto,
           onTabSelected: _selectTab,
           onPrimary: () {
             Navigator.of(context).popUntil((route) => route.isFirst);
@@ -299,7 +321,7 @@ class _DriverHomeState extends State<_DriverHome> {
 
   Future<void> _finishTrip() async {
     Navigator.of(context).popUntil((route) => route.isFirst);
-    await session.finishTrip();
+    await finishOrAsk(context, session);
   }
 
   @override
@@ -334,6 +356,29 @@ class _DriverHomeState extends State<_DriverHome> {
       },
     );
   }
+}
+
+/// Signs out, but first lets the driver know when updates are still saved only on this phone. Those
+/// are never discarded: signing out anyway keeps them queued, to be sent at the next sign-in.
+Future<void> finishOrAsk(BuildContext context, DriverSession session) async {
+  final unsent = await session.finishTrip();
+  if (unsent == 0 || !context.mounted) return;
+  final signOutAnyway = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('Updates not sent yet'),
+      content: Text(
+        '${unsent == 1 ? '1 update is' : '$unsent updates are'} still saved on this phone and could not be sent to Waypoint.\n\n'
+        'Stay signed in and reconnect to send ${unsent == 1 ? 'it' : 'them'}, or sign out now. Nothing is lost: '
+        '${unsent == 1 ? 'it' : 'they'} will be sent the next time you sign in.',
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.of(dialogContext).pop(false), child: const Text('Stay signed in')),
+        TextButton(onPressed: () => Navigator.of(dialogContext).pop(true), child: const Text('Sign out anyway')),
+      ],
+    ),
+  );
+  if (signOutAnyway == true) await session.finishTrip(force: true);
 }
 
 /// Shown when a driver is signed in but there is no route to show: it is still loading, it could
@@ -379,7 +424,7 @@ class _NoRoute extends StatelessWidget {
             AppButton(label: 'Try again', onPressed: session.loadTrips),
             const SizedBox(height: 12),
           ],
-          AppButton(label: 'Sign out', outline: true, onPressed: () => session.finishTrip()),
+          AppButton(label: 'Sign out', outline: true, onPressed: () => finishOrAsk(context, session)),
         ],
       ),
     );

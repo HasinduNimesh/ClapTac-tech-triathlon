@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 
 import '../auth/auth_gateway.dart';
 import 'operations.dart';
@@ -34,7 +35,8 @@ class DeliverySyncWorker {
   final Duration interval;
   final Duration timeout;
   Timer? _timer;
-  bool _running = false;
+  Future<void>? _current;
+  bool _again = false;
   bool _enabled = false;
 
   void start() {
@@ -50,9 +52,27 @@ class DeliverySyncWorker {
     _timer = null;
   }
 
-  Future<void> syncNow() async {
-    if (!_enabled || _running) return;
-    _running = true;
+  /// Sends what is waiting. When a pass is already running this does not start a second one; it
+  /// asks for one more pass afterwards and completes when that is done, so a caller that needs
+  /// everything sent (finishing the trip) never returns while updates queued meanwhile are waiting.
+  Future<void> syncNow() {
+    if (!_enabled) return Future.value();
+    final running = _current;
+    if (running != null) {
+      _again = true;
+      return running;
+    }
+    return _current = _passes().whenComplete(() => _current = null);
+  }
+
+  Future<void> _passes() async {
+    do {
+      _again = false;
+      await _pass();
+    } while (_again && _enabled);
+  }
+
+  Future<void> _pass() async {
     try {
       while (_enabled) {
         final item = await _queue.first();
@@ -82,7 +102,10 @@ class DeliverySyncWorker {
           onProgress?.call(SyncProgress.waitingForProof, null);
           return;
         }
-        if (type == OperationType.arrived || type == OperationType.stopOutcome || type == OperationType.routeCompleted) {
+        if (type == OperationType.arrived ||
+            type == OperationType.stopOutcome ||
+            type == OperationType.routeCompleted ||
+            type == OperationType.proofUpload) {
           final tripId = operation['tripId'] as String?;
           if (tripId == null || tripId.isEmpty) {
             await _queue.markBlocked(item.event.idempotencyKey, 'Missing server trip ID');
@@ -102,6 +125,11 @@ class DeliverySyncWorker {
             onProgress?.call(SyncProgress.waitingForTripStart, null);
             return;
           }
+        }
+        if (type == OperationType.proofUpload) {
+          onProgress?.call(SyncProgress.syncing, null);
+          if (await _uploadProof(item, operation, payload, token)) continue;
+          return;
         }
         onProgress?.call(SyncProgress.syncing, null);
         final response = await _client.post(
@@ -149,9 +177,69 @@ class DeliverySyncWorker {
       onProgress?.call(SyncProgress.offline, 'Waypoint returned unreadable data');
     } on Object catch (error) {
       onProgress?.call(SyncProgress.needsAttention, 'Sync stopped: $error');
-    } finally {
-      _running = false;
     }
+  }
+
+  /// Uploads one captured proof through the multipart endpoint, which is not part of `/sync`.
+  /// Returns true when it is accepted (the queue moves on); otherwise it has reported why it
+  /// stopped. The operation id is the Idempotency-Key, so a retry after a lost response is safe.
+  Future<bool> _uploadProof(QueuedOperation item, Map<String, Object?> operation, Map<String, Object?> payload, String token) async {
+    final tripId = operation['tripId'] as String? ?? '';
+    final stopId = operation['stopId'] as String? ?? '';
+    final path = payload['filePath'] as String? ?? '';
+    final mimeType = payload['mimeType'] as String? ?? '';
+    final file = File(path);
+    if (stopId.isEmpty || path.isEmpty || !file.existsSync()) {
+      const detail = 'The photo or signature file is missing from this phone';
+      await _queue.markBlocked(item.event.idempotencyKey, detail);
+      onProgress?.call(SyncProgress.needsAttention, detail);
+      return false;
+    }
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('$_baseUrl/api/v1/delivery/trips/${Uri.encodeComponent(tripId)}/stops/${Uri.encodeComponent(stopId)}/proofs'),
+    )
+      ..headers.addAll({'Authorization': 'Bearer $token', 'Accept': 'application/json', 'Idempotency-Key': item.event.idempotencyKey})
+      ..fields['type'] = payload['proofType'] as String? ?? ''
+      ..fields['capturedAt'] = payload['capturedAt'] as String? ?? ''
+      ..files.add(http.MultipartFile.fromBytes('file', await file.readAsBytes(), filename: path.split('/').last, contentType: MediaType.parse(mimeType)));
+    final receiver = payload['receiverName'] as String? ?? '';
+    if (receiver.isNotEmpty) request.fields['receiverName'] = receiver;
+    final response = await http.Response.fromStream(await _client.send(request).timeout(timeout));
+    final code = response.statusCode;
+    if (code == 200 || code == 201) {
+      await _queue.markSynced(item.event.idempotencyKey);
+      // The server holds the proof now; the local copy is no longer needed.
+      try {
+        await file.delete();
+      } on FileSystemException {
+        // Nothing depends on the file any more.
+      }
+      return true;
+    }
+    if (code == 401) {
+      onProgress?.call(SyncProgress.waitingForSignIn, null);
+    } else if (code >= 500 || code == 408 || code == 429) {
+      onProgress?.call(SyncProgress.offline, 'Waypoint returned HTTP $code; the photo or signature remains saved on this phone');
+    } else if (code == 409) {
+      // For example "run is not in progress": it can succeed once the trip starts, so keep it.
+      onProgress?.call(SyncProgress.waitingForTripStart, _problemDetail(response) ?? 'The proof is waiting for the trip to start');
+    } else {
+      final detail = _problemDetail(response) ?? 'Waypoint rejected this photo or signature (HTTP $code)';
+      await _queue.markBlocked(item.event.idempotencyKey, 'HTTP $code: $detail');
+      onProgress?.call(SyncProgress.needsAttention, 'HTTP $code: $detail');
+    }
+    return false;
+  }
+
+  String? _problemDetail(http.Response response) {
+    try {
+      final body = jsonDecode(response.body);
+      if (body is Map && body['detail'] is String) return body['detail'] as String;
+    } on FormatException {
+      // No readable detail.
+    }
+    return null;
   }
 
   Future<String?> _tripStatus(String tripId, String token) async {
