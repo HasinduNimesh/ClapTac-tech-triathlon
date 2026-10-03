@@ -139,12 +139,19 @@ TripInfo tripFromJson(Map<String, Object?> json) {
     tripId: tripId,
     runId: runId,
     vehicleCode: run['vehicleId'] as String? ?? '',
-    tripRef: tripId,
+    tripRef: _tripRef(run, tripId),
     depot: run['depot'] as String? ?? '',
     window: opens.isEmpty || closes.isEmpty ? '' : '${opens.first}-${closes.last}',
     stops: stops,
     completedStops: done,
   );
+}
+
+/// What the driver sees as the trip's name: the plan reference (PLAN000002), not the uuid.
+String _tripRef(Map<String, Object?> run, String tripId) {
+  final plan = (run['planRef'] as String?)?.trim() ?? '';
+  if (plan.isNotEmpty) return plan;
+  return tripId.length > 8 ? tripId.substring(0, 8) : tripId;
 }
 
 StopInfo _stopFromJson(Map<String, Object?> json) {

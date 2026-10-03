@@ -21,7 +21,7 @@ const _driver = DriverProfile(userId: 'USR006', subject: 'usr-driver', roles: ['
 Map<String, Object?> _detail({List<Map<String, Object?>>? stops}) => {
       'tripId': 'TRP02801',
       'status': 'prepared',
-      'run': {'id': 'run-1', 'tripId': 'TRP02801', 'vehicleId': 'VEH001', 'depot': 'Peliyagoda Depot', 'status': 'prepared'},
+      'run': {'id': 'run-1', 'tripId': 'TRP02801', 'planRef': 'PLAN000002', 'vehicleId': 'VEH001', 'depot': 'Peliyagoda Depot', 'status': 'prepared'},
       'stops': stops ??
           [
             {
@@ -99,6 +99,7 @@ void main() {
       final trip = tripFromJson(_detail());
       expect(trip.tripId, 'TRP02801');
       expect(trip.runId, 'run-1');
+      expect(trip.tripRef, 'PLAN000002');
       expect(trip.vehicleCode, 'VEH001');
       expect(trip.plate, isEmpty);
       expect(trip.vehicleLabel, 'VEH001');
@@ -125,6 +126,13 @@ void main() {
       expect(stop.unitsText, 'Quantity not recorded');
       expect(stop.accessNote, 'No access instructions recorded');
       expect(stop.name, 'OUT1');
+    });
+
+    test('without a plan reference the trip is named by a short id, not a full uuid', () {
+      final detail = _detail();
+      (detail['run']! as Map<String, Object?>).remove('planRef');
+      detail['tripId'] = 'b2eb56d3-3017-45aa-871b-3d5e5f988e06';
+      expect(tripFromJson(detail).tripRef, 'b2eb56d3');
     });
 
     test('stops the server already completed count as done', () {
