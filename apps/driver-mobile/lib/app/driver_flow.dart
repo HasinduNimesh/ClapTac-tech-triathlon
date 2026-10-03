@@ -67,11 +67,12 @@ class _DriverHomeState extends State<_DriverHome> {
 
   /// The load check opens once per route, whether the route was there from the start or arrived
   /// later from the server.
-  bool _loadCheckOpened = false;
+  String? _loadCheckTripId;
 
   void _openLoadCheckOnce() {
-    if (_loadCheckOpened || !session.hasRoute || session.loadResolved) return;
-    _loadCheckOpened = true;
+    // Once per trip: a driver who finishes one trip and is given the next confirms that load too.
+    if (!session.hasRoute || session.loadResolved || _loadCheckTripId == session.trip.tripId) return;
+    _loadCheckTripId = session.trip.tripId;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _showLoadCheck();
     });
@@ -321,7 +322,16 @@ class _DriverHomeState extends State<_DriverHome> {
 
   Future<void> _finishTrip() async {
     Navigator.of(context).popUntil((route) => route.isFirst);
-    await finishOrAsk(context, session);
+    final result = await session.completeTrip();
+    if (!mounted) return;
+    switch (result.kind) {
+      case TripWrapUp.signedOut:
+        return;
+      case TripWrapUp.nextTrip:
+        _notify('Trip ${result.finished!.tripRef} is complete and sent. Your next trip is ${result.next!.tripRef}: check its load to start it.');
+      case TripWrapUp.unsent:
+        await askAboutUnsent(context, session, result.unsent);
+    }
   }
 
   @override
@@ -330,7 +340,7 @@ class _DriverHomeState extends State<_DriverHome> {
       listenable: session,
       builder: (context, _) {
         if (!session.hasRoute && session.tab != DriverTab.updates) {
-          _loadCheckOpened = false;
+          _loadCheckTripId = null;
           return _NoRoute(session: session);
         }
         _openLoadCheckOnce();
@@ -363,6 +373,12 @@ class _DriverHomeState extends State<_DriverHome> {
 Future<void> finishOrAsk(BuildContext context, DriverSession session) async {
   final unsent = await session.finishTrip();
   if (unsent == 0 || !context.mounted) return;
+  await askAboutUnsent(context, session, unsent);
+}
+
+/// Explains that [unsent] updates are saved only on this phone and offers to stay signed in or to
+/// sign out anyway.
+Future<void> askAboutUnsent(BuildContext context, DriverSession session, int unsent) async {
   final signOutAnyway = await showDialog<bool>(
     context: context,
     builder: (dialogContext) => AlertDialog(
