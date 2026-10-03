@@ -101,7 +101,7 @@ func (p Postgres) SetLoadStatus(ctx context.Context, loadID, status, actor strin
 
 func (p Postgres) ListIssues(ctx context.Context, loadID string) ([]domain.Issue, error) {
 	rows, err := p.Pool.Query(ctx, `
-		SELECT id::text, order_load_id::text, issue_type, affected_units, COALESCE(note,''), reported_by, idempotency_key
+		SELECT id::text, order_load_id::text, issue_type, affected_units, COALESCE(note,''), reported_by, idempotency_key, COALESCE(decision,''), COALESCE(decision_note,''), COALESCE(decided_by,''), decided_at
 		FROM issues WHERE order_load_id::text = $1 ORDER BY created_at
 	`, loadID)
 	if err != nil {
@@ -111,7 +111,7 @@ func (p Postgres) ListIssues(ctx context.Context, loadID string) ([]domain.Issue
 	var out []domain.Issue
 	for rows.Next() {
 		var i domain.Issue
-		if err := rows.Scan(&i.ID, &i.OrderLoadID, &i.IssueType, &i.AffectedUnits, &i.Note, &i.ReportedBy, &i.IdempotencyKey); err != nil {
+		if err := rows.Scan(&i.ID, &i.OrderLoadID, &i.IssueType, &i.AffectedUnits, &i.Note, &i.ReportedBy, &i.IdempotencyKey, &i.Decision, &i.DecisionNote, &i.DecidedBy, &i.DecidedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, i)
@@ -124,11 +124,11 @@ func (p Postgres) ListIssues(ctx context.Context, loadID string) ([]domain.Issue
 
 func (p Postgres) GetIssueByKey(ctx context.Context, key string) (domain.Issue, error) {
 	row := p.Pool.QueryRow(ctx, `
-		SELECT id::text, order_load_id::text, issue_type, affected_units, COALESCE(note,''), reported_by, idempotency_key
+		SELECT id::text, order_load_id::text, issue_type, affected_units, COALESCE(note,''), reported_by, idempotency_key, COALESCE(decision,''), COALESCE(decision_note,''), COALESCE(decided_by,''), decided_at
 		FROM issues WHERE idempotency_key = $1
 	`, key)
 	var i domain.Issue
-	err := row.Scan(&i.ID, &i.OrderLoadID, &i.IssueType, &i.AffectedUnits, &i.Note, &i.ReportedBy, &i.IdempotencyKey)
+	err := row.Scan(&i.ID, &i.OrderLoadID, &i.IssueType, &i.AffectedUnits, &i.Note, &i.ReportedBy, &i.IdempotencyKey, &i.Decision, &i.DecisionNote, &i.DecidedBy, &i.DecidedAt)
 	if err == pgx.ErrNoRows {
 		return i, fmt.Errorf("not found")
 	}
@@ -139,15 +139,27 @@ func (p Postgres) InsertIssue(ctx context.Context, iss domain.Issue) (domain.Iss
 	row := p.Pool.QueryRow(ctx, `
 		INSERT INTO issues (order_load_id, issue_type, affected_units, note, reported_by, idempotency_key)
 		VALUES ($1::uuid,$2,$3,$4,$5,$6)
-		RETURNING id::text, order_load_id::text, issue_type, affected_units, COALESCE(note,''), reported_by, idempotency_key
+		RETURNING id::text, order_load_id::text, issue_type, affected_units, COALESCE(note,''), reported_by, idempotency_key, COALESCE(decision,''), COALESCE(decision_note,''), COALESCE(decided_by,''), decided_at
 	`, iss.OrderLoadID, iss.IssueType, iss.AffectedUnits, iss.Note, iss.ReportedBy, iss.IdempotencyKey)
-	err := row.Scan(&iss.ID, &iss.OrderLoadID, &iss.IssueType, &iss.AffectedUnits, &iss.Note, &iss.ReportedBy, &iss.IdempotencyKey)
+	err := row.Scan(&iss.ID, &iss.OrderLoadID, &iss.IssueType, &iss.AffectedUnits, &iss.Note, &iss.ReportedBy, &iss.IdempotencyKey, &iss.Decision, &iss.DecisionNote, &iss.DecidedBy, &iss.DecidedAt)
 	return iss, err
 }
 
 func (p Postgres) UpdateIssue(ctx context.Context, id string, units int, note, typ string) error {
-	_, err := p.Pool.Exec(ctx, `UPDATE issues SET affected_units = $2, note = $3, issue_type = $4, updated_at = now() WHERE id::text = $1`, id, units, note, typ)
+	_, err := p.Pool.Exec(ctx, `UPDATE issues SET affected_units = $2, note = $3, issue_type = $4, decision = NULL, decision_note = NULL, decided_by = NULL, decided_at = NULL, updated_at = now() WHERE id::text = $1`, id, units, note, typ)
 	return err
+}
+
+// DecideIssue records the dispatcher's decision on a shortfall.
+func (p Postgres) DecideIssue(ctx context.Context, id, decision, note, actor string) error {
+	tag, err := p.Pool.Exec(ctx, `UPDATE issues SET decision = $2, decision_note = NULLIF($3, ''), decided_by = $4, decided_at = now(), updated_at = now() WHERE id::text = $1`, id, decision, note, actor)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("not found")
+	}
+	return nil
 }
 
 func (p Postgres) DeleteIssue(ctx context.Context, id string) error {
@@ -163,11 +175,11 @@ func (p Postgres) DeleteIssue(ctx context.Context, id string) error {
 
 func (p Postgres) GetIssue(ctx context.Context, id string) (domain.Issue, error) {
 	row := p.Pool.QueryRow(ctx, `
-		SELECT id::text, order_load_id::text, issue_type, affected_units, COALESCE(note,''), reported_by, idempotency_key
+		SELECT id::text, order_load_id::text, issue_type, affected_units, COALESCE(note,''), reported_by, idempotency_key, COALESCE(decision,''), COALESCE(decision_note,''), COALESCE(decided_by,''), decided_at
 		FROM issues WHERE id::text = $1
 	`, id)
 	var i domain.Issue
-	err := row.Scan(&i.ID, &i.OrderLoadID, &i.IssueType, &i.AffectedUnits, &i.Note, &i.ReportedBy, &i.IdempotencyKey)
+	err := row.Scan(&i.ID, &i.OrderLoadID, &i.IssueType, &i.AffectedUnits, &i.Note, &i.ReportedBy, &i.IdempotencyKey, &i.Decision, &i.DecisionNote, &i.DecidedBy, &i.DecidedAt)
 	if err == pgx.ErrNoRows {
 		return i, fmt.Errorf("not found")
 	}

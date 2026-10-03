@@ -3,9 +3,10 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import ts from "typescript";
+import { fileURLToPath } from "node:url";
 
 const sourceRoot = new URL("../src/", import.meta.url);
-const rootPath = new URL(sourceRoot).pathname;
+const rootPath = fileURLToPath(sourceRoot);
 const files = [];
 function visit(directory) {
   for (const name of readdirSync(directory)) {

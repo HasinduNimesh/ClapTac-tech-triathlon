@@ -400,6 +400,7 @@ export function LoadingPage() {
                       <li key={iss.id}>
                         {iss.type} · {iss.affectedUnits}
                         {iss.note ? ` · ${iss.note}` : ""}
+                        {` · ${iss.decision ? `${t("Dispatcher decision")}: ${t(iss.decision)}${iss.decisionNote ? ` (${iss.decisionNote})` : ""}` : t("Waiting for dispatcher decision")}`}
                         {inProgress && (
                           <button type="button" onClick={() => removeIssue(o.orderId, iss.id)} disabled={!online || queueCount > 0}>
                             {t("Clear")}

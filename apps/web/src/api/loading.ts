@@ -15,6 +15,10 @@ export type LoadingIssue = {
   affectedUnits: number;
   note?: string;
   reportedBy?: string;
+  decision?: "PARTIAL_LOAD" | "HOLD" | "MOVE_TO_NEXT_RUN";
+  decisionNote?: string;
+  decidedBy?: string;
+  decidedAt?: string;
 };
 
 export type LoadingOrder = {

@@ -262,7 +262,7 @@ func (s Service) Ready(ctx context.Context, profile *authorization.Profile, trip
 		return nil, fmt.Errorf("conflict: session not in progress")
 	}
 	loads, _ := s.Repo.ListLoads(ctx, sess.ID)
-	var pending []string
+	var pending, undecided []string
 	for _, l := range loads {
 		if l.Status == domain.LoadPending {
 			pending = append(pending, l.OrderID)
@@ -272,11 +272,23 @@ func (s Service) Ready(ctx context.Context, profile *authorization.Profile, trip
 			iss, _ := s.Repo.ListIssues(ctx, l.ID)
 			if len(iss) == 0 {
 				pending = append(pending, l.OrderID)
+				continue
+			}
+			// A shortfall only lets the trip leave once the dispatcher has
+			// accepted a partial load or moved the line to the next run.
+			for _, i := range iss {
+				if !domain.DecisionAllowsDeparture(i.Decision) {
+					undecided = append(undecided, l.OrderID)
+					break
+				}
 			}
 		}
 	}
 	if len(pending) > 0 {
 		return nil, IncompleteError{Pending: pending}
+	}
+	if len(undecided) > 0 {
+		return nil, DecisionRequiredError{OrderIDs: undecided}
 	}
 	ready, err := s.Repo.MarkReady(ctx, sess.ID, actor(profile))
 	if err != nil {
@@ -292,6 +304,51 @@ func (s Service) Ready(ctx context.Context, profile *authorization.Profile, trip
 }
 
 type IncompleteError struct{ Pending []string }
+
+// DecisionRequiredError blocks departure while a loader shortfall has no
+// dispatcher decision, or the dispatcher chose to hold the trip.
+type DecisionRequiredError struct{ OrderIDs []string }
+
+func (e DecisionRequiredError) Error() string { return "conflict: dispatcher_decision_required" }
+
+// DecideIssue records the dispatcher's decision on a loader shortfall. The
+// order is never reduced here: moving a line to the next run is done in
+// planning, which publishes a new plan version for the loader to acknowledge.
+func (s Service) DecideIssue(ctx context.Context, profile *authorization.Profile, tripID, orderID, issueID, decision, note string) (domain.Issue, error) {
+	decision = strings.ToUpper(strings.TrimSpace(decision))
+	if decision != domain.DecisionPartialLoad && decision != domain.DecisionHold && decision != domain.DecisionMoveToNextRun {
+		return domain.Issue{}, fmt.Errorf("invalid: decision must be PARTIAL_LOAD, HOLD or MOVE_TO_NEXT_RUN")
+	}
+	if len(note) > 1000 {
+		return domain.Issue{}, fmt.Errorf("invalid: note too long")
+	}
+	sess, err := s.Repo.GetByTrip(ctx, tripID)
+	if err != nil {
+		return domain.Issue{}, fmt.Errorf("not found")
+	}
+	if err := s.guardDepot(profile, sess.Depot); err != nil {
+		return domain.Issue{}, err
+	}
+	if sess.Status == domain.SessionReady {
+		return domain.Issue{}, fmt.Errorf("conflict: session ready")
+	}
+	load, err := s.Repo.GetLoad(ctx, sess.ID, orderID)
+	if err != nil {
+		return domain.Issue{}, fmt.Errorf("not found: order")
+	}
+	iss, err := s.Repo.GetIssue(ctx, issueID)
+	if err != nil || iss.OrderLoadID != load.ID {
+		return domain.Issue{}, fmt.Errorf("not found")
+	}
+	if iss.Decision == decision && iss.DecisionNote == note {
+		return iss, nil
+	}
+	if err := s.Repo.DecideIssue(ctx, issueID, decision, note, actor(profile)); err != nil {
+		return domain.Issue{}, err
+	}
+	s.Peers.Publish(ctx, audit.ActionLoadingShortfallDecided, actor(profile), "ORDER", orderID, map[string]any{"issueId": issueID, "tripId": tripID, "decision": decision, "note": note})
+	return s.Repo.GetIssue(ctx, issueID)
+}
 
 func (e IncompleteError) Error() string { return "conflict: loading_incomplete" }
 
