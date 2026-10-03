@@ -19,17 +19,29 @@ class AuthConfig {
     this.clientId = 'waypoint-driver',
     this.redirectUri = 'dev.claptac.waypointdriver:/oauth2redirect',
     this.resource = '',
-    this.scopes = const ['openid', 'profile'],
+    this.scopes = defaultScopes,
     this.releaseMode = kReleaseMode,
   });
 
-  factory AuthConfig.fromEnvironment() => const AuthConfig(
-        issuer: String.fromEnvironment('OIDC_ISSUER'),
-        apiBaseUrl: String.fromEnvironment('API_BASE_URL'),
-        clientId: String.fromEnvironment('OIDC_CLIENT_ID', defaultValue: 'waypoint-driver'),
-        redirectUri: String.fromEnvironment('OIDC_REDIRECT_URI', defaultValue: 'dev.claptac.waypointdriver:/oauth2redirect'),
-        resource: String.fromEnvironment('OIDC_RESOURCE'),
+  factory AuthConfig.fromEnvironment() => AuthConfig(
+        issuer: const String.fromEnvironment('OIDC_ISSUER'),
+        apiBaseUrl: const String.fromEnvironment('API_BASE_URL'),
+        clientId: const String.fromEnvironment('OIDC_CLIENT_ID', defaultValue: 'waypoint-driver'),
+        redirectUri: const String.fromEnvironment('OIDC_REDIRECT_URI', defaultValue: 'dev.claptac.waypointdriver:/oauth2redirect'),
+        resource: const String.fromEnvironment('OIDC_RESOURCE'),
+        scopes: parseScopes(const String.fromEnvironment('OIDC_SCOPES')),
       );
+
+  static const defaultScopes = ['openid', 'profile'];
+
+  /// `OIDC_SCOPES`, space separated. A provider normally issues a refresh token only when
+  /// `offline_access` is among them (for example `--dart-define=OIDC_SCOPES="openid profile offline_access"`).
+  /// It is not on by default because a provider that does not know the scope may reject the sign-in;
+  /// turn it on once the ThunderID client is registered with refresh tokens allowed.
+  static List<String> parseScopes(String raw) {
+    final scopes = raw.split(RegExp(r'\s+')).where((scope) => scope.isNotEmpty).toList();
+    return scopes.isEmpty ? defaultScopes : scopes;
+  }
 
   final String issuer;
   final String apiBaseUrl;

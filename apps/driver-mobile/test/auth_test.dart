@@ -26,6 +26,9 @@ class FakeOidcClient implements OidcClient {
     if (error != null) throw error!;
     return result;
   }
+
+  @override
+  Future<OidcTokens> refresh(OidcTokens current) async => throw UnimplementedError('refresh is covered in token_refresh_test.dart');
 }
 
 OidcTokens _tokens({Duration life = const Duration(hours: 1)}) => OidcTokens(accessToken: 'token-abc', expiresAt: _now.add(life));

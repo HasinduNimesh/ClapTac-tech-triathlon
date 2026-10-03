@@ -161,6 +161,7 @@ func authorize(w http.ResponseWriter, r *http.Request) {
 
 func token(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
+	log.Printf("token grant_type=%s client_id=%s", r.FormValue("grant_type"), r.FormValue("client_id"))
 	switch r.FormValue("grant_type") {
 	case "authorization_code":
 		mu.Lock()
