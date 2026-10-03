@@ -12,3 +12,16 @@ fi
 
 # Competition-shaped datasets (outlets, vehicles, optional travel tables).
 sh "$DIR/import.sh"
+
+# Product catalog and store ranges (regenerate with scripts/generate-catalog-seed.py).
+if [ -f "$DIR/seeds/catalog.sql" ]; then
+  echo "seed product catalog"
+  psql "$URL" -v ON_ERROR_STOP=1 -q -f "$DIR/seeds/catalog.sql"
+fi
+
+# Eight weeks of simulated store trading and the agent observations built from it.
+# Runs once; delete the 'seed-baseline' row in inventory.simulation_runs to regenerate.
+if [ -f "$DIR/seeds/inventory_history.sql" ]; then
+  echo "seed inventory history (first run takes a minute)"
+  psql "$URL" -v ON_ERROR_STOP=1 -q -f "$DIR/seeds/inventory_history.sql"
+fi
