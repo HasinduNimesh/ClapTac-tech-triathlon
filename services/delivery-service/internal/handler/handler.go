@@ -25,7 +25,7 @@ type Driver interface {
 	Prepare(ctx context.Context, profile *authorization.Profile, tripID string) (map[string]any, error)
 	Start(ctx context.Context, profile *authorization.Profile, tripID, opID string) (map[string]any, error)
 	Arrive(ctx context.Context, profile *authorization.Profile, tripID, stopID, opID, occurred string) (map[string]any, error)
-	Outcome(ctx context.Context, profile *authorization.Profile, tripID, stopID, opID, depends, code, reason, note, occurred string) (map[string]any, error)
+	Outcome(ctx context.Context, profile *authorization.Profile, tripID, stopID, opID, depends, code, reason, note, occurred string, deliveredUnits *int) (map[string]any, error)
 	UploadProof(ctx context.Context, profile *authorization.Profile, tripID, stopID, opID, proofType, mime string, body []byte, captured, receiverName string) (domain.Proof, error)
 	Complete(ctx context.Context, profile *authorization.Profile, tripID, opID, occurred string) (map[string]any, error)
 	Sync(ctx context.Context, profile *authorization.Profile, req domain.SyncRequest) []map[string]any
@@ -230,6 +230,7 @@ func (h Handler) outcome(w http.ResponseWriter, r *http.Request) {
 		Code                 string `json:"code"`
 		Reason               string `json:"reason"`
 		Note                 string `json:"note"`
+		DeliveredUnits       *int   `json:"deliveredUnits"`
 		OccurredAt           string `json:"occurredAt"`
 		OperationID          string `json:"operationId"`
 		DependsOnOperationID string `json:"dependsOnOperationId"`
@@ -239,7 +240,7 @@ func (h Handler) outcome(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	opID := first(r.Header.Get("Idempotency-Key"), body.OperationID)
-	detail, err := h.Service.Outcome(r.Context(), h.profile(r), chi.URLParam(r, "tripId"), chi.URLParam(r, "stopId"), opID, body.DependsOnOperationID, body.Code, body.Reason, body.Note, body.OccurredAt)
+	detail, err := h.Service.Outcome(r.Context(), h.profile(r), chi.URLParam(r, "tripId"), chi.URLParam(r, "stopId"), opID, body.DependsOnOperationID, body.Code, body.Reason, body.Note, body.OccurredAt, body.DeliveredUnits)
 	if writeErr(w, err) {
 		return
 	}

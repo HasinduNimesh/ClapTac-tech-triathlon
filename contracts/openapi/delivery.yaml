@@ -117,7 +117,7 @@ paths:
   /delivery/trips/{tripId}/stops/{stopId}/outcome:
     post:
       operationId: recordStopOutcome
-      description: DELIVERED and PARTIAL require a finalized proof. FAILED and REFUSED require a reason. Dual timestamps occurredAt vs received_at.
+      description: DELIVERED and PARTIAL require a finalized proof. FAILED and REFUSED require a reason. When supplied, deliveredUnits is checked against the stop's expectedUnits and outcome code. Legacy clients may omit it; the quantity and shortfall then remain unknown. Dual timestamps occurredAt vs received_at.
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: "#/components/parameters/TripID"
@@ -134,6 +134,7 @@ paths:
                 code: { type: string, enum: [DELIVERED, PARTIAL, FAILED, REFUSED] }
                 reason: { type: string }
                 note: { type: string }
+                deliveredUnits: { type: integer, minimum: 0, description: "Actual order units delivered. For PARTIAL, greater than zero and less than expectedUnits; for DELIVERED, equal to expectedUnits; for non-delivery, zero. Omission preserves legacy clients but leaves shortfall unknown." }
                 occurredAt: { type: string, format: date-time }
                 operationId: { type: string }
                 dependsOnOperationId: { type: string }
@@ -176,7 +177,7 @@ paths:
                       stopId: { type: string, description: "Optional for INCIDENT_REPORT; not every incident happens at a stop." }
                       occurredAt: { type: string, format: date-time }
                       dependsOnOperationId: { type: string }
-                      payload: { type: object, description: "INCIDENT_REPORT: { category: VEHICLE|ROAD|OUTLET|GOODS|SAFETY|OTHER, description: string }" }
+                      payload: { type: object, description: "STOP_OUTCOME: { code, reason, note, deliveredUnits? }; INCIDENT_REPORT: { category: VEHICLE|ROAD|OUTLET|GOODS|SAFETY|OTHER, description: string }" }
       responses:
         "200": { description: Per-operation APPLIED, DUPLICATE, CONFLICT, or REJECTED }
   /delivery/telemetry/offline-queue:
@@ -234,6 +235,14 @@ components:
           type: string
           example: units
           description: Generic order units. Do not render as cartons without a source for that unit.
+        deliveredUnits:
+          type: integer
+          minimum: 0
+          description: Actual units reported by the driver; omitted for legacy outcomes.
+        shortfallUnits:
+          type: integer
+          minimum: 0
+          description: expectedUnits minus deliveredUnits; omitted until both are known.
   securitySchemes:
     bearerAuth:
       type: http
