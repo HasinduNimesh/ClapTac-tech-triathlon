@@ -9,6 +9,7 @@ import '../screens/states/end_of_day_screen.dart';
 import '../screens/updates/updates_screen.dart';
 import '../sync/operations.dart';
 import '../sync/sync.dart';
+import '../trips/trip_source.dart';
 import '../widgets/driver_shell.dart';
 import '../widgets/note_banner.dart';
 
@@ -35,7 +36,8 @@ class DriverSession extends ChangeNotifier {
     this.demoAuth = false,
     this.demoRoute = false,
     this.auth,
-  })  : _baseTrip = trip ?? ((demoRoute || (auth == null && demoAuth)) ? sampleTrip : null),
+    this.trips,
+  })  : _initialTrip = trip ?? ((demoRoute || (auth == null && demoAuth)) ? sampleTrip : null),
         _clock = clock ?? DateTime.now,
         _newId = newId ?? newOperationId {
     if (demoUpdates) {
@@ -63,7 +65,11 @@ class DriverSession extends ChangeNotifier {
   /// Real sign-in through the identity provider. When set it replaces [demoAuth].
   final AuthGateway? auth;
 
-  final TripInfo? _baseTrip;
+  /// Where the driver's route comes from after a real sign-in. Null in demo and test sessions.
+  final TripSource? trips;
+
+  final TripInfo? _initialTrip;
+  late TripInfo? _baseTrip = _initialTrip;
   final DateTime Function() _clock;
   final String Function() _newId;
 
@@ -78,6 +84,10 @@ class DriverSession extends ChangeNotifier {
   bool signedIn = false;
   bool signingIn = false;
   bool restoring = false;
+
+  /// Loading today's route from the server, and why it failed (null when it did not).
+  bool tripsLoading = false;
+  String? tripsError;
   DriverProfile? identity;
   LoadCheck loadCheck = LoadCheck.unchecked;
   String? signInError;
@@ -98,7 +108,7 @@ class DriverSession extends ChangeNotifier {
       depot: base.depot,
       window: base.window,
       stops: base.stops,
-      completedStops: _results.length,
+      completedStops: base.completedStops + _results.length,
     );
   }
 
@@ -106,7 +116,7 @@ class DriverSession extends ChangeNotifier {
   /// explicitly chosen to depart after reporting a discrepancy.
   bool get loadResolved => loadCheck == LoadCheck.confirmed || loadCheck == LoadCheck.overridden;
 
-  bool get routeComplete => hasRoute && _results.length >= _baseTrip!.stops.length;
+  bool get routeComplete => hasRoute && trip.completedStops >= _baseTrip!.stops.length;
 
   /// Delivery records and reports that are queued but not sent. Nothing is sent yet.
   int get pendingUploads => _results.length + _incidents;
@@ -127,6 +137,36 @@ class DriverSession extends ChangeNotifier {
     if (profile != null) {
       identity = profile;
       signedIn = true;
+    }
+    notifyListeners();
+    if (profile != null) await loadTrips();
+  }
+
+  /// Loads today's route for the signed-in driver. Safe to call again to retry.
+  Future<void> loadTrips() async {
+    final source = trips;
+    if (source == null || tripsLoading || !signedIn) return;
+    tripsLoading = true;
+    tripsError = null;
+    notifyListeners();
+    final result = await source.loadToday();
+    tripsLoading = false;
+    if (!signedIn) {
+      notifyListeners();
+      return;
+    }
+    final loaded = result.trip;
+    if (loaded != null) {
+      _baseTrip = loaded;
+      loadCheck = LoadCheck.unchecked;
+    } else if (result.signInExpired) {
+      // The stored sign-in is no longer accepted: go back to sign-in instead of showing a dead end.
+      await auth?.signOut();
+      identity = null;
+      signedIn = false;
+      signInError = result.failure;
+    } else {
+      tripsError = result.failure;
     }
     notifyListeners();
   }
@@ -153,6 +193,7 @@ class DriverSession extends ChangeNotifier {
       signedIn = true;
       tab = DriverTab.route;
       notifyListeners();
+      await loadTrips();
       return true;
     }
     if (!demoAuth) {
@@ -180,6 +221,8 @@ class DriverSession extends ChangeNotifier {
     loadCheck = LoadCheck.unchecked;
     tab = DriverTab.route;
     _results.clear();
+    _baseTrip = _initialTrip;
+    tripsError = null;
     _operationIds.clear();
     _incidents = 0;
     updates.removeWhere((item) => item.id != planConflictId);
@@ -307,7 +350,8 @@ class DriverSession extends ChangeNotifier {
     var delivered = 0;
     var partial = 0;
     var failed = 0;
-    for (final stop in _baseTrip!.stops) {
+    final base = _baseTrip!;
+    for (final stop in base.stops) {
       final draft = _results[stop.stopId];
       if (draft == null) continue;
       switch (draft.outcome) {
@@ -316,12 +360,13 @@ class DriverSession extends ChangeNotifier {
           completed.add(StopResult(name: stop.name, window: stop.window, status: 'Delivered'));
         case DeliveryOutcome.partial:
           partial++;
-          final short = draft.quantity == null ? null : stop.cartons - draft.quantity!;
+          final expected = stop.units;
+          final short = draft.quantity == null || expected == null ? null : expected - draft.quantity!;
           unresolved.add(StopResult(
             name: stop.name,
             window: stop.window,
             status: 'Partial delivery',
-            detail: short == null || short <= 0 ? 'Saved on this phone, not sent yet' : '$short cartons short - saved on this phone, not sent yet',
+            detail: short == null || short <= 0 ? 'Saved on this phone, not sent yet' : '$short units short - saved on this phone, not sent yet',
           ));
         case DeliveryOutcome.failed:
         case DeliveryOutcome.refused:
@@ -335,7 +380,7 @@ class DriverSession extends ChangeNotifier {
       }
     }
     return EndOfDaySummary(
-      totalStops: _baseTrip.stops.length,
+      totalStops: base.stops.length,
       delivered: delivered,
       partial: partial,
       failedOrRefused: failed,

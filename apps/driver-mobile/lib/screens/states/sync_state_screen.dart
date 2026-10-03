@@ -32,7 +32,7 @@ class SyncStateScreen extends StatelessWidget {
   /// 0..1, only shown while [kind] is [SyncStateKind.syncing].
   final double uploadProgress;
 
-  /// What was recorded, e.g. "Refused - 12 cartons taken back". Defaults to the delivered sample.
+  /// What was recorded, e.g. "Refused - 12 units taken back". Defaults to the delivered sample.
   final String? outcomeText;
 
   /// Whether a photo was stored with the outcome. Without one the screen does not mention a photo.
@@ -80,7 +80,7 @@ class SyncStateScreen extends StatelessWidget {
             border: const Color(0xFFFBFCFF),
             stop: stop,
             rows: [
-              _CardRow.check(outcomeText ?? 'Delivered - ${stop.cartons} cartons', top: 52),
+              _CardRow.check(outcomeText ?? 'Delivered - ${stop.unitsText}', top: 52),
               _CardRow.icon(StatesAssets.rowClock, 'Saved at $savedAt', top: 80),
               _CardRow.icon(StatesAssets.rowPhoto, hasPhoto ? 'Pending: Outcome + 1 photo' : 'Pending: Outcome', top: 108),
             ],
@@ -157,7 +157,7 @@ class SyncStateScreen extends StatelessWidget {
             border: Colors.white,
             stop: stop,
             rows: [
-              _CardRow.check('Delivered - ${stop.cartons} cartons', top: 52),
+              _CardRow.check('Delivered - ${stop.unitsText}', top: 52),
               _CardRow.icon(StatesAssets.rowClock, 'Saved at $savedAt', top: 80),
               _CardRow.icon(StatesAssets.rowPhoto, 'Photo uploaded', top: 108),
             ],

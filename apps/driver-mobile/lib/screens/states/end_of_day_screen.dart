@@ -49,7 +49,7 @@ const sampleEndOfDay = EndOfDaySummary(
       name: 'Kirulapone',
       window: '10:00 - 11:00',
       status: 'Partial delivery',
-      detail: '2 cartons short - Dispatcher notified',
+      detail: '2 units short - Dispatcher notified',
     ),
   ],
   pendingUploads: 1,

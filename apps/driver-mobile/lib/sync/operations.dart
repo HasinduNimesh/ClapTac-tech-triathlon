@@ -130,7 +130,7 @@ class Operations {
     String? proofOperationId,
   }) {
     final notes = <String>[
-      if (draft.outcome == DeliveryOutcome.partial && draft.quantity != null) 'Received ${draft.quantity} of ${stop.cartons} cartons.',
+      if (draft.outcome == DeliveryOutcome.partial && draft.quantity != null) 'Received ${draft.quantity} of ${stop.units ?? 'an unrecorded number of'} ${stop.unitLabel}.',
       if (draft.notes.isNotEmpty) draft.notes,
     ];
     final reason = reasonFor(draft);

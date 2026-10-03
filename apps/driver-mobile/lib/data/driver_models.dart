@@ -24,7 +24,8 @@ class StopInfo {
     required this.name,
     required this.windowStart,
     required this.windowEnd,
-    required this.cartons,
+    this.units,
+    this.unitLabel = 'units',
     required this.accessNote,
     required this.contactNote,
     required this.goods,
@@ -39,13 +40,19 @@ class StopInfo {
   final String name;
   final String windowStart;
   final String windowEnd;
-  final int cartons;
+  /// Expected quantity from the server's order load. Null when the server does not know it (older
+  /// stops). The server calls these "units" and does not say they are cartons.
+  final int? units;
+  final String unitLabel;
   final String accessNote;
   final String contactNote;
   final String goods;
   final String orderRef;
 
   String get window => '$windowStart - $windowEnd';
+
+  /// "12 units", or an honest "quantity not recorded".
+  String get unitsText => units == null ? 'Quantity not recorded' : '$units $unitLabel';
 }
 
 class TripInfo {
@@ -53,7 +60,7 @@ class TripInfo {
     this.tripId = '',
     this.runId = '',
     required this.vehicleCode,
-    required this.plate,
+    this.plate = '',
     required this.tripRef,
     required this.depot,
     required this.window,
@@ -65,12 +72,16 @@ class TripInfo {
   final String tripId;
   final String runId;
   final String vehicleCode;
+  /// The server has no plate number for a vehicle yet, so this is usually empty.
   final String plate;
   final String tripRef;
   final String depot;
   final String window;
   final List<StopInfo> stops;
   final int completedStops;
+
+  /// "VEH001", or "VEH001 - WP LB-4521" when a plate is known.
+  String get vehicleLabel => plate.isEmpty ? vehicleCode : '$vehicleCode - $plate';
 
   StopInfo? get nextStop => completedStops < stops.length ? stops[completedStops] : null;
 }

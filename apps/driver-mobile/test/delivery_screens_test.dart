@@ -26,7 +26,7 @@ void main() {
       await pumpScreen(tester, StopDetailsScreen(stop: stop, onSave: (_) {}));
       expect(find.text('OUT108 - Dehiwala'), findsOneWidget);
       expect(find.text('08:00 - 09:00'), findsOneWidget);
-      expect(find.text('12 cartons'), findsOneWidget);
+      expect(find.text('12 units'), findsOneWidget);
       expect(find.text('Rear entrance - Van-only access'), findsOneWidget);
       expect(find.text('Expected: 12'), findsOneWidget);
       expect(find.text('Save delivery'), findsOneWidget);

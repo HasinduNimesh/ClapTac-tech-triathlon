@@ -159,7 +159,7 @@ class _VehicleCard extends StatelessWidget {
     return Semantics(
       container: true,
       label:
-          'Vehicle ${trip.vehicleCode} ${trip.plate}, trip ${trip.tripRef}, ${trip.depot}, ${trip.window}',
+          'Vehicle ${trip.vehicleLabel}, trip ${trip.tripRef}, ${trip.depot}, ${trip.window}',
       child: ExcludeSemantics(
         child: _OutlinedCard(
           height: 104,
@@ -180,7 +180,7 @@ class _VehicleCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('${trip.vehicleCode} - ${trip.plate}',
+                    Text(trip.vehicleLabel,
                         style: textStyle.copyWith(fontWeight: FontWeight.w700)),
                     const SizedBox(height: 4),
                     Text('Trip ${trip.tripRef}', style: textStyle),
@@ -289,7 +289,7 @@ class _NextStopCard extends StatelessWidget {
                     style: textStyle.copyWith(fontWeight: FontWeight.w700)),
                 const SizedBox(height: 0),
                 Text(stop.window, style: textStyle),
-                Text('${stop.cartons} cartons', style: textStyle),
+                Text(stop.unitsText, style: textStyle),
               ],
             ),
           ),

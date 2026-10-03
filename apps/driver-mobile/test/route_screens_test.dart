@@ -53,7 +53,7 @@ void main() {
       expect(find.text('0 of 3 stops completed'), findsOneWidget);
       expect(find.text('VEH017 - WP LB-4521'), findsOneWidget);
       expect(find.text('OUT108 - Dehiwala'), findsOneWidget);
-      expect(find.text('12 cartons'), findsOneWidget);
+      expect(find.text('12 units'), findsOneWidget);
       // The next stop's window appears in the card and in the route list.
       expect(find.text('08:00 - 09:00'), findsNWidgets(2));
       for (final name in ['Dehiwala', 'Nugegoda', 'Kirulapone']) {
@@ -104,7 +104,7 @@ void main() {
 
       expect(find.text('1 of 3 stops completed'), findsOneWidget);
       expect(find.text('OUT061 - Nugegoda'), findsOneWidget);
-      expect(find.text('8 cartons'), findsOneWidget);
+      expect(find.text('8 units'), findsOneWidget);
     });
 
     testWidgets('a finished route has no View Stop action', (tester) async {
@@ -235,8 +235,8 @@ void main() {
           find.text('VEH017 · WP LB-4521 · TRP02801 · Plan v4 · Seal WP-5521'),
           findsOneWidget);
       expect(
-          find.text('Stop 1 · Dehiwala · 12 cartons on board'), findsOneWidget);
-      expect(find.text('Stop 3 · Kirulapone · 120 cartons on board'),
+          find.text('Stop 1 · Dehiwala · 12 units on board'), findsOneWidget);
+      expect(find.text('Stop 3 · Kirulapone · 120 units on board'),
           findsOneWidget);
       expect(find.text('✓'), findsNWidgets(3));
     });

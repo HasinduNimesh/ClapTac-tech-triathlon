@@ -171,7 +171,7 @@ void main() {
     // The last stop opens the end-of-day summary with the real results.
     expect(find.text('Route Complete'), findsOneWidget);
     expect(find.text('Kirulapone'), findsOneWidget);
-    expect(find.textContaining('3 cartons short'), findsOneWidget);
+    expect(find.textContaining('3 units short'), findsOneWidget);
 
     await tester.ensureVisible(find.text('Finish trip'));
     await tester.pumpAndSettle();

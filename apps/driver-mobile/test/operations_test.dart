@@ -69,7 +69,7 @@ void main() {
         occurredAt: _at,
       );
       expect(op.payload['code'], 'PARTIAL');
-      expect(op.payload['note'], 'Received 5 of 12 cartons. Two cartons damaged');
+      expect(op.payload['note'], 'Received 5 of 12 units. Two cartons damaged');
       expect(op.payload.containsKey('reason'), isFalse);
     });
 
