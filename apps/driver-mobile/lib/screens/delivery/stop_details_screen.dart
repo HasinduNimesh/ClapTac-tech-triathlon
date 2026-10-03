@@ -20,6 +20,8 @@ class StopDetailsScreen extends StatefulWidget {
     this.offline = false,
     this.onReportIssue,
     this.onProofRequested,
+    this.onProofDiscarded,
+    this.requireProof = false,
     this.onTabSelected,
   });
 
@@ -28,9 +30,17 @@ class StopDetailsScreen extends StatefulWidget {
   final bool offline;
   final VoidCallback? onReportIssue;
 
-  /// When set, the proof buttons call this instead of toggling a "captured" state. Used while real
-  /// photo and signature capture is not available, so nothing pretends to be stored.
-  final ValueChanged<ProofKind>? onProofRequested;
+  /// When set, the proof buttons call this to capture a real photo or signature (null when the
+  /// driver backs out) and a delivered or partial outcome cannot be saved without one. When unset the
+  /// buttons only toggle a "captured" mark, for the design preview and tests.
+  final Future<CapturedProof?> Function(ProofKind kind)? onProofRequested;
+
+  /// Called with a captured proof the driver replaced or removed, so its file can be deleted.
+  final ValueChanged<CapturedProof>? onProofDiscarded;
+
+  /// Whether a delivered or partial outcome needs a captured proof before it can be saved, as the
+  /// server requires. Off for the design preview and builds without capture.
+  final bool requireProof;
   final ValueChanged<DriverTab>? onTabSelected;
 
   @override
@@ -42,6 +52,7 @@ class _StopDetailsScreenState extends State<StopDetailsScreen> {
   DeliveryOutcome _outcome = DeliveryOutcome.delivered;
   bool _hasPhoto = false;
   bool _hasSignature = false;
+  final Map<ProofKind, CapturedProof> _proofs = {};
   bool _parkedNoteVisible = true;
   bool _uploadNoteVisible = true;
 
@@ -58,7 +69,39 @@ class _StopDetailsScreenState extends State<StopDetailsScreen> {
     super.dispose();
   }
 
+  Future<void> _capture(ProofKind kind) async {
+    final request = widget.onProofRequested;
+    if (request == null) return;
+    final proof = await request(kind);
+    if (proof == null || !mounted) return;
+    final replaced = _proofs[kind];
+    if (replaced != null) widget.onProofDiscarded?.call(replaced);
+    setState(() {
+      _proofs[kind] = proof;
+      if (kind == ProofKind.photo) _hasPhoto = true;
+      if (kind == ProofKind.signature) _hasSignature = true;
+    });
+  }
+
+  void _removePhoto() {
+    final removed = _proofs.remove(ProofKind.photo);
+    if (removed != null) widget.onProofDiscarded?.call(removed);
+    setState(() => _hasPhoto = false);
+  }
+
   void _save() {
+    final needsProof = widget.requireProof &&
+        (_outcome == DeliveryOutcome.delivered || _outcome == DeliveryOutcome.partial) &&
+        _proofs.isEmpty;
+    if (needsProof) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(
+          content: Text('Take a photo or add a signature first. A delivery is not accepted without proof.'),
+          behavior: SnackBarBehavior.floating,
+        ));
+      return;
+    }
     widget.onSave(
       DeliveryDraft(
         outcome: _outcome,
@@ -66,6 +109,7 @@ class _StopDetailsScreenState extends State<StopDetailsScreen> {
         notes: _notes.text.trim(),
         hasPhoto: _hasPhoto,
         hasSignature: _hasSignature,
+        proofs: _proofs.values.toList(),
       ),
     );
   }
@@ -91,7 +135,7 @@ class _StopDetailsScreenState extends State<StopDetailsScreen> {
       label: 'Take photo',
       capturedLabel: 'Photo saved',
       captured: _hasPhoto,
-      onTap: widget.onProofRequested == null ? () => setState(() => _hasPhoto = !_hasPhoto) : () => widget.onProofRequested!(ProofKind.photo),
+      onTap: widget.onProofRequested == null ? () => setState(() => _hasPhoto = !_hasPhoto) : () => _capture(ProofKind.photo),
     );
     final signatureButton = ProofButton(
       image: AppAssets.signature,
@@ -100,12 +144,12 @@ class _StopDetailsScreenState extends State<StopDetailsScreen> {
       label: 'Add signature',
       capturedLabel: 'Signature added',
       captured: _hasSignature,
-      onTap: widget.onProofRequested == null ? () => setState(() => _hasSignature = !_hasSignature) : () => widget.onProofRequested!(ProofKind.signature),
+      onTap: widget.onProofRequested == null ? () => setState(() => _hasSignature = !_hasSignature) : () => _capture(ProofKind.signature),
     );
     if (widget.offline && _hasPhoto) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [PhotoSavedRow(onTap: () => setState(() => _hasPhoto = false)), const SizedBox(height: 8), signatureButton],
+        children: [PhotoSavedRow(onTap: _removePhoto), const SizedBox(height: 8), signatureButton],
       );
     }
     return Row(children: [Expanded(child: photoButton), const SizedBox(width: 11), Expanded(child: signatureButton)]);

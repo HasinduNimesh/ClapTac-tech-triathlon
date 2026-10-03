@@ -277,6 +277,9 @@ class DriverSession extends ChangeNotifier {
       final stopId = operation['stopId'] as String?;
       if (type == OperationType.arrived && stopId != null) {
         _operationIds['arrived:$stopId'] = event.idempotencyKey;
+      } else if (type == OperationType.proofUpload && stopId != null) {
+        final kind = (operation['payload'] as Map?)?['proofType'] == 'SIGNATURE' ? ProofKind.signature : ProofKind.photo;
+        _operationIds['proof:$stopId:${kind.name}'] = event.idempotencyKey;
       } else if (type == OperationType.routeCompleted) {
         _operationIds['route-completed'] = event.idempotencyKey;
       } else if (type == OperationType.stopOutcome && stopId != null) {
@@ -434,12 +437,20 @@ class DriverSession extends ChangeNotifier {
   /// requires proof for delivered and partial outcomes, so those will be rejected when sent until
   /// capture exists.
   Future<void> recordDelivery(StopInfo stop, DeliveryDraft draft) async {
+    // Captured proof is queued first, in order, because the server wants it before it accepts a
+    // delivered or partial outcome. The outcome depends on the last proof.
+    String? lastProofId;
+    for (final proof in draft.proofs) {
+      lastProofId = _operationId('proof:${stop.stopId}:${proof.kind.name}');
+      await queue.enqueue(Operations.proofUpload(operationId: lastProofId, trip: trip, stop: stop, proof: proof, occurredAt: _clock()).toSyncEvent());
+    }
     await queue.enqueue(Operations.stopOutcome(
       operationId: _operationId('outcome:${stop.stopId}'),
       trip: trip,
       stop: stop,
       draft: draft,
       occurredAt: _clock(),
+      proofOperationId: lastProofId,
     ).toSyncEvent());
     _kickSync();
     _results[stop.stopId] = draft;
