@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:io';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -62,11 +62,14 @@ class AuthService extends ChangeNotifier {
     try {
       final authorize = http.Request('POST', Uri.parse('$oidcIssuer/oauth2/authorize'))
         ..followRedirects = false
-        ..bodyFields = {'username': username.trim(), 'password': password, 'redirect_uri': redirect, 'state': newOperationId(), 'client_id': oidcClientId};
+        ..headers['Accept'] = 'application/json'
+        ..bodyFields = {'username': username.trim(), 'password': password, 'redirect_uri': redirect, 'state': newOperationId(), 'client_id': oidcClientId, 'response_mode': 'json'};
       final response = await _client.send(authorize).timeout(const Duration(seconds: 15));
       if (response.statusCode == 401) throw SignInException(SignInError.invalidCredentials);
+      final body = await response.stream.bytesToString();
       final location = response.headers['location'];
-      final code = location == null ? null : Uri.parse(location).queryParameters['code'];
+      String? code = location == null ? null : Uri.parse(location).queryParameters['code'];
+      if (code == null && body.trim().startsWith('{')) code = (jsonDecode(body) as Map<String, dynamic>)['code'] as String?;
       if (code == null) throw SignInException(SignInError.invalidCredentials, 'No authorization code (${response.statusCode}).');
       final tokenRes = await _client.post(Uri.parse('$oidcIssuer/oauth2/token'), body: {'grant_type': 'authorization_code', 'code': code, 'client_id': oidcClientId, 'redirect_uri': redirect}).timeout(const Duration(seconds: 15));
       if (tokenRes.statusCode != 200) throw SignInException(SignInError.invalidCredentials);
@@ -84,8 +87,6 @@ class AuthService extends ChangeNotifier {
       await store.writeJson(_lastKey, s.toJson());
       notifyListeners();
       return s;
-    } on SocketException {
-      throw SignInException(SignInError.noSignal);
     } on TimeoutException {
       throw SignInException(SignInError.noSignal);
     } on http.ClientException {

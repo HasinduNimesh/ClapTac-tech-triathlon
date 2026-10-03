@@ -1,13 +1,16 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'dart:math';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 
 /// Configure with `--dart-define=API_BASE_URL=... --dart-define=OIDC_ISSUER=...`.
-const apiBaseUrl = String.fromEnvironment('API_BASE_URL', defaultValue: 'http://localhost/api/v1');
-const oidcIssuer = String.fromEnvironment('OIDC_ISSUER', defaultValue: 'http://localhost:8090');
+/// The web build is served by the Waypoint NGINX, so it talks to its own origin.
+const _apiOverride = String.fromEnvironment('API_BASE_URL');
+const _issuerOverride = String.fromEnvironment('OIDC_ISSUER');
+final apiBaseUrl = _apiOverride.isNotEmpty ? _apiOverride : (kIsWeb ? '${Uri.base.origin}/api/v1' : 'http://localhost/api/v1');
+final oidcIssuer = _issuerOverride.isNotEmpty ? _issuerOverride : (kIsWeb ? Uri.base.origin : 'http://localhost:8090');
 const oidcClientId = String.fromEnvironment('OIDC_CLIENT_ID', defaultValue: 'waypoint-mobile');
 
 class ApiException implements Exception {
@@ -36,7 +39,7 @@ String newOperationId() {
 }
 
 class ApiClient {
-  ApiClient({required this.tokenProvider, http.Client? client, this.baseUrl = apiBaseUrl}) : _client = client ?? http.Client();
+  ApiClient({required this.tokenProvider, http.Client? client, String? baseUrl}) : baseUrl = baseUrl ?? apiBaseUrl, _client = client ?? http.Client();
 
   final String Function() tokenProvider;
   final String baseUrl;
@@ -54,8 +57,6 @@ class ApiClient {
     http.Response res;
     try {
       res = await call().timeout(timeout);
-    } on SocketException catch (e) {
-      throw OfflineException(e);
     } on TimeoutException catch (e) {
       throw OfflineException(e);
     } on http.ClientException catch (e) {

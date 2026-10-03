@@ -32,7 +32,7 @@ export function FleetPage() {
 
   const loads = plan.data ? tripLoads(plan.data) : [];
   const tripsFor = (id: string) => loads.filter((l) => l.vehicle?.id === id && l.orderCount > 0);
-  const fuelUsed = (id: string) => ledger.data?.items.find((i) => i.vehicleId === id)?.actualLitersL ?? plan.data?.vehicles.find((v) => v.id === id)?.weekFuelActualL ?? 0;
+  const fuelUsed = (id: string) => ledger.data?.items?.find((i) => i.vehicleId === id)?.actualLitersL ?? plan.data?.vehicles?.find((v) => v.id === id)?.weekFuelActualL ?? 0;
   const status = (v: Vehicle) => {
     const raw = availabilityOf(v.id, availability.data?.items);
     if (raw !== "available" || (incidents.data?.items || []).some((i) => i.vehicleId === v.id)) return "workshop";

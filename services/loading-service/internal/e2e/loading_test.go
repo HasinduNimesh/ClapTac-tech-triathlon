@@ -102,6 +102,7 @@ func TestLoadingWorkflow(t *testing.T) {
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0009_loading.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0011_loading_delivery_snapshot.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0021_loading_plan_version.sql"))
+	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0040_loading_issue_decisions.sql"))
 
 	peers := httptest.NewServer(peerStub())
 	t.Cleanup(peers.Close)
@@ -189,6 +190,38 @@ func TestLoadingWorkflow(t *testing.T) {
 	blocked := do(t, srv, http.MethodPut, "/api/v1/loading/trips/trip-north/orders/ord-1/loaded", "usr-loader", nil, "")
 	if blocked.status != http.StatusConflict || !strings.Contains(blocked.body, "ACTIVE_LOADING_ISSUE") {
 		t.Fatalf("loaded with issue %d %s", blocked.status, blocked.body)
+	}
+
+	undecided := do(t, srv, http.MethodPost, "/api/v1/loading/trips/trip-north/ready", "usr-loader", nil, "")
+	if undecided.status != http.StatusConflict || !strings.Contains(undecided.body, "dispatcher_decision_required") {
+		t.Fatalf("ready with undecided shortfall %d %s", undecided.status, undecided.body)
+	}
+	var created1 struct {
+		Issue struct{ ID string } `json:"issue"`
+	}
+	if err := json.Unmarshal([]byte(iss.body), &created1); err != nil || created1.Issue.ID == "" {
+		t.Fatalf("issue id %v %s", err, iss.body)
+	}
+	decisionPath := "/api/v1/loading/trips/trip-north/orders/ord-1/issues/" + created1.Issue.ID + "/decision"
+	if code := do(t, srv, http.MethodPost, decisionPath, "usr-loader", []byte(`{"decision":"PARTIAL_LOAD"}`), "").status; code != http.StatusForbidden {
+		t.Fatalf("loader decided own shortfall %d", code)
+	}
+	if code := do(t, srv, http.MethodPost, decisionPath, "usr-dispatcher", []byte(`{"decision":"SHRUG"}`), "").status; code != http.StatusBadRequest {
+		t.Fatalf("invalid decision %d", code)
+	}
+	hold := do(t, srv, http.MethodPost, decisionPath, "usr-dispatcher", []byte(`{"decision":"HOLD","note":"replacement stock on the way"}`), "")
+	if hold.status != http.StatusOK || !strings.Contains(hold.body, `"decision":"HOLD"`) {
+		t.Fatalf("hold decision %d %s", hold.status, hold.body)
+	}
+	if code := do(t, srv, http.MethodPost, "/api/v1/loading/trips/trip-north/ready", "usr-loader", nil, "").status; code != http.StatusConflict {
+		t.Fatalf("ready while on hold %d", code)
+	}
+	partial := do(t, srv, http.MethodPost, decisionPath, "usr-dispatcher", []byte(`{"decision":"PARTIAL_LOAD","note":"leave on time"}`), "")
+	if partial.status != http.StatusOK || !strings.Contains(partial.body, `"decidedBy":"USR002"`) {
+		t.Fatalf("partial decision %d %s", partial.status, partial.body)
+	}
+	if detail := do(t, srv, http.MethodGet, "/api/v1/loading/trips/trip-north", "usr-loader", nil, ""); !strings.Contains(detail.body, `"decision":"PARTIAL_LOAD"`) {
+		t.Fatalf("decision not visible to loader %s", detail.body)
 	}
 
 	readyWithShort := do(t, srv, http.MethodPost, "/api/v1/loading/trips/trip-north/ready", "usr-loader", nil, "")

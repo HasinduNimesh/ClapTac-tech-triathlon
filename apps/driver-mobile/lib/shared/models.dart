@@ -105,6 +105,12 @@ class LoadingIssue {
   String get type => _s(raw, 'type') ?? '';
   int get units => _i(raw, 'affectedUnits') ?? 0;
   String get note => _s(raw, 'note') ?? '';
+  /// Dispatcher decision: PARTIAL_LOAD, HOLD or MOVE_TO_NEXT_RUN (null while waiting).
+  String? get decision => _s(raw, 'decision');
+  String get decisionNote => _s(raw, 'decisionNote') ?? '';
+  String? get decidedBy => _s(raw, 'decidedBy');
+  bool get allowsDeparture => decision == 'PARTIAL_LOAD' || decision == 'MOVE_TO_NEXT_RUN';
+  String get decisionLabel => switch (decision) { 'PARTIAL_LOAD' => 'Partial load accepted', 'HOLD' => 'On hold until stock arrives', 'MOVE_TO_NEXT_RUN' => 'Moved to the next run', _ => 'Waiting for dispatcher' };
 }
 
 class LoadingOrder {
@@ -123,6 +129,8 @@ class LoadingOrder {
   bool get loaded => status == 'loaded';
   List<LoadingIssue> get issues => ((raw['issues'] as List?) ?? const []).whereType<Map<String, dynamic>>().map(LoadingIssue.new).toList();
   bool get short => issues.isNotEmpty || status == 'shortfall';
+  /// A shortfall the dispatcher has not cleared for departure yet.
+  bool get unresolved => short && (issues.isEmpty || issues.any((i) => !i.allowsDeparture));
 }
 
 class LoadingTrip {

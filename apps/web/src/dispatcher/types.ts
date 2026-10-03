@@ -1,6 +1,7 @@
 export type Outlet = {
   id: string; brand: string; name: string; district: string; depot: string; dockType: string; parkingConstraint: string;
   mallWindow: boolean; windowOpenTime: string; windowCloseTime: string; accessInstructions?: string;
+  latitude?: number; longitude?: number; locationApproximate?: boolean;
 };
 export type Vehicle = { id: string; type: string; temp: string; weightCapacityKg: number; volumeCapacityM3: number; fuelType: string; kmPerL: number; weeklyFuelQuotaL: number; homeDepot: string; version: number };
 export type Availability = { date: string; vehicleId: string; status: string; reason?: string };

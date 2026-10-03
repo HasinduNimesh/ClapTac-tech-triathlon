@@ -1,6 +1,21 @@
 import { PlanDetail, PlanVehicle } from "../api/planning";
 import { isChilled, pct } from "./useApi";
 
+// The planning service sends null (not []) for lists a fresh, ungenerated plan
+// does not have yet. Every screen reads plans through this so it never crashes.
+export function normalizePlan(detail: PlanDetail): PlanDetail {
+  return {
+    ...detail,
+    trips: detail.trips || [],
+    allocations: detail.allocations || [],
+    deferrals: detail.deferrals || [],
+    unallocated: detail.unallocated || [],
+    vehicles: detail.vehicles || [],
+    orders: detail.orders || [],
+    publication: detail.publication ? { ...detail.publication, acknowledgements: detail.publication.acknowledgements || [] } : detail.publication,
+  };
+}
+
 export type TripLoad = {
   tripId: string;
   tripNumber: number;
@@ -26,7 +41,8 @@ const reefer = (v?: PlanVehicle) => Boolean(v && /chill|refriger|frozen|multi/i.
 // not vehicleId: a vehicle can run two sequential trips, each with its own
 // capacity, so summing across both trips before comparing to one trip's
 // capacity would overstate the load (two 70%-full trips reading as 140%).
-export function tripLoads(detail: PlanDetail): TripLoad[] {
+export function tripLoads(raw: PlanDetail): TripLoad[] {
+  const detail = normalizePlan(raw);
   const ordersById = new Map(detail.orders.map((o) => [o.id, o]));
   return (detail.trips || []).map((trip) => {
     const vehicle = (detail.vehicles || []).find((v) => v.id === trip.vehicleId);
@@ -56,7 +72,8 @@ export function tripLoads(detail: PlanDetail): TripLoad[] {
 
 export type PlanCheck = { key: string; label: string; ok: boolean; detail: string };
 
-export function planChecks(detail: PlanDetail, loads: TripLoad[], t: (s: string) => string): PlanCheck[] {
+export function planChecks(raw: PlanDetail, loads: TripLoad[], t: (s: string) => string): PlanCheck[] {
+  const detail = normalizePlan(raw);
   const unallocated = detail.unallocated?.length || 0;
   const total = detail.orders?.length || 0;
   const overloaded = loads.filter((l) => l.overCapacity);

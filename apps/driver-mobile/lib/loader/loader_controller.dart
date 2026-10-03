@@ -12,7 +12,8 @@ class StopGroup {
   final List<LoadingOrder> orders;
   String get outletId => orders.first.outletId;
   bool get chilled => orders.any((o) => o.chilled);
-  bool get loaded => orders.every((o) => o.loaded);
+  /// Loaded, or short with a dispatcher decision that lets the trip leave.
+  bool get loaded => orders.every((o) => o.loaded || (o.short && !o.unresolved));
   bool get hasShortfall => orders.any((o) => o.short);
   int get expectedUnits => orders.fold(0, (s, o) => s + o.expectedUnits);
 }

@@ -29,7 +29,7 @@ class TripDetailScreen extends StatelessWidget {
         final trip = controller.details[tripId] ?? controller.trips.where((t) => t.tripId == tripId).firstOrNull;
         if (trip == null) return const Scaffold(body: Center(child: Text('Trip not found on today\'s load list.')));
         final groups = controller.loadOrder(trip);
-        final shortOrders = trip.orders.where((o) => o.short).toList();
+        final shortOrders = trip.orders.where((o) => o.unresolved).toList();
         final readyNow = controller.readyConfirmed.contains(trip.tripId) || trip.ready;
         final checks = <(String, String)>[
           (trip.planChanged ? 'bad' : 'ok', trip.planChanged ? 'Plan v${trip.planVersion} not acknowledged yet' : 'Plan v${trip.planVersion} acknowledged'),
@@ -38,7 +38,7 @@ class TripDetailScreen extends StatelessWidget {
           if (trip.refrigerated) (readyNow ? 'ok' : 'todo', 'Chilled zone at 2–4 °C'),
           (readyNow ? 'ok' : 'todo', 'Doors closed & sealed'),
         ];
-        final canReady = !readyNow && !trip.planChanged && groups.isNotEmpty && groups.every((g) => g.loaded) && shortOrders.isEmpty;
+        final canReady = !readyNow && !trip.planChanged && groups.isNotEmpty && trip.orders.every((o) => o.loaded || (o.short && !o.unresolved)) && shortOrders.isEmpty;
 
         final guidance = _Guidance(controller: controller, trip: trip, groups: groups, onReport: (o) => _report(context, trip, o, tablet));
         final side = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -64,7 +64,9 @@ class TripDetailScreen extends StatelessWidget {
           const SizedBox(height: 16),
           if (readyNow)
             const StatusNote(tone: Tone.green, icon: Icons.check_circle, title: 'Ready to depart', text: 'Logged with your name and time. The driver now sees the trip as ready.')
-          else if (controller.waitingForDispatcher[trip.tripId] != null)
+          else if (shortOrders.isEmpty && trip.orders.any((o) => o.short))
+            StatusNote(tone: Tone.green, icon: Icons.check_circle, title: 'Dispatcher decision received', text: trip.orders.where((o) => o.short).expand((o) => o.issues.map((i) => '${o.orderRef}: ${i.decisionLabel}${i.decisionNote.isNotEmpty ? ' · ${i.decisionNote}' : ''}')).join(' · '))
+          else if (shortOrders.isNotEmpty && controller.waitingForDispatcher[trip.tripId] != null)
             StatusNote(tone: Tone.amber, icon: Icons.hourglass_top, title: 'Sent to dispatcher · waiting for a decision', text: '${controller.waitingForDispatcher[trip.tripId]}. Ready to depart stays locked until the dispatcher decides. Keep loading the other stops.')
           else if (shortOrders.isNotEmpty)
             StatusNote(tone: Tone.red, icon: Icons.error, title: '${shortOrders.length} unresolved shortfall(s) on this trip', text: '${shortOrders.map((o) => '${o.orderRef} · Stop ${o.stopSequence}: ${o.issues.map((i) => '${i.units} ${i.type.toLowerCase()}').join(', ')}').join('\n')}\nThe order is not reduced until the dispatcher decides.'),
@@ -251,7 +253,7 @@ class _Guidance extends StatelessWidget {
                       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                         Row(children: [Flexible(child: Text(o.orderRef, style: const TextStyle(fontWeight: FontWeight.w600))), if (o.chilled) ...[const SizedBox(width: 6), const StatusTag('Chilled', tone: Tone.cool)]]),
                         Text('${o.outletId} · expected ${o.expectedUnits}', style: const TextStyle(fontSize: 12, color: Wp.muted)),
-                        for (final iss in o.issues) Text('${iss.units} ${iss.type.toLowerCase()} · awaiting dispatcher${iss.note.isNotEmpty ? ' · ${iss.note}' : ''}', style: const TextStyle(fontSize: 12, color: Wp.red, fontWeight: FontWeight.w600)),
+                        for (final iss in o.issues) Text('${iss.units} ${iss.type.toLowerCase()} · ${iss.decisionLabel}${iss.decisionNote.isNotEmpty ? ' · ${iss.decisionNote}' : ''}${iss.note.isNotEmpty ? ' · ${iss.note}' : ''}', style: TextStyle(fontSize: 12, color: iss.allowsDeparture ? Wp.green : Wp.red, fontWeight: FontWeight.w600)),
                       ])),
                       if (!o.loaded && !o.short) ...[
                         TextButton(onPressed: () => onReport(o), child: const Text('Report issue')),

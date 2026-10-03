@@ -107,10 +107,40 @@ paths:
         - $ref: "#/components/parameters/IssueID"
       responses:
         "200": { description: Removed }
+  /loading/trips/{tripId}/orders/{orderId}/issues/{issueId}/decision:
+    post:
+      operationId: decideLoadingIssue
+      description: >-
+        Dispatcher decision on a loader shortfall (loading:decide). PARTIAL_LOAD and
+        MOVE_TO_NEXT_RUN let the trip depart; HOLD keeps Ready blocked. The order is not
+        reduced here: moving a line to the next run is done in planning, which publishes a
+        new plan version. Changing the report clears an earlier decision.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TripID"
+        - $ref: "#/components/parameters/OrderID"
+        - $ref: "#/components/parameters/IssueID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties:
+                decision: { type: string, enum: [PARTIAL_LOAD, HOLD, MOVE_TO_NEXT_RUN] }
+                note: { type: string, maxLength: 1000 }
+      responses:
+        "200": { description: Decision recorded; returns the issue with decision, decidedBy and decidedAt }
+        "400": { description: Unknown decision }
+        "403": { description: Caller is not a dispatcher }
+        "409": { description: Loading session is already ready }
   /loading/trips/{tripId}/ready:
     post:
       operationId: markTripReady
-      description: Atomic and immutable. Shortfall does not block; pending does (409 loading_incomplete).
+      description: >-
+        Atomic and immutable. Pending orders block (409 loading_incomplete). A shortfall blocks
+        until the dispatcher accepts a partial load or moves the line (409 dispatcher_decision_required).
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: "#/components/parameters/TripID"

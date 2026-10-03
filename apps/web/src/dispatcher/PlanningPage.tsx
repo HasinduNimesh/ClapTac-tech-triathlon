@@ -10,7 +10,7 @@ import { useLocale } from "../i18n";
 import { resolveFuelAttempt } from "./fuelSubmission.mjs";
 import { DisruptionRiskPanel } from "./DisruptionRiskPanel";
 import { Outlet, outletMap } from "./types";
-import { planChecks, tripLoads } from "./planModel";
+import { normalizePlan, planChecks, tripLoads } from "./planModel";
 import { Banner, Check, ChipGroup, DpHero, Drawer, Meter, Note, Panel, Stat, StatRow, Tag, brandTone, meterTone } from "./ui";
 import { clock, dateTime, dayLabel, hhmm, isChilled, kg, m3, pct, useApi } from "./useApi";
 
@@ -75,7 +75,7 @@ export function PlanningPage() {
   }
 
   async function refresh(id?: string) {
-    const body = await apiJSON<PlanDetail>(id ? `/planning/plans/${id}` : `/planning/plans?date=${date}`, token);
+    const body = normalizePlan(await apiJSON<PlanDetail>(id ? `/planning/plans/${id}` : `/planning/plans?date=${date}`, token));
     setDetail(body);
     await loadFuelLedger(fuelDate);
     return body;
@@ -87,7 +87,7 @@ export function PlanningPage() {
     let active = true;
     setLoadingPlan(true);
     apiJSON<PlanDetail>(`/planning/plans?date=${date}`, token)
-      .then((body) => { if (active) setDetail(body); })
+      .then((body) => { if (active) setDetail(normalizePlan(body)); })
       .catch(() => { if (active) setDetail(null); })
       .finally(() => { if (active) setLoadingPlan(false); });
     return () => { active = false; };

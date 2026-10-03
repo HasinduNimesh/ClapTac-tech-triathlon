@@ -421,7 +421,7 @@ class _Issues extends StatelessWidget {
                 Text('${r.$2.orderRef} · ${r.$3.units} ${r.$3.type.toLowerCase()}', style: const TextStyle(fontWeight: FontWeight.w600)),
                 Text('${r.$1.vehicleId} · Stop ${r.$2.stopSequence}${r.$3.note.isNotEmpty ? ' · ${r.$3.note}' : ''}', style: const TextStyle(fontSize: 13, color: Wp.muted)),
               ])),
-              const StatusTag('Awaiting dispatcher', tone: Tone.red),
+              StatusTag(r.$3.decisionLabel, tone: r.$3.allowsDeparture ? Tone.green : Tone.red),
             ]),
           ),
         ),

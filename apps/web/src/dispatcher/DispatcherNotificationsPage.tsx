@@ -33,7 +33,7 @@ export function DispatcherNotificationsPage() {
   for (const incident of incidents.data?.items || []) alerts.push({ key: incident.id, tone: "red", tag: t("Critical · chilled risk"), title: `${incident.vehicleId}${incident.tripId ? ` · ${incident.tripId}` : ""} · ${t(incident.type)}`, text: `${incident.description} · ${dateTime(incident.reportedAt)}`, action: t("Reassign stops or defer with a reason"), to: "/dispatcher/live" });
   for (const ev of temperature.data?.items || []) alerts.push({ key: ev.event_id, tone: "red", tag: t("Critical · temperature"), title: `${ev.resource_type} ${ev.resource_id}`, text: `${ev.reason || t("Out-of-range temperature recorded")} · ${dateTime(ev.timestamp)}`, action: t("Open live operations"), to: "/dispatcher/live" });
   for (const trip of (loading.data?.items || []).filter((x) => (x.shortfallCount || 0) > 0)) alerts.push({ key: `short-${trip.tripId}`, tone: "amber", tag: t("High · loader shortfall"), title: `${trip.vehicleId} · ${t("Trip")} ${trip.tripNumber ?? 1} · ${trip.shortfallCount} ${t("order(s) short")}`, text: t("Shortfall needs dispatcher acceptance or a new plan before departure"), action: t("Review the load exception"), onOpen: () => setExceptionTrip(trip) });
-  const repeat = (plan.data?.orders || []).filter((o) => (o.outletDeferralCount || 0) >= 2 && plan.data!.unallocated.some((u) => u.orderId === o.id));
+  const repeat = (plan.data?.orders || []).filter((o) => (o.outletDeferralCount || 0) >= 2 && (plan.data!.unallocated || []).some((u) => u.orderId === o.id));
   for (const order of repeat) alerts.push({ key: `rep-${order.id}`, tone: "cool", tag: t("Repeat deferral"), title: `${order.orderRef} · ${order.outletId} · ${t("deferred")} ${order.outletDeferralCount} ${t("times")}`, text: `${order.lastServedAt ? `${t("Last served")} ${dateTime(order.lastServedAt)} · ` : ""}${t("fairness review required before another deferral")}`, action: t("Review priority and next-run plan"), to: "/dispatcher/planning" });
   if ((conflicts.data?.items?.length || 0) + (receipts.data?.items?.length || 0) > 0) alerts.push({ key: "loop", tone: "primary", tag: t("After plan change"), title: `${conflicts.data?.items?.length || 0} ${t("sync conflict(s)")} · ${receipts.data?.items?.length || 0} ${t("store receipt issue(s)")}`, text: t("Who has the new plan, what came back from the road, and what the store confirmed."), action: t("Review acknowledgements and receipts"), onOpen: () => setConflictsOpen(true) });
 
@@ -105,26 +105,35 @@ function LoadExceptionDrawer({ trip, plan, token, onClose, onDone }: { trip: Loa
   const [decision, setDecision] = useState<Decision>("partial");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [note, setNote] = useState("");
   const short = (detail.data?.orders || []).filter((o) => (o.issues || []).length > 0);
 
   async function publish() {
     if (!trip) return;
     setBusy(true); setError("");
+    const code = decision === "partial" ? "PARTIAL_LOAD" : decision === "hold" ? "HOLD" : "MOVE_TO_NEXT_RUN";
     try {
       const summary = short.map((o) => `${o.orderRef || o.orderId}: ${(o.issues || []).map((i) => `${i.type} ${i.affectedUnits}`).join(", ")}`).join("; ");
+      // The decision is recorded on each shortfall first; the loading service
+      // keeps Ready locked until every shortfall has a decision that allows departure.
+      for (const order of short) {
+        for (const issue of order.issues || []) {
+          await apiJSON(`/loading/trips/${trip.tripId}/orders/${order.orderId}/issues/${issue.id}/decision`, token, { method: "POST", body: JSON.stringify({ decision: code, note }) });
+        }
+      }
       if (decision === "move") {
         if (!plan) throw new Error(t("No plan is loaded for this date."));
         if (plan.plan.status === "confirmed") await apiJSON(`/planning/plans/${plan.plan.id}/revise`, token, { method: "POST" });
         for (const order of short) {
-          const allocation = plan.allocations.find((a) => a.tripId === trip.tripId && a.orderId === order.orderId);
+          const allocation = (plan.allocations || []).find((a) => a.tripId === trip.tripId && a.orderId === order.orderId);
           if (allocation) await apiJSON(`/planning/plans/${plan.plan.id}/allocations/${allocation.id}`, token, { method: "DELETE" });
-          await apiJSON(`/planning/plans/${plan.plan.id}/deferrals`, token, { method: "POST", body: JSON.stringify({ orderId: order.orderId, reasonCode: "MANUAL_DISPATCHER_DEFERRAL", comment: `Loader shortfall before departure: ${summary}` }) });
+          await apiJSON(`/planning/plans/${plan.plan.id}/deferrals`, token, { method: "POST", body: JSON.stringify({ orderId: order.orderId, reasonCode: "MANUAL_DISPATCHER_DEFERRAL", comment: `Loader shortfall before departure: ${summary}${note ? ` · ${note}` : ""}` }) });
         }
         await apiJSON(`/planning/plans/${plan.plan.id}/confirm`, token, { method: "POST" });
         onDone(t("New plan version published · affected lines moved to the next run"));
       } else {
-        const body = decision === "partial" ? `Dispatcher decision: accept partial load and depart on time. ${summary}. Stores will be told the rest comes on the next run.` : `Dispatcher decision: hold the trip until replacement stock arrives. ${summary}.`;
-        await apiJSON(`/delivery/trips/${trip.tripId}/messages`, token, { method: "POST", body: JSON.stringify({ body }) });
+        const body = decision === "partial" ? `Dispatcher decision: accept partial load and depart on time. ${summary}.` : `Dispatcher decision: hold the trip until replacement stock arrives. ${summary}.`;
+        try { await apiJSON(`/delivery/trips/${trip.tripId}/messages`, token, { method: "POST", body: JSON.stringify({ body: note ? `${body} ${note}` : body }) }); } catch { /* the decision is already recorded on the shortfall */ }
         onDone(decision === "partial" ? t("Partial load accepted · driver and loader notified") : t("Trip on hold · driver and loader notified"));
       }
     } catch (e) { setError(errorText(e)); }
@@ -141,7 +150,7 @@ function LoadExceptionDrawer({ trip, plan, token, onClose, onDone }: { trip: Loa
       footer={<><button type="button" className="dp-btn dp-btn--secondary" onClick={onClose}>{t("Cancel")}</button><button type="button" className="dp-btn" disabled={busy || short.length === 0} onClick={() => void publish()}>{decision === "move" ? t("Publish new plan version and notify") : t("Send decision and notify")}</button></>}>
       {error && <p className="dp-note dp-note--red" role="alert">{error}</p>}
       {detail.loading && <p role="status">{t("Loading trip…")}</p>}
-      {short.map((o) => <Note key={o.orderId} tone="red">{o.orderRef || o.orderId} · {t("Stop")} {o.stopSequence}: {(o.issues || []).map((i) => `${t(i.type)} ${i.affectedUnits}${o.expectedUnits ? ` ${t("of")} ${o.expectedUnits}` : ""}${i.note ? ` · ${i.note}` : ""}`).join(", ")}</Note>)}
+      {short.map((o) => <Note key={o.orderId} tone={(o.issues || []).every((i) => i.decision === "PARTIAL_LOAD" || i.decision === "MOVE_TO_NEXT_RUN") ? "green" : "red"}>{o.orderRef || o.orderId} · {t("Stop")} {o.stopSequence}: {(o.issues || []).map((i) => `${t(i.type)} ${i.affectedUnits}${o.expectedUnits ? ` ${t("of")} ${o.expectedUnits}` : ""}${i.note ? ` · ${i.note}` : ""}${i.decision ? ` · ${t("Decided")}: ${t(i.decision)}${i.decidedBy ? ` (${i.decidedBy})` : ""}` : ""}`).join(", ")}</Note>)}
       <fieldset className="dp-stack" style={{ border: 0, padding: 0, margin: 0 }}>
         <legend className="dp-section-label">{t("Choose what happens")}</legend>
         {options.map((o) => (
@@ -151,10 +160,11 @@ function LoadExceptionDrawer({ trip, plan, token, onClose, onDone }: { trip: Loa
           </label>
         ))}
       </fieldset>
+      <label className="dp-field">{t("Note for the loader and driver (optional)")}<textarea value={note} onChange={(e) => setNote(e.target.value)} maxLength={1000} /></label>
       <p className="dp-section-label">{t("What changes")}</p>
       <dl className="dp-kv-rows">
         <div><dt>{t("Plan version")}</dt><dd>{decision === "move" ? `v${plan?.publication?.version || plan?.plan.currentVersion || 1} → v${(plan?.publication?.version || plan?.plan.currentVersion || 1) + 1}` : t("Unchanged")}</dd></div>
-        <div><dt>{t("Loader")}</dt><dd>{decision === "hold" ? t("Keeps the trip on the dock") : t("Ready to depart unlocks")}</dd></div>
+        <div><dt>{t("Loader")}</dt><dd>{decision === "hold" ? t("Ready to depart stays locked") : t("Ready to depart unlocks")}</dd></div>
         <div><dt>{t("Driver")}</dt><dd>{decision === "move" ? t("Gets the new version on the phone") : t("Gets the decision as a trip message")}</dd></div>
         <div><dt>{t("Logged as")}</dt><dd>{t("Decided by you, with time")}</dd></div>
       </dl>

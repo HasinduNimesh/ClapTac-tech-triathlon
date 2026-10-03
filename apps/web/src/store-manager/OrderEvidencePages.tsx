@@ -7,6 +7,7 @@ import { deferralExplanation } from "./deferralMessage.mjs";
 import { colomboTime, formatDay, isDeferred, needsReceipt, statusLabel, timelineSteps } from "./orderStage.mjs";
 import { StoreManagerHero } from "./StoreManagerHero";
 import { Tracking } from "./useOrderTrackings";
+import { DEPOT_LOCATIONS, LatLng, MapLine, MapMarker, WaypointMap, along } from "../components/WaypointMap";
 
 function useTracking(orderId?: string) {
   const { user } = useAuth();
@@ -21,6 +22,17 @@ function useTracking(orderId?: string) {
   }, [token, orderId]);
   useEffect(() => { void load(); const id = window.setInterval(() => void load(), 60_000); return () => window.clearInterval(id); }, [load]);
   return { tracking, error, loadedAt, reload: load };
+}
+
+function useOutlet(outletId?: string) {
+  const { user } = useAuth();
+  const token = user?.access_token || "";
+  const [outlet, setOutlet] = useState<{ latitude?: number; longitude?: number } | null>(null);
+  useEffect(() => {
+    if (!token || !outletId) return;
+    apiJSON<{ outlet: { latitude?: number; longitude?: number } }>(`/shared/outlets/${encodeURIComponent(outletId)}`, token).then((r) => setOutlet(r.outlet)).catch(() => setOutlet(null));
+  }, [token, outletId]);
+  return outlet;
 }
 
 type Event = { at?: string; actor: string; title: string; detail?: string; kind: "loader" | "dispatcher" | "driver" | "store" | "pending" };
@@ -104,6 +116,7 @@ export function TrackOrderPage() {
   const { t } = useLocale();
   const { tracking, error, loadedAt } = useTracking(orderId);
   const row = tracking;
+  const outlet = useOutlet(row?.order.outletId);
   const seq = Math.max(1, row?.planning.stopSequence || 1);
   const earlier = seq - 1;
   const onRoute = row ? /OUT_FOR_DELIVERY|READY_FOR_DEPARTURE/.test(row.stage) : false;
@@ -113,10 +126,21 @@ export function TrackOrderPage() {
   const to = arrival ? new Date(arrival.getTime() + 10 * 60_000) : undefined;
   const lastUpdate = row?.delivery?.completedAt || row?.delivery?.occurredAt;
   const steps = row ? timelineSteps(row) : [];
-  // Route geometry: depot top, earlier stops along the way, store at the end.
-  const pts = Array.from({ length: earlier + 1 }, (_, i) => ({ x: 380 - i * 40 + (i % 2 ? 60 : -40), y: 90 + ((i + 1) * 320) / (earlier + 1) }));
-  const store = { x: 330, y: 420 };
-  const truckAt = delivered ? store : onRoute ? { x: (pts[Math.max(0, earlier - 1)]?.x ?? 380) * 0.4 + store.x * 0.6, y: (pts[Math.max(0, earlier - 1)]?.y ?? 90) * 0.4 + store.y * 0.6 } : { x: 380, y: 90 };
+  // Only this store and the depot are shown at their (approximate) places.
+  // Earlier stops are spread along the way unnamed so other stores stay private.
+  const depot = DEPOT_LOCATIONS[row?.planning.depot || ""] || DEPOT_LOCATIONS.DEPOT_NORTH;
+  const storeAt: LatLng | undefined = outlet?.latitude != null && outlet.longitude != null ? [outlet.latitude, outlet.longitude] : undefined;
+  const store = storeAt || along(depot, [depot[0] - 0.05, depot[1] + 0.05], 1);
+  const earlierAt = Array.from({ length: earlier }, (_, i) => { const p = along(depot, store, (i + 1) / (earlier + 1)); return [p[0] + (i % 2 ? 0.01 : -0.01), p[1] + (i % 2 ? -0.012 : 0.012)] as LatLng; });
+  const lastEarlier = earlierAt[earlierAt.length - 1] || depot;
+  const truck = delivered ? store : onRoute ? along(lastEarlier, store, 0.6) : depot;
+  const mapLines: MapLine[] = [{ id: "route", points: [depot, ...earlierAt, store], color: "#9db3ee" }, ...(!delivered ? [{ id: "next", points: [truck, store], color: "#3a57e8", dashed: true }] : [])];
+  const mapMarkers: MapMarker[] = [
+    { id: "depot", at: depot, kind: "depot", color: "#232d42", label: t("Depot"), title: t("Depot") },
+    ...earlierAt.map((p, i) => ({ id: `e${i}`, at: p, kind: "stop" as const, color: "#8a92a6", title: t("Earlier stop (not named)") })),
+    { id: "store", at: store, kind: "store", color: "#c03221", label: `${t("Your store")} · ${row?.order.outletId || ""}`, title: t("Your store") },
+    { id: "truck", at: truck, kind: "truck", color: "#3a57e8", selected: true, label: `${row?.delivery?.vehicleId || t("Your truck")}${lastUpdate ? ` · ${colomboTime(lastUpdate)}` : ""}`, title: t("Your delivery truck") },
+  ];
   return (
     <>
       <StoreManagerHero compact crumbs={[{ label: t("Store"), to: "/store-manager" }, { label: t("Track order") }]} title={row ? `${t("Track order")} · ${row.order.orderRef}` : t("Track order")} subtitle={row ? `${row.order.temperatureRequirement === "chilled" ? t("Chilled") : t("Ambient")} · ${row.order.orderUnits} ${t("units")} · ${t("from driver app updates")}` : undefined}>
@@ -127,24 +151,9 @@ export function TrackOrderPage() {
         {!row && !error && <p className="muted" role="status">{t("Loading your orders…")}</p>}
         {row && <div className="dp-grid-2">
           <div className="sm-track-map">
-            <svg viewBox="0 0 700 520" role="img" aria-label={`${t("Route from the depot to your store")} · ${earlier} ${t("earlier stops")}`}>
-              <rect width="700" height="520" fill="#eef0ee" />
-              {[60, 160, 260, 360, 460].map((y) => <line key={y} x1="0" y1={y} x2="700" y2={y + 30} stroke="#fff" strokeWidth="6" />)}
-              {[120, 280, 440, 600].map((x) => <line key={x} x1={x} y1="0" x2={x - 40} y2="520" stroke="#fff" strokeWidth="6" />)}
-              <rect x="0" y="0" width="60" height="520" fill="#d6e4f0" />
-              <polyline points={[{ x: 380, y: 90 }, ...pts.slice(1), store].map((p) => `${p.x},${p.y}`).join(" ")} fill="none" stroke="#9db3ee" strokeWidth="4" />
-              {pts.slice(1).map((p, i) => <circle key={i} cx={p.x} cy={p.y} r="9" fill="#8a92a6" stroke="#fff" strokeWidth="3"><title>{t("Earlier stop (not named)")}</title></circle>)}
-              <circle cx="380" cy="90" r="14" fill="#232d42" /><text x="380" y="95" fontSize="13" fontWeight="700" fill="#fff" textAnchor="middle">D</text>
-              <text x="400" y="95" fontSize="12" fontWeight="600" fill="#232d42">{t("Depot")}</text>
-              <circle cx={store.x} cy={store.y} r="16" fill="#c03221" /><text x={store.x} y={store.y + 5} fontSize="14" fill="#fff" textAnchor="middle">★</text>
-              <rect x={store.x - 150} y={store.y - 44} width="190" height="22" rx="4" fill="#fff" /><text x={store.x - 142} y={store.y - 29} fontSize="12" fontWeight="600" fill="#232d42">{`${t("Your store")} · ${row.order.outletId}`}</text>
-              {!delivered && <line x1={truckAt.x} y1={truckAt.y} x2={store.x} y2={store.y} stroke="#3a57e8" strokeWidth="3" strokeDasharray="4 6" />}
-              <circle cx={truckAt.x} cy={truckAt.y} r="26" fill="#3a57e8" opacity="0.18" />
-              <circle cx={truckAt.x} cy={truckAt.y} r="13" fill="#3a57e8" stroke="#fff" strokeWidth="3" />
-              <rect x={truckAt.x + 18} y={truckAt.y - 11} width="120" height="22" rx="4" fill="#3a57e8" /><text x={truckAt.x + 26} y={truckAt.y + 4} fontSize="12" fontWeight="600" fill="#fff">{`${row.delivery?.vehicleId || t("Your truck")}${lastUpdate ? ` · ${colomboTime(lastUpdate)}` : ""}`}</text>
-            </svg>
-            <span className="sm-track-live">● {lastUpdate ? `${t("Last driver update")} ${colomboTime(lastUpdate)}` : `${t("Refreshed")} ${colomboTime(loadedAt)}`}</span>
-            <div className="sm-track-legend">
+            <WaypointMap label={`${t("Route from the depot to your store")} · ${earlier} ${t("earlier stops")}`} markers={mapMarkers} lines={mapLines} fitKey={row.order.id} />
+            <span className="sm-track-live" style={{ zIndex: 500 }}>● {lastUpdate ? `${t("Last driver update")} ${colomboTime(lastUpdate)}` : `${t("Refreshed")} ${colomboTime(loadedAt)}`}</span>
+            <div className="sm-track-legend" style={{ zIndex: 500 }}>
               <p style={{ margin: 0 }}><span style={{ color: "#3a57e8" }}>●</span> {t("Your delivery truck")}</p>
               <p style={{ margin: 0 }}><span style={{ color: "#c03221" }}>●</span> {t("Your store")}</p>
               <p style={{ margin: 0 }}><span style={{ color: "#8a92a6" }}>●</span> {t("Earlier stops (other stores, not named)")}</p>
@@ -167,7 +176,7 @@ export function TrackOrderPage() {
                 <div><dt>{t("On this order")}</dt><dd>{row.order.orderUnits} {t("units")}</dd></div>
                 <div><dt>{t("Plan")}</dt><dd>{row.planning.planRef || "—"}</dd></div>
               </dl>
-              <p className="dp-note" style={{ margin: 0, fontSize: "0.8125rem" }}>{t("The truck's place is shown from driver updates, not GPS. If the driver loses signal, the last update time stays visible so an old position is never mistaken for a live one.")}</p>
+              <p className="dp-note" style={{ margin: 0, fontSize: "0.8125rem" }}>{t("The truck's place is shown from driver updates, not GPS. If the driver loses signal, the last update time stays visible so an old position is never mistaken for a live one.")} {t("Map positions are approximate.")}</p>
               <Link to={`/store-manager/orders/${encodeURIComponent(row.order.id)}/timeline`} className="dp-btn dp-btn--block">{t("View order details")}</Link>
               <Link to="/store-manager" className="dp-btn dp-btn--secondary dp-btn--block">{t("Back to overview")}</Link>
             </div>

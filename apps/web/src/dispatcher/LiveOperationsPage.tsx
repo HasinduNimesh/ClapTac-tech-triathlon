@@ -12,7 +12,8 @@ import { calibratedArrivalRange } from "./arrivalRange.mjs";
 import { evaluatedLatenessCalibrations } from "./latenessCalibration.mjs";
 import { singleFlightMessagePost } from "./singleFlightMessagePost.mjs";
 import { useDepot } from "./DispatcherLayout";
-import { Incident } from "./types";
+import { Incident, Outlet, outletMap } from "./types";
+import { DEPOT_LOCATIONS, LatLng, MapLine, MapMarker, WaypointMap } from "../components/WaypointMap";
 import { Check, ChipGroup, DpHero, Drawer, Note, Panel, Stat, StatRow, Tag, Toast } from "./ui";
 import { clock, dateTime, errorText, isChilled, minutesAgo, useApi, useToken } from "./useApi";
 
@@ -50,6 +51,7 @@ export function LiveOperationsPage() {
   const [toast, setToast] = useState("");
   const plan = useApi<PlanDetail>(`/planning/plans?date=${date}`);
   const incidents = useApi<{ items: Incident[] }>("/fleet/incidents?openOnly=true");
+  const outlets = useApi<{ items: Outlet[] }>("/shared/outlets");
   const loading = useApi<{ items: LoadingTripSummary[] }>(`/loading/trips?date=${date}`);
   const forecast = useApi<{ forecast?: { serviceMinutesPerStop?: number; serviceEstimateVersion?: string } }>("/orders/forecast");
   const serviceMinutes = forecast.data?.forecast?.serviceMinutesPerStop ?? fallbackServiceTime.minutes;
@@ -161,7 +163,7 @@ export function LiveOperationsPage() {
           ]} />
           <span className="muted" style={{ fontSize: "0.8125rem" }}>◷ {t("Progress comes from driver updates, not GPS")}</span>
         </>}>
-          {view === "map" ? <TripMap rows={visible} onOpen={setOpenTrip} /> : (
+          {view === "map" ? <TripMap rows={visible} outlets={outletMap(outlets.data?.items)} onOpen={setOpenTrip} /> : (
             <div className="dp-table-wrap">
               <table className="dp-table">
                 <thead><tr><th>{t("Vehicle / depot")}</th><th>{t("Brand · district")}</th><th>{t("Trip")}</th><th>{t("Progress")}</th><th>{t("Next stop")}</th><th>{t("Planned / estimated")}</th><th>{t("Cooling")}</th><th>{t("Last update")}</th><th>{t("Status")}</th></tr></thead>
@@ -179,7 +181,7 @@ export function LiveOperationsPage() {
                         <td>{row.summary.tripNumber ?? 1} {t("of")} 2</td>
                         <td><span className="dp-dots" aria-label={`${row.summary.completedStops ?? 0} ${t("of")} ${row.summary.stopCount ?? stops.length} ${t("stops")}`}>{stops.map((s) => <span key={s.id} className={`dp-dot${s.outcomeCode ? (/fail|refus/i.test(s.outcomeCode) ? " dp-dot--failed" : " dp-dot--done") : ""}`} />)}</span> <span className="dp-cell-sub" style={{ display: "inline" }}>{row.summary.completedStops ?? 0} {t("of")} {row.summary.stopCount ?? stops.length}</span></td>
                         <td><span className={`dp-cell-main${row.state === "broken" ? " dp-cell-sub--red" : ""}`}>{row.next ? `${row.next.outletId}${row.next.outletName ? ` ${row.next.outletName}` : ""}` : "—"}</span><span className="dp-cell-sub">{row.state === "broken" ? t("Stranded with the truck") : row.next ? `${t("Window")} ${clock(row.next.plannedWindowOpen)} ${t("to")} ${clock(row.next.plannedWindowClose)}` : ""}</span></td>
-                        <td><span className="dp-cell-main">{clock(plan.data?.allocations.find((a) => a.tripId === row.summary.tripId && a.orderId === row.next?.orderId)?.plannedArrivalAt)}</span><span className={`dp-cell-sub${row.nextEta?.kind === "late" || row.nextEta?.kind === "risk" ? " dp-cell-sub--amber" : " dp-cell-sub--green"}`}>{row.state === "broken" ? t("No ETA") : row.nextEta?.eta ? clock(row.nextEta.eta) : t("Unknown")}</span></td>
+                        <td><span className="dp-cell-main">{clock(plan.data?.allocations?.find((a) => a.tripId === row.summary.tripId && a.orderId === row.next?.orderId)?.plannedArrivalAt)}</span><span className={`dp-cell-sub${row.nextEta?.kind === "late" || row.nextEta?.kind === "risk" ? " dp-cell-sub--amber" : " dp-cell-sub--green"}`}>{row.state === "broken" ? t("No ETA") : row.nextEta?.eta ? clock(row.nextEta.eta) : t("Unknown")}</span></td>
                         <td>{row.chilled ? <Tag tone="cool">❄ {t("Chilled")}</Tag> : <Tag tone="primary">{t("Ambient")}</Tag>}</td>
                         <td><span className={`dp-cell-main${row.state === "silent" ? " dp-cell-sub--amber" : ""}`}>{clock(row.lastUpdate)}</span><span className={`dp-cell-sub${row.state === "silent" ? " dp-cell-sub--amber" : ""}`}>{ago === undefined ? t("No driver update yet") : `${ago} ${t("min ago")}`}</span></td>
                         <td>{statusTag(row)}</td>
@@ -200,47 +202,80 @@ export function LiveOperationsPage() {
   );
 }
 
-// Schematic map: positions are spread by trip, not GPS. Grey markers are trips
-// without a recent update, so silence is visible instead of hidden.
-function TripMap({ rows, onOpen }: { rows: Row[]; onOpen: (tripId: string) => void }) {
+// Trips on an OpenStreetMap map. Outlet positions are approximate (district
+// centre + offset). A truck sits at its last reported stop, or the depot before
+// the first update; trips with no recent update stay grey so silence is visible.
+function TripMap({ rows, outlets, onOpen }: { rows: Row[]; outlets: Map<string, Outlet>; onOpen: (tripId: string) => void }) {
   const { t } = useLocale();
+  const [selected, setSelected] = useState("");
   const color = (s: RowState) => (s === "broken" ? "#c03221" : s === "late" ? "#d9822b" : s === "silent" || s === "waiting" ? "#8a92a6" : "#008b52");
-  const cx = 450, cy = 260;
+  const tone = (s: RowState) => (s === "broken" ? "red" : s === "late" ? "amber" : s === "silent" || s === "waiting" ? "muted" : "green") as "red" | "amber" | "muted" | "green";
+  const stateLabel = (s: RowState) => t(s === "broken" ? "Broken down" : s === "late" ? "Will miss window" : s === "silent" ? "No update" : s === "done" ? "Completed" : s === "waiting" ? "Not started" : "On track");
+  const at = (stop?: DeliveryStop): LatLng | undefined => {
+    const o = stop ? outlets.get(stop.outletId || "") : undefined;
+    return o?.latitude != null && o.longitude != null ? [o.latitude, o.longitude] : undefined;
+  };
+  const markers: MapMarker[] = [];
+  const lines: MapLine[] = [];
+  const depots = new Set<string>();
+  for (const row of rows) {
+    const stops = row.detail?.stops || [];
+    const depotCode = row.summary.depot || "DEPOT_NORTH";
+    const depot = DEPOT_LOCATIONS[depotCode] || DEPOT_LOCATIONS.DEPOT_NORTH;
+    depots.add(depotCode);
+    const path: LatLng[] = [depot, ...stops.map(at).filter((p): p is LatLng => Boolean(p))];
+    const focus = selected === row.summary.tripId;
+    lines.push({ id: row.summary.tripId, points: path, color: focus ? "#3a57e8" : "#9db3ee", weight: focus ? 5 : 3, dashed: row.state === "waiting" });
+    const last = [...stops].reverse().find((s) => s.outcomeCode || s.arrivedAt);
+    const truck = at(last) || depot;
+    const next = at(row.next);
+    if (next && row.state !== "done") lines.push({ id: `${row.summary.tripId}-next`, points: [truck, next], color: color(row.state), dashed: true, weight: 3 });
+    if (focus) {
+      for (const s of stops) {
+        const p = at(s);
+        if (p) markers.push({ id: `${row.summary.tripId}-${s.id}`, at: p, kind: "stop", color: s.outcomeCode ? "#008b52" : "#3a57e8", label: String(s.stopSequence), title: `${s.stopSequence}. ${s.outletId} ${s.outletName || ""}` });
+      }
+    }
+    markers.push({ id: row.summary.tripId, at: truck, kind: "truck", color: color(row.state), selected: focus, label: `${row.summary.vehicleId} · ${stateLabel(row.state)}`, title: `${row.summary.vehicleId} · ${stateLabel(row.state)}`, onClick: () => setSelected(row.summary.tripId) });
+  }
+  for (const d of depots) markers.push({ id: `depot-${d}`, at: DEPOT_LOCATIONS[d] || DEPOT_LOCATIONS.DEPOT_NORTH, kind: "depot", color: "#232d42", label: `${DEPOT_LABELS[d] || d} ${t("depot")}`, title: `${DEPOT_LABELS[d] || d} ${t("depot")}` });
+  const chosen = rows.find((r) => r.summary.tripId === selected);
   return (
     <div className="dp-panel-body">
-      <div className="dp-map">
-        <svg viewBox="0 0 900 520" role="img" aria-label={t("Schematic map of trips around the depot")}>
-          <rect width="900" height="520" fill="#eef0ee" />
-          {[90, 170, 250].map((r) => <circle key={r} cx={cx} cy={cy} r={r} fill="none" stroke="#dfe3df" strokeDasharray="4 6" />)}
-          {rows.map((row, index) => {
-            const angle = (index / Math.max(1, rows.length)) * Math.PI * 2 - Math.PI / 2;
-            const stops = row.detail?.stops || [];
-            const done = stops.filter((s) => s.outcomeCode).length;
-            const progress = stops.length ? done / stops.length : 0;
-            const r = 80 + progress * 170;
-            const x = cx + Math.cos(angle) * r, y = cy + Math.sin(angle) * r;
-            const ex = cx + Math.cos(angle) * 250, ey = cy + Math.sin(angle) * 250;
-            return (
-              <g key={row.summary.tripId} style={{ cursor: "pointer" }} onClick={() => onOpen(row.summary.tripId)}>
-                <line x1={cx} y1={cy} x2={ex} y2={ey} stroke="#a9b7f3" strokeWidth="3" strokeDasharray={row.state === "done" ? undefined : "2 6"} />
-                <circle cx={x} cy={y} r="11" fill={color(row.state)} stroke="#fff" strokeWidth="3" />
-                <rect x={x + 16} y={y - 12} width="170" height="24" rx="4" fill="#fff" />
-                <text x={x + 24} y={y + 5} fontSize="12" fontWeight="600" fill={color(row.state)}>{`${row.summary.vehicleId} · ${t(row.state === "broken" ? "Broken down" : row.state === "late" ? "Will miss window" : row.state === "silent" ? "No update" : row.state === "done" ? "Completed" : "On track")}`}</text>
-              </g>
-            );
-          })}
-          <circle cx={cx} cy={cy} r="14" fill="#232d42" />
-          <text x={cx} y={cy + 4} fontSize="12" fontWeight="700" fill="#fff" textAnchor="middle">D</text>
-          <text x={cx + 20} y={cy + 4} fontSize="12" fontWeight="600" fill="#232d42">{t("Depot")}</text>
-        </svg>
-        <div className="dp-map-legend">
-          <p style={{ margin: 0 }}><span style={{ color: "#008b52" }}>●</span> {t("On track")}</p>
-          <p style={{ margin: 0 }}><span style={{ color: "#d9822b" }}>●</span> {t("At risk of missing a window")}</p>
-          <p style={{ margin: 0 }}><span style={{ color: "#c03221" }}>●</span> {t("Needs action now")}</p>
-          <p style={{ margin: 0 }}><span style={{ color: "#8a92a6" }}>●</span> {t("No recent update (last known place)")}</p>
+      <div className="dp-grid-2" style={{ gridTemplateColumns: "minmax(0, 2fr) minmax(280px, 1fr)" }}>
+        <div style={{ position: "relative" }}>
+          <WaypointMap label={t("Map of trips on the road")} markers={markers} lines={lines} fitKey={rows.map((r) => r.summary.tripId).join()} />
+          <div className="dp-map-legend" style={{ zIndex: 500 }}>
+            <p style={{ margin: 0 }}><span style={{ color: "#008b52" }}>●</span> {t("On track")}</p>
+            <p style={{ margin: 0 }}><span style={{ color: "#d9822b" }}>●</span> {t("At risk of missing a window")}</p>
+            <p style={{ margin: 0 }}><span style={{ color: "#c03221" }}>●</span> {t("Needs action now")}</p>
+            <p style={{ margin: 0 }}><span style={{ color: "#8a92a6" }}>●</span> {t("No recent update (last known place)")}</p>
+            <p style={{ margin: 0 }}><span style={{ color: "#3a57e8" }}>●</span> {t("Selected trip and its stops")}</p>
+          </div>
+          {chosen && (
+            <div className="dp-panel" style={{ position: "absolute", right: 16, bottom: 16, zIndex: 500, width: 300, padding: 16 }}>
+              <div className="dp-row dp-row--between"><strong>{chosen.summary.vehicleId}</strong><Tag tone={tone(chosen.state)}>{stateLabel(chosen.state)}</Tag></div>
+              <dl className="dp-kv-rows" style={{ marginTop: 8 }}>
+                <div><dt>{t("Stops")}</dt><dd>{chosen.summary.completedStops ?? 0} {t("of")} {chosen.summary.stopCount ?? chosen.detail?.stops.length ?? 0}</dd></div>
+                <div><dt>{t("Next stop")}</dt><dd>{chosen.next ? `${chosen.next.outletId} · ${clock(chosen.nextEta?.eta || chosen.next.plannedWindowOpen)}` : "—"}</dd></div>
+                <div><dt>{t("Last update")}</dt><dd>{chosen.lastUpdate ? clock(chosen.lastUpdate) : t("No driver update yet")}</dd></div>
+              </dl>
+              <button type="button" className="dp-btn dp-btn--block" style={{ marginTop: 8 }} onClick={() => onOpen(chosen.summary.tripId)}>{t("Open trip")}</button>
+            </div>
+          )}
+        </div>
+        <div className="dp-stack">
+          <h3 className="dp-h3">{t("Trips on the road")} ({rows.length})</h3>
+          <p className="muted" style={{ margin: 0, fontSize: "0.8125rem" }}>{t("Sorted by what needs you first. Select a trip to find it on the map.")}</p>
+          {rows.map((row) => (
+            <button key={row.summary.tripId} type="button" className="dp-subcard" style={{ textAlign: "left", background: selected === row.summary.tripId ? "#eef1ff" : "#fff", borderColor: selected === row.summary.tripId ? "#3a57e8" : undefined, cursor: "pointer" }} onClick={() => setSelected(row.summary.tripId)}>
+              <span className="dp-row dp-row--between"><strong>{row.summary.vehicleId}</strong><Tag tone={tone(row.state)}>{stateLabel(row.state)}</Tag></span>
+              <span className="dp-cell-sub">{row.next ? `${t("Next stop")} ${row.next.outletId} · ${clock(row.nextEta?.eta || row.next.plannedWindowOpen)}` : t("Route complete")}</span>
+            </button>
+          ))}
+          <p className="dp-note" style={{ margin: 0, fontSize: "0.8125rem" }}>{t("Outlet positions are approximate (district centre). A truck is shown at its last reported stop, not a GPS position.")}</p>
         </div>
       </div>
-      <p className="muted" style={{ margin: "8px 0 0", fontSize: "0.8125rem" }}>{t("Distance from the depot shows stop progress, not GPS position.")}</p>
     </div>
   );
 }
