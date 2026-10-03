@@ -37,13 +37,17 @@ Deliveries go through `DeliveryRepository` into the local database and `SyncQueu
 
 ## Run
 
-Platform projects are not checked in. Generate them once:
+The Android project is checked in (application ID `dev.claptac.waypoint_driver`). Release builds are signed with the debug key until a release keystore is configured, so they are for testing only. iOS is not included; generate it with `flutter create . --platforms=ios --org dev.claptac --project-name waypoint_driver`.
 
 ```bash
-flutter create . --platforms=android,ios --project-name waypoint_driver
 flutter pub get
-flutter run
+flutter run --dart-define=DEMO_AUTH=true            # demo: accepts any credentials
+flutter build apk --release --dart-define=DEMO_AUTH=true --dart-define=DEMO_UPDATES=true
+adb install -r build/app/outputs/flutter-apk/app-release.apk
 ```
+
+A normal build (without `DEMO_AUTH`) refuses to sign in, because staff accounts are not connected.
+On some Xiaomi phones, enable "Install via USB" in Developer options before `adb install` works.
 
 ## Test
 
