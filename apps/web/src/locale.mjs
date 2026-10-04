@@ -1010,3 +1010,15 @@ Object.assign(labels.ta, {
   "Save name": "பெயரைச் சேமி",
   "Saving…": "சேமிக்கிறது…",
 });
+Object.assign(labels.si, {
+  "Recovery is not complete": "ප්‍රතිසාධනය සම්පූර්ණ නැත",
+  "could not be marked as in the workshop, so it can still be planned. The replacement is not confirmed until this succeeds.": "වැඩමුළුවේ ඇති බව සටහන් කළ නොහැකි විය, එබැවින් එය තවමත් සැලසුම් කළ හැක. මෙය සාර්ථක වන තුරු ප්‍රතිස්ථාපනය තහවුරු කර නැත.",
+  "Trips already published:": "දැනටමත් ප්‍රකාශිත ගමන්:",
+  "Retry workshop update": "වැඩමුළු යාවත්කාලීනය නැවත උත්සාහ කරන්න",
+});
+Object.assign(labels.ta, {
+  "Recovery is not complete": "மீட்பு நிறைவடையவில்லை",
+  "could not be marked as in the workshop, so it can still be planned. The replacement is not confirmed until this succeeds.": "பட்டறையில் உள்ளதாகக் குறிக்க முடியவில்லை, எனவே இதைத் தொடர்ந்து திட்டமிட முடியும். இது வெற்றி பெறும் வரை மாற்று வாகனம் உறுதிசெய்யப்படாது.",
+  "Trips already published:": "ஏற்கனவே வெளியிடப்பட்ட பயணங்கள்:",
+  "Retry workshop update": "பட்டறைப் புதுப்பிப்பை மீண்டும் முயலவும்",
+});

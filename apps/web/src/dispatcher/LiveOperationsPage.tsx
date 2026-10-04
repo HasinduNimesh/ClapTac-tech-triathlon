@@ -11,6 +11,7 @@ import { ARRIVAL_ESTIMATE_VERSION, estimateArrival, previousReportedStop } from 
 import { calibratedArrivalRange } from "./arrivalRange.mjs";
 import { evaluatedLatenessCalibrations } from "./latenessCalibration.mjs";
 import { singleFlightMessagePost } from "./singleFlightMessagePost.mjs";
+import { runRecovery } from "./breakdownRecovery.mjs";
 import { useDepot } from "./DispatcherLayout";
 import { Incident, Outlet, outletMap } from "./types";
 import { LatLng, MapLine, MapMarker, WaypointMap, depotPosition } from "../components/WaypointMap";
@@ -374,10 +375,15 @@ function RecoveryDrawer({ incident, plan, rows, onClose, onDone }: { incident: I
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  // Trips whose revision is already published (kept so a retry does not resend them), their notice lines,
+  // and whether the last attempt stopped because the vehicle could not be put in the workshop.
+  const [doneTrips, setDoneTrips] = useState<number[]>([]);
+  const [drafts, setDrafts] = useState<string[]>([]);
+  const [workshopPending, setWorkshopPending] = useState(false);
 
   useEffect(() => {
     if (!incident) return;
-    setStep(1); setProposal(null); setChoice({}); setError("");
+    setStep(1); setProposal(null); setChoice({}); setError(""); setDoneTrips([]); setDrafts([]); setWorkshopPending(false);
     if (!plan) { setError(t("No plan is loaded for this date, so replacement options cannot be checked.")); return; }
     void apiJSON<BreakdownProposal>(`/planning/plans/${plan.plan.id}/breakdowns/proposals?vehicleId=${encodeURIComponent(incident.vehicleId)}`, token)
       .then((result) => {
@@ -393,14 +399,13 @@ function RecoveryDrawer({ incident, plan, rows, onClose, onDone }: { incident: I
     if (!plan || !incident || !proposal) return;
     setBusy(true); setError("");
     try {
-      const drafts: string[] = [];
-      for (const item of proposal.items) {
-        const replacement = choice[item.tripNumber];
-        if (!replacement) continue;
-        const result = await apiJSON<{ planVersion: number; noticeDrafts: { orderRef: string; outletId: string; estimatedArrival: string }[] }>(`/planning/plans/${plan.plan.id}/breakdowns/reassign`, token, { method: "POST", body: JSON.stringify({ sourceVehicleId: incident.vehicleId, replacementVehicleId: replacement, tripNumber: item.tripNumber }) });
-        drafts.push(...result.noticeDrafts.map((n) => `${n.outletId} ${clock(n.estimatedArrival)}`));
-      }
-      onDone(`${t("Replacement confirmed · a new plan version was published")}${drafts.length ? ` · ${drafts.join(", ")}` : ""}`);
+      const trips = proposal.items.map((item) => ({ tripNumber: item.tripNumber, replacement: choice[item.tripNumber] }));
+      const outcome = await runRecovery(trips, doneTrips, (trip) => apiJSON<{ status: string; vehicleInWorkshop: boolean; planVersion: number; noticeDrafts: { orderRef: string; outletId: string; estimatedArrival: string }[] }>(`/planning/plans/${plan.plan.id}/breakdowns/reassign`, token, { method: "POST", body: JSON.stringify({ sourceVehicleId: incident.vehicleId, replacementVehicleId: trip.replacement, tripNumber: trip.tripNumber }) }));
+      const allDrafts = [...drafts, ...outcome.results.flatMap((result) => result.noticeDrafts.map((n) => `${n.outletId} ${clock(n.estimatedArrival)}`))];
+      setDoneTrips(outcome.done); setDrafts(allDrafts);
+      setWorkshopPending(outcome.state === "workshop_pending");
+      if (outcome.state === "complete") onDone(`${t("Replacement confirmed · a new plan version was published")}${allDrafts.length ? ` · ${allDrafts.join(", ")}` : ""}`);
+      else if (outcome.state === "failed") setError(errorText(outcome.error));
     } catch (e) { setError(errorText(e)); }
     finally { setBusy(false); }
   }
@@ -423,9 +428,10 @@ function RecoveryDrawer({ incident, plan, rows, onClose, onDone }: { incident: I
         {step > 1 && <button type="button" className="dp-btn dp-btn--secondary" onClick={() => setStep(step - 1)}>{t("Back")}</button>}
         {step === 1 && <button type="button" className="dp-btn" disabled={!proposal} onClick={() => setStep(2)}>→ {t("Find rescue options")}</button>}
         {step === 2 && <button type="button" className="dp-btn" disabled={!anyChoice} onClick={() => setStep(3)}>→ {t("Use selected option")}</button>}
-        {step === 3 && <><span className="muted dp-spacer" style={{ fontSize: "0.8125rem" }}>ⓘ {t("Nothing is sent until you confirm.")}</span><button type="button" className="dp-btn" disabled={busy || !anyChoice} onClick={() => void confirmAll()}>✓ {t("Confirm replacement and publish version")}</button></>}
+        {step === 3 && <><span className="muted dp-spacer" style={{ fontSize: "0.8125rem" }}>ⓘ {t("Nothing is sent until you confirm.")}</span><button type="button" className="dp-btn" disabled={busy || !anyChoice} onClick={() => void confirmAll()}>{workshopPending ? `↻ ${t("Retry workshop update")}` : `✓ ${t("Confirm replacement and publish version")}`}</button></>}
       </>}>
       {error && <p className="dp-note dp-note--red" role="alert">{error}</p>}
+      {workshopPending && incident && <p className="dp-note dp-note--red" role="alert" data-testid="workshop-pending"><strong>{t("Recovery is not complete")}</strong> {incident.vehicleId} {t("could not be marked as in the workshop, so it can still be planned. The replacement is not confirmed until this succeeds.")}{doneTrips.length > 0 && <> {t("Trips already published:")} {doneTrips.join(", ")}.</>}</p>}
       {incident && step === 1 && <>
         <div className="dp-banner" style={{ alignItems: "flex-start" }}>
           <span className="dp-banner-icon" aria-hidden="true">!</span>
