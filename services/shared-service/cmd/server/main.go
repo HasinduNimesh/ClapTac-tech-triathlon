@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"github.com/HasinduNimesh/ClapTac-tech-triathlon/services/shared-service/internal/automations"
 	"log"
 	"os"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -30,8 +32,27 @@ func main() {
 	workerCtx, cancelWorker := context.WithCancel(context.Background())
 	defer cancelWorker()
 	go (notifyworker.Runner{Store: sharedStore, Tokens: tokens, IntegrationURL: getenv("INTEGRATION_SERVICE_URL", "http://integration-service:8080"), Logger: app.Logger}).Run(workerCtx)
+	automationTokens := &oauth.TokenSource{TokenURL: getenv("OIDC_TOKEN_URL", "http://thunderid:8090/oauth2/token"), ClientID: getenv("M2M_CLIENT_ID", "waypoint-shared-service"), ClientSecret: os.Getenv("M2M_CLIENT_SECRET"), Scope: "automations:read-internal", Resource: getenv("OIDC_AUDIENCE", "waypoint-api")}
+	automationService := automations.Service{Pool: pool, Profiles: sharedStore, Tokens: automationTokens, PlanningURL: getenv("PLANNING_SERVICE_URL", "http://planning-service:8080")}
+	go func() {
+		ticker := time.NewTicker(15 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-workerCtx.Done():
+				return
+			case <-ticker.C:
+				ctx, cancel := context.WithTimeout(workerCtx, 30*time.Second)
+				if err := automationService.RunDue(ctx); err != nil {
+					app.Logger.Error("automation_worker_failed", "error", err)
+				}
+				cancel()
+			}
+		}
+	}()
+	automationHandler := automations.Handler{Service: automationService, Authn: app.Authenticator}
 	h := handler.Handler{Authn: app.Authenticator, Store: sharedStore}
-	if err := app.Run(func(r chi.Router) { h.Routes(r) }); err != nil {
+	if err := app.Run(func(r chi.Router) { h.Routes(r); automationHandler.Routes(r) }); err != nil {
 		log.Fatal(err)
 	}
 }

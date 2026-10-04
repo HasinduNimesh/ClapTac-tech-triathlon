@@ -139,6 +139,14 @@ func (m *Memory) Forecast(now time.Time) (domain.Forecast, error) {
 	return domain.Forecast{GeneratedAt: now.UTC(), ForecastVersion: "confirmed_order_mean_v1", Method: "four-week mean; sparse history falls back to zero", HistoryWeeks: 4, DriftModelVersion: "weekly_order_shift_v1", BacktestModelVersion: "prior_four_week_order_count_ape_v1", InputDrift: []domain.ForecastInputDrift{}, Weekly: []domain.ForecastBucket{}, Capacity: []domain.ForecastCapacity{}, ServiceMinutesPerStop: 20, ServiceEstimateVersion: "fixed_20m_v1", ServiceEstimateSource: "deterministic 20-minute fallback", ServiceTimeBacktestVersion: serviceTimeBacktestVersion, ServiceTimeEvaluation: []domain.ServiceTimeEvaluation{}}, nil
 }
 
+func (m *Memory) GetImported(source, externalID string) (domain.Order, error) {
+    m.mu.Lock()
+    defer m.mu.Unlock()
+    id, ok := m.byRef["IMPORT:"+source+"\x00"+externalID]
+    if !ok { return domain.Order{}, fmt.Errorf("not found") }
+    return m.byID[id], nil
+}
+
 func (m *Memory) ImportOrders(source string, orders []domain.Order) ([]domain.ImportResult, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

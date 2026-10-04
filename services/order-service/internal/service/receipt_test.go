@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/HasinduNimesh/ClapTac-tech-triathlon/pkg/authorization"
+	"github.com/HasinduNimesh/ClapTac-tech-triathlon/services/order-service/internal/cutoff"
 	"github.com/HasinduNimesh/ClapTac-tech-triathlon/services/order-service/internal/domain"
 	"github.com/HasinduNimesh/ClapTac-tech-triathlon/services/order-service/internal/store"
 )
@@ -184,5 +185,74 @@ func TestIssueIdempotencyAndBounds(t *testing.T) {
 	}
 	if _, _, _, err = s.ReportReceiptIssue(p, "order-1", domain.ReceiptIssueRequest{IssueType: "OTHER", AffectedUnits: 21, IdempotencyKey: "damage-2"}); err == nil {
 		t.Fatal("issue units above order accepted")
+	}
+}
+
+func TestReceiptDeadlineTwoWorkingDaysAndStates(t *testing.T) {
+	loc, _ := time.LoadLocation("Asia/Colombo")
+	delivered := time.Date(2026, 10, 1, 11, 0, 0, 0, loc) // Thursday
+	cal := cutoff.Load(nil)
+	cases := []struct {
+		now   time.Time
+		state string
+	}{
+		{time.Date(2026, 10, 1, 15, 0, 0, 0, loc), "open"},
+		{time.Date(2026, 10, 2, 9, 0, 0, 0, loc), "due_tomorrow"}, // Friday, deadline Monday 5th
+		{time.Date(2026, 10, 3, 9, 0, 0, 0, loc), "due_tomorrow"},
+		{time.Date(2026, 10, 5, 9, 0, 0, 0, loc), "due_today"},
+		{time.Date(2026, 10, 6, 9, 0, 0, 0, loc), "overdue"},
+	}
+	for _, c := range cases {
+		d := ComputeReceiptDeadline(cal, delivered, c.now)
+		if d.ReportBy.Day() != 5 || d.ReportBy.Hour() != 23 || d.State != c.state {
+			t.Errorf("now=%v got %+v want state %s by Mon 5th 23:59", c.now, d, c.state)
+		}
+	}
+}
+
+func TestPendingReceiptCarriesReportByAndDriverCountMismatchNeedsIssue(t *testing.T) {
+	s, _, _, p := receiptService("PARTIAL")
+	loc, _ := time.LoadLocation("Asia/Colombo")
+	done := time.Date(2026, 10, 1, 11, 0, 0, 0, loc)
+	driver := 16
+	s.Delivery = deliveryReaderStub{value: domain.DeliveryTracking{RunID: "run-1", TripID: "trip-1", RunStatus: "completed", StopID: "stop-1", Outcome: "PARTIAL", CompletedAt: &done, DeliveredUnits: &driver}}
+	s.Now = func() time.Time { return time.Date(2026, 10, 2, 9, 0, 0, 0, loc) }
+	tasks, err := s.PendingReceipts(p)
+	if err != nil || len(tasks) != 1 {
+		t.Fatalf("pending: %v %v", tasks, err)
+	}
+	if tasks[0].ReportBy == nil || tasks[0].ReportBy.Day() != 5 || tasks[0].ReportState != "due_tomorrow" || tasks[0].Tracking.ReceiptDue == nil {
+		t.Fatalf("task deadline: %+v", tasks[0])
+	}
+	// Store counts 20 (== ordered) while the driver recorded 16: a case is required.
+	if _, _, _, err = s.ConfirmReceipt(p, "order-1", domain.ReceiptConfirmation{ReceivedUnits: 20}); err == nil {
+		t.Fatal("count differing from driver accepted without a discrepancy issue")
+	}
+	// Store confirms the driver's 16 of 20: shortage issue opens a case for the dispatcher.
+	r, issues, created, err := s.ConfirmReceipt(p, "order-1", domain.ReceiptConfirmation{ReceivedUnits: 16, Issue: &domain.ReceiptIssueRequest{IssueType: "MISSING", AffectedUnits: 4, IdempotencyKey: "k1"}})
+	if err != nil || !created || r.Status != "confirmed_with_issue" || len(issues) != 1 {
+		t.Fatalf("shortage confirm: %+v %v %v %v", r, issues, created, err)
+	}
+	views, err := s.Repo.ListReceiptIssues()
+	if err != nil || len(views) != 1 || views[0].Issue.AffectedUnits != 4 {
+		t.Fatalf("dispatcher case: %+v %v", views, err)
+	}
+	tasks, _ = s.PendingReceipts(p)
+	if len(tasks) != 0 {
+		t.Fatalf("confirmed receipt still pending: %v", tasks)
+	}
+}
+
+func TestReceiptAboveDriverCountButAtOrderedUnitsAcceptedWithIssue(t *testing.T) {
+	s, _, _, p := receiptService("PARTIAL")
+	driver := 16
+	s.Delivery = deliveryReaderStub{value: domain.DeliveryTracking{RunID: "run-1", TripID: "trip-1", RunStatus: "completed", StopID: "stop-1", Outcome: "PARTIAL", CompletedAt: timePtr(time.Now().Add(-time.Minute)), DeliveredUnits: &driver}}
+	// Store counts the full ordered 20 while the driver recorded 16: not below the order, but a discrepancy issue is required.
+	if _, _, _, err := s.ConfirmReceipt(p, "order-1", domain.ReceiptConfirmation{ReceivedUnits: 20}); err == nil {
+		t.Fatal("count above the driver's record accepted without an issue")
+	}
+	r, issues, created, err := s.ConfirmReceipt(p, "order-1", domain.ReceiptConfirmation{ReceivedUnits: 20, Issue: &domain.ReceiptIssueRequest{IssueType: "QUANTITY_MISMATCH", AffectedUnits: 4, Note: "Driver recorded 16", IdempotencyKey: "above-driver-1"}})
+	if err != nil || !created || r.ReceivedUnits != 20 || r.Status != "confirmed_with_issue" || len(issues) != 1 || issues[0].AffectedUnits != 4 {
+		t.Fatalf("confirm above driver count: %+v %v %v %v", r, issues, created, err)
 	}
 }

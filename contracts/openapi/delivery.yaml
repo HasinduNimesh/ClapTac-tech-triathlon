@@ -61,6 +61,65 @@ paths:
       responses:
         "200": { description: Prepared run }
         "409": { description: Trip is not ready }
+  /delivery/trips/{tripId}/checkout:
+    get:
+      operationId: getTruckCheckout
+      description: Current checkout report. Driver, dispatcher, or loader at the trip depot only.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TripID"
+      responses:
+        "200": { description: Checkout report, or null before checking }
+    post:
+      operationId: recordTruckCheckout
+      description: Driver confirms onboard orders against the current ready loading manifest; missing goods block departure.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TripID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [planVersion, confirmedOrderIds]
+              properties:
+                planVersion: { type: integer, minimum: 1 }
+                confirmedOrderIds:
+                  type: array
+                  items: { type: string }
+      responses:
+        "200": { description: Confirmed or blocked checkout report }
+        "409": { description: Plan or loading state changed }
+  /delivery/trips/{tripId}/stops/{stopId}/arrival-prediction:
+    post:
+      operationId: publishArrivalPrediction
+      description: Dispatcher publishes the current-plan ETA and arrival range for a pending stop; changes of at least 30 minutes enqueue one store notification.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TripID"
+        - name: stopId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [planVersion, estimatedArrivalAt, lateRisk]
+              properties:
+                planVersion: { type: integer, minimum: 1 }
+                sourceEventAt: { type: string, format: date-time }
+                estimatedArrivalAt: { type: string, format: date-time }
+                arrivalRangeLower: { type: string, format: date-time }
+                arrivalRangeUpper: { type: string, format: date-time }
+                lateRisk: { type: string }
+      responses:
+        "200": { description: Persisted prediction, range, risk, and most recently notified change }
+        "403": { description: Dispatcher permission required }
+        "409": { description: Trip, stop, or plan version changed }
   /delivery/trips/{tripId}/start:
     post:
       operationId: startDeliveryRun
@@ -117,7 +176,7 @@ paths:
   /delivery/trips/{tripId}/stops/{stopId}/outcome:
     post:
       operationId: recordStopOutcome
-      description: DELIVERED and PARTIAL require a finalized proof. FAILED and REFUSED require a reason. When supplied, deliveredUnits is checked against the stop's expectedUnits and outcome code. Legacy clients may omit it; the quantity and shortfall then remain unknown. Dual timestamps occurredAt vs received_at.
+      description: DELIVERED and PARTIAL require a finalized proof. FAILED and REFUSED require a reason; REFUSED also requires returnedGoods with a follow-up choice. When supplied, deliveredUnits is checked against the stop's expectedUnits and outcome code. Legacy clients may omit it; the quantity and shortfall then remain unknown. Dual timestamps occurredAt vs received_at.
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: "#/components/parameters/TripID"
@@ -138,6 +197,14 @@ paths:
                 occurredAt: { type: string, format: date-time }
                 operationId: { type: string }
                 dependsOnOperationId: { type: string }
+                returnedGoods:
+                  type: object
+                  description: Required when code is REFUSED.
+                  required: [goods, units, resolution]
+                  properties:
+                    goods: { type: string, minLength: 1, maxLength: 200 }
+                    units: { type: integer, minimum: 1 }
+                    resolution: { type: string, enum: [NEXT_RUN, REQUEST_DEFERRAL] }
       responses:
         "200": { description: Outcome recorded }
         "400": { description: Proof required or invalid transition }

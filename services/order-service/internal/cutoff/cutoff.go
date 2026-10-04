@@ -76,3 +76,33 @@ func dateOnly(t time.Time, loc *time.Location) time.Time {
 	t = t.In(loc)
 	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, loc)
 }
+
+// IsWorkingDay reports whether the day is an operating day. Days missing from
+// the configured calendar fall back to Monday-Friday.
+func (c *Calendar) IsWorkingDay(day time.Time) bool {
+	loc := c.locOrUTC()
+	d := dateOnly(day, loc)
+	if c != nil {
+		for _, cd := range c.days {
+			if dateOnly(cd.Date, loc).Equal(d) {
+				return cd.IsOperating
+			}
+		}
+	}
+	wd := d.Weekday()
+	return wd != time.Saturday && wd != time.Sunday
+}
+
+// AddWorkingDays returns the end of the day (23:59:59 Colombo) that is n
+// working days after the date of from. from itself is not counted.
+func (c *Calendar) AddWorkingDays(from time.Time, n int) time.Time {
+	loc := c.locOrUTC()
+	d := dateOnly(from, loc)
+	for added, guard := 0, 0; added < n && guard < 60; guard++ {
+		d = d.AddDate(0, 0, 1)
+		if c.IsWorkingDay(d) {
+			added++
+		}
+	}
+	return time.Date(d.Year(), d.Month(), d.Day(), 23, 59, 59, 0, loc)
+}

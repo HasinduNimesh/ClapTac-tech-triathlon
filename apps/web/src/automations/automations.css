@@ -1,0 +1,69 @@
+/* A3 habit helper and A4 personal workflows, styled with the Figma workspace
+   tokens (see dispatcher/dispatcher.css .dp-shell) so they match the store
+   manager and dispatcher screens. Selectors are unchanged from the original. */
+
+.automations-page { max-width: 1180px; margin: 0 auto; padding: 32px 28px 80px; color: #232d42; }
+.auto-page-heading { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 24px; }
+.auto-page-heading h1 { margin: 6px 0; font-size: 1.75rem; font-weight: 700; color: #232d42; }
+.auto-page-heading p { margin: 0; color: #6b7893; }
+.auto-eyebrow { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: #6b7893; }
+
+.auto-panel,
+.auto-preference { background: #fff; border: 0; border-radius: 8px; padding: 24px; margin-bottom: 24px; box-shadow: 0 2px 8px rgba(17, 38, 146, 0.08); }
+.auto-panel h2 { margin: 6px 0 16px; font-size: 1.25rem; font-weight: 700; color: #232d42; }
+.auto-preference { display: flex; align-items: center; justify-content: space-between; gap: 16px; background: #eef1ff; }
+.auto-preference p { margin: 6px 0 0; }
+.auto-preview { background: #fff; }
+
+.auto-builder { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
+.auto-builder label { display: block; margin: 16px 0 8px; font-size: 0.875rem; font-weight: 600; }
+.auto-builder input:not([type=checkbox]),
+.auto-builder select,
+.auto-builder textarea { display: block; box-sizing: border-box; width: 100%; margin-top: 6px; padding: 10px 12px; border: 1px solid #dee3ed; border-radius: 6px; background: #fff; color: #232d42; }
+.auto-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+.automations-page button,
+.habit-card button { min-height: 40px; padding: 8px 18px; border: 1px solid #3a57e8; border-radius: 6px; background: #fff; color: #3a57e8; font-size: 0.9375rem; font-weight: 600; cursor: pointer; }
+.automations-page button.primary,
+.auto-page-heading > button { background: #3a57e8; color: #fff; border-color: #3a57e8; }
+.automations-page button:disabled,
+.habit-card button:disabled { opacity: 0.5; cursor: default; }
+
+.auto-steps { padding: 0; list-style: none; }
+.auto-steps li { display: flex; flex-direction: column; gap: 6px; margin: 0 0 10px; padding: 4px 0 18px 18px; border-left: 3px solid #3a57e8; }
+.auto-steps span { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: #6b7893; }
+.auto-steps strong { font-size: 1.0625rem; line-height: 1.45; }
+.auto-steps small,
+.auto-panel small { color: #6b7893; }
+.auto-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 20px 0 12px; }
+
+.auto-test-result { margin: 18px 0; padding: 16px; border-radius: 8px; background: #eaf7f0; color: #0b4d32; }
+.auto-notice { padding: 16px; border-radius: 8px; background: #eef1ff; }
+.auto-error { padding: 16px; border-radius: 8px; background: #fceeeb; color: #8a2417; overflow-wrap: anywhere; }
+
+.auto-workflow,
+.auto-list-row { display: flex; align-items: center; gap: 12px; padding: 18px 0; border-top: 1px solid #dee3ed; }
+.auto-workflow > div { flex: 1; }
+.auto-workflow h3 { margin: 0 0 6px; font-size: 1rem; }
+.auto-workflow p { margin: 0 0 6px; }
+.auto-list-row { justify-content: space-between; }
+.auto-status { padding: 4px 10px; border-radius: 999px; background: #eaf7f0; color: #006b3f; font-size: 0.75rem; font-weight: 700; }
+.auto-status.paused { background: #fff4de; color: #7a4500; }
+.auto-inbox-item { padding: 14px 0; border-top: 1px solid #dee3ed; overflow-wrap: anywhere; }
+.auto-inbox-item h3 { margin: 0 0 8px; font-size: 1rem; }
+
+/* Habit suggestion card, bottom right. */
+.habit-card { position: fixed; right: 24px; bottom: 24px; z-index: 45; box-sizing: border-box; width: min(370px, calc(100vw - 48px)); padding: 20px 22px; border: 1px solid #dee3ed; border-radius: 12px; background: #fff; color: #232d42; box-shadow: 0 12px 40px rgba(17, 38, 146, 0.18); }
+.habit-card h3 { margin: 6px 0 10px; font-size: 1.125rem; font-weight: 700; }
+.habit-card p { line-height: 1.5; }
+.habit-card small { color: #6b7893; }
+.habit-card .auto-text { padding-left: 0; border-color: transparent; background: transparent; }
+
+@media (max-width: 800px) {
+  .auto-builder { grid-template-columns: 1fr; }
+  .auto-page-heading,
+  .auto-workflow { flex-wrap: wrap; }
+  .automations-page { padding: 20px 14px 180px; }
+  .auto-workflow > div { min-width: 100%; }
+  .habit-card { right: 12px; bottom: 12px; width: calc(100vw - 24px); max-height: 60vh; overflow: auto; }
+}

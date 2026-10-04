@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/csv"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -49,7 +50,13 @@ func (h Handler) Routes(r chi.Router) {
 		r.Post("/internal/notifications/enqueue", h.auditWrite(h.enqueueNotification))
 		r.Post("/internal/notifications/status", h.scopeWrite("notifications:write", h.updateNotificationStatus))
 		r.With(authorization.RequireWith(h.Authn, h.Store, authorization.PermAuditRead)).Get("/audit/events", h.searchAudit)
+		r.With(authorization.RequireWith(h.Authn, h.Store, authorization.PermAuditRead)).Get("/audit/export.csv", h.exportAudit)
 		r.With(authorization.RequireWith(h.Authn, h.Store, authorization.PermAuditRead)).Get("/audit/kpis", h.auditKPIs)
+		dashboards := authorization.RequireWith(h.Authn, h.Store, authorization.PermDashboardManageOwn)
+		r.With(dashboards).Get("/dashboards", h.listDashboards)
+		r.With(dashboards).Post("/dashboards", h.createDashboard)
+		r.With(dashboards).Put("/dashboards/{id}", h.updateDashboard)
+		r.With(dashboards).Delete("/dashboards/{id}", h.deleteDashboard)
 	})
 }
 
@@ -98,6 +105,13 @@ func (h Handler) enqueueNotification(w http.ResponseWriter, r *http.Request) {
 	e.OutletID = strings.TrimSpace(e.OutletID)
 	e.OrderRef = strings.TrimSpace(e.OrderRef)
 	e.Reason = strings.TrimSpace(e.Reason)
+	e.NextRun = strings.TrimSpace(e.NextRun)
+	if e.NextRun != "" {
+		if _, err := time.Parse("2006-01-02", e.NextRun); err != nil {
+			apierrors.BadRequest(w, "nextRun must be YYYY-MM-DD")
+			return
+		}
+	}
 	if e.EventKey == "" || len(e.EventKey) > 200 || e.OutletID == "" || e.OrderRef == "" || len(e.OrderRef) > 80 {
 		apierrors.BadRequest(w, "event key, outlet and order reference are required")
 		return
@@ -110,6 +124,23 @@ func (h Handler) enqueueNotification(w http.ResponseWriter, r *http.Request) {
 	} else if e.Type == "MAJOR_DELAY" {
 		if e.DelayMinutes < 30 || e.DelayMinutes > 1440 {
 			apierrors.BadRequest(w, "major delay must be between 30 minutes and 24 hours")
+			return
+		}
+    } else if e.Type == "DELIVERY_REJECTED" {
+        if len(strings.TrimSpace(e.Goods)) == 0 || utf8.RuneCountInString(e.Goods) > 200 || e.Units < 1 ||
+            e.Reason == "" || len(e.Reason) > 80 || (e.Resolution != "NEXT_RUN" && e.Resolution != "REQUEST_DEFERRAL") {
+            apierrors.BadRequest(w, "rejected goods, units, reason and resolution required")
+            return
+        }
+        if _, err := time.Parse(time.DateOnly, e.FollowupDate); err != nil {
+            apierrors.BadRequest(w, "valid follow-up date required")
+            return
+        }
+	} else if e.Type == "ARRIVAL_CHANGE" {
+		oldETA, oldErr := time.Parse(time.RFC3339Nano, e.OldArrivalAt)
+		newETA, newErr := time.Parse(time.RFC3339Nano, e.NewArrivalAt)
+		if oldErr != nil || newErr != nil || !arrivalChangeAtLeastThirty(oldETA, newETA) {
+			apierrors.BadRequest(w, "arrival change must be at least 30 minutes")
 			return
 		}
 	} else {
@@ -459,32 +490,86 @@ func (h Handler) searchAudit(w http.ResponseWriter, r *http.Request) {
 		}
 		offset = parsed
 	}
-	filter := store.AuditFilter{Query: q.Get("q"), Action: q.Get("action"), ResourceType: q.Get("resourceType"), ResourceID: q.Get("resourceId"), ActorID: q.Get("actorId"), Limit: limit, Offset: offset}
-	var err error
-	if raw := q.Get("from"); raw != "" {
-		filter.From, err = time.Parse(time.RFC3339, raw)
-		if err != nil {
-			apierrors.BadRequest(w, "from must be RFC3339")
-			return
-		}
-	}
-	if raw := q.Get("to"); raw != "" {
-		filter.To, err = time.Parse(time.RFC3339, raw)
-		if err != nil {
-			apierrors.BadRequest(w, "to must be RFC3339")
-			return
-		}
-	}
-	if !filter.From.IsZero() && !filter.To.IsZero() && filter.To.Before(filter.From) {
-		apierrors.BadRequest(w, "to must be after from")
+	filter, ok := parseAuditFilter(w, r)
+	if !ok {
 		return
 	}
+	filter.Limit, filter.Offset = limit, offset
 	items, total, err := h.Store.SearchAudit(r.Context(), filter)
 	if err != nil {
 		apierrors.Internal(w, "audit search failed")
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"items": items, "total": total, "limit": limit, "offset": offset})
+}
+
+// parseAuditFilter reads the filters shared by audit search and export.
+func parseAuditFilter(w http.ResponseWriter, r *http.Request) (store.AuditFilter, bool) {
+	q := r.URL.Query()
+	filter := store.AuditFilter{Query: q.Get("q"), Action: q.Get("action"), ResourceType: q.Get("resourceType"), ResourceID: q.Get("resourceId"), ActorID: q.Get("actorId")}
+	var err error
+	if raw := q.Get("from"); raw != "" {
+		filter.From, err = time.Parse(time.RFC3339, raw)
+		if err != nil {
+			apierrors.BadRequest(w, "from must be RFC3339")
+			return filter, false
+		}
+	}
+	if raw := q.Get("to"); raw != "" {
+		filter.To, err = time.Parse(time.RFC3339, raw)
+		if err != nil {
+			apierrors.BadRequest(w, "to must be RFC3339")
+			return filter, false
+		}
+	}
+	if !filter.From.IsZero() && !filter.To.IsZero() && filter.To.Before(filter.From) {
+		apierrors.BadRequest(w, "to must be after from")
+		return filter, false
+	}
+	return filter, true
+}
+
+// AuditExportRowCap bounds one CSV export.
+const AuditExportRowCap = 5000
+
+// csvSafe neutralises spreadsheet formula injection: cells starting with = + - @ tab or CR get a leading apostrophe.
+func csvSafe(v string) string {
+	if v != "" && strings.ContainsRune("=+-@	", rune(v[0])) {
+		return "'" + v
+	}
+	return v
+}
+
+func (h Handler) exportAudit(w http.ResponseWriter, r *http.Request) {
+	filter, ok := parseAuditFilter(w, r)
+	if !ok {
+		return
+	}
+	filter.Limit, filter.Offset = AuditExportRowCap, 0
+	items, total, err := h.Store.SearchAudit(r.Context(), filter)
+	if err != nil {
+		apierrors.Internal(w, "audit export failed")
+		return
+	}
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="audit-export-%s.csv"`, time.Now().UTC().Format("20060102T150405Z")))
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("X-Export-Total", strconv.Itoa(total))
+	w.Header().Set("X-Export-Truncated", strconv.FormatBool(total > len(items)))
+	cw := csv.NewWriter(w)
+	_ = cw.Write([]string{"event_id", "timestamp", "actor_id", "actor_type", "action", "resource_type", "resource_id", "reason", "source", "correlation_id", "previous_state", "new_state"})
+	for _, ev := range items {
+		prev, _ := json.Marshal(ev.PreviousState)
+		next, _ := json.Marshal(ev.NewState)
+		if ev.PreviousState == nil {
+			prev = nil
+		}
+		if ev.NewState == nil {
+			next = nil
+		}
+		_ = cw.Write([]string{csvSafe(ev.EventID), ev.Timestamp.UTC().Format(time.RFC3339), csvSafe(ev.ActorID), csvSafe(ev.ActorType), csvSafe(ev.Action), csvSafe(ev.ResourceType), csvSafe(ev.ResourceID), csvSafe(ev.Reason), csvSafe(ev.Source), csvSafe(ev.CorrelationID), csvSafe(string(prev)), csvSafe(string(next))})
+	}
+	cw.Flush()
 }
 
 func (h Handler) auditKPIs(w http.ResponseWriter, r *http.Request) {
@@ -675,4 +760,9 @@ func hasScope(scopes []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func arrivalChangeAtLeastThirty(oldETA, newETA time.Time) bool {
+	delta := newETA.Sub(oldETA)
+	return delta >= 30*time.Minute || delta <= -30*time.Minute
 }
