@@ -5,11 +5,8 @@ export const DEPOT_LABELS: Record<string, string> = {
 
 // The dataset names depots "Peliyagoda" and "Kandy"; user profiles and the
 // depot selector use DEPOT_NORTH and DEPOT_SOUTH. Compare through this.
-const DEPOT_ALIASES: Record<string, string> = { DEPOT_NORTH: "DEPOT_NORTH", PELIYAGODA: "DEPOT_NORTH", DEPOT_SOUTH: "DEPOT_SOUTH", KANDY: "DEPOT_SOUTH" };
-export function depotCode(depot?: string): string {
-  const key = (depot || "").trim().toUpperCase();
-  return DEPOT_ALIASES[key] || key;
-}
+export { depotCode } from "./depots.mjs";
+import { depotCode } from "./depots.mjs";
 export function sameDepot(a?: string, b?: string): boolean {
   return depotCode(a) === depotCode(b);
 }
