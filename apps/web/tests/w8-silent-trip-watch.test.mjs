@@ -194,7 +194,7 @@ test("W8 done-when: a silent trip is grey with its last update in both the list 
     "Map marker label must read 'No update since HH:MM'",
   );
   assert.match(liveOpsSrc, /label: `\$\{row\.summary\.vehicleId\} · \$\{silentText\(row\)\}`/, "Map marker uses that label");
-  assert.match(liveOpsSrc, /const truck = at\(last\) \|\| depot;/, "Marker sits at the last reported stop (last known place)");
+  assert.match(liveOpsSrc, /const truck = at\(last\) \|\| depotAt;/, "Marker sits at the last reported stop (last known place)");
 });
 
 // ---------------------------------------------------------------------------

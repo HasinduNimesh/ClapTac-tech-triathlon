@@ -48,8 +48,25 @@ paths:
       parameters:
         - { name: id, in: path, required: true, schema: { type: string } }
       responses:
-        "200": { description: Outlet }
+        "200": { description: "Outlet. latitude and longitude are the verified position when locationApproximate is false, otherwise the approximate district position (never navigate a driver to an approximate one)." }
         "404": { description: Missing }
+    put:
+      operationId: updateOutlet
+      security: [{ bearerAuth: [] }]
+      description: >
+        Updates outlet master data (requires master-data update; If-Match / version for optimistic
+        concurrency; audited). Optional `location` records the verified position:
+        `{"latitude": 6.93441, "longitude": 79.84281}` sets it, `null` clears it (back to the approximate
+        district position), absent leaves it unchanged. Latitude/longitude fields echoed at the top
+        level are ignored. Values outside Sri Lanka (latitude 5.5-10.0, longitude 79.3-82.2), a half pair
+        or extra keys are 400. The response is the outlet as a read returns it.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Updated outlet }
+        "400": { description: Invalid master data or location }
+        "404": { description: Missing }
+        "409": { description: The outlet changed since the version sent }
   /shared/travel:
     get:
       operationId: listTravel

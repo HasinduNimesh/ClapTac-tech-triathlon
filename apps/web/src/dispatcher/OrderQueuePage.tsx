@@ -5,6 +5,8 @@ import { todayInSriLanka } from "../api/date.mjs";
 import { DEPOT_LABELS, sameDepot } from "../api/loading";
 import { PlanDetail } from "../api/planning";
 import { useLocale } from "../i18n";
+import { formatCutoff } from "../store-manager/cutoff.mjs";
+import { useOrderCutoff } from "../store-manager/useOrderCutoff";
 import { useDepot } from "./DispatcherLayout";
 import { Outlet, isVanOnly, outletMap } from "./types";
 import { ChipGroup, DpHero, Drawer, Note, Panel, Stat, StatRow, Tag } from "./ui";
@@ -16,7 +18,8 @@ const PAGE = 10;
 const ORDER_POLL_MS = 4000;
 
 export function OrderQueuePage() {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
+  const cutoff = useOrderCutoff();
   const token = useToken();
   const { depot: shellDepot } = useDepot();
   const [params] = useSearchParams();
@@ -131,7 +134,7 @@ export function OrderQueuePage() {
             ]} />
           </div>
         </Panel>
-        <Note title={`${t("Next run")}: ${dayLabel(date)} · ${t("Order cutoff")}: 4:00 PM`}>{t("Only confirmed orders submitted by the cutoff enter this run. After-cutoff orders go to the following run.")}</Note>
+        <Note title={`${t("Next run")}: ${dayLabel(date)} · ${t("Order cutoff")}: ${formatCutoff(cutoff, locale) ?? "—"}`}>{t("Only confirmed orders submitted by the cutoff enter this run. After-cutoff orders go to the following run.")}</Note>
         {error && <p className="dp-note dp-note--red" role="alert">{error}</p>}
         {orders.error && <p className="dp-note dp-note--red" role="alert">{orders.error}</p>}
         <Panel title={t("Confirmed orders")} sub={t("Select an order to review its items, access and delivery requirements.")} flush actions={<Tag tone="primary">{t("Sort: delivery window")}</Tag>}>

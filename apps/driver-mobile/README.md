@@ -114,6 +114,16 @@ The route is kept on the phone (a JSON file per driver in the app's private stor
 
 A saved route does not make the trip startable offline: confirming the load still needs a connection to acknowledge the plan and start the run. It also cannot show changes dispatch made after it was saved (a changed plan, new messages) until the live route loads.
 
+## Directions to a stop
+
+*Open in maps* on the stop screen (`lib/maps/`) hands the stop to the phone's maps app. The server sends each stop's outlet position (`latitude`, `longitude`, `locationApproximate`), saved with the route so it is there offline:
+
+- **an exact position** (one a dispatcher recorded) opens turn-by-turn directions to it
+- **an approximate position** (only the district centre is known) is **never** used as the destination, because it is kilometres from the shop. The maps app opens a search for "outlet name, district, Sri Lanka" and the app says the exact location is not recorded, so the driver checks the name and area or asks dispatch
+- no maps app on the phone, or a build without a launcher, says so instead of doing nothing
+
+Dispatchers record positions in Master data (see [docs/outlet-locations.md](../../docs/outlet-locations.md)). The app does not read the phone's GPS, so it does not show the truck's position or tell dispatch where it is.
+
 ## Not built yet
 
 Sign-in, loading the route, starting the trip, recording deliveries with photo and signature proof, and sending them are real and have been run against the local backend. They have **not** been run against the real ThunderID or a production backend, so do not describe this build as production-ready.
