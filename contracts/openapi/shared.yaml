@@ -67,6 +67,43 @@ paths:
         "400": { description: Invalid master data or location }
         "404": { description: Missing }
         "409": { description: The outlet changed since the version sent }
+  /shared/outlets/{id}/notifications:
+    get:
+      operationId: listOutletNotifications
+      security: [{ bearerAuth: [] }]
+      description: >
+        The messages (SMS notices) the system queued for one outlet, newest first, at most 50. A store
+        manager (order:view-own) may read only their assigned outlet; order:view-all (dispatchers) may
+        read any outlet. Rows whose text was suppressed or purged are omitted, and the phone number is
+        never returned. status is the outbox state: PENDING/SENDING/QUEUED (waiting to be sent),
+        SENT, DELIVERED, FAILED/UNKNOWN (not sent). Without an SMS provider configured (local
+        environments) messages stay PENDING or become FAILED but the text is still returned.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Recent messages for the outlet
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    maxItems: 50
+                    items:
+                      type: object
+                      required: [id, eventType, body, status, createdAt]
+                      properties:
+                        id: { type: integer, format: int64 }
+                        eventType: { type: string, enum: [DEFERRAL, MAJOR_DELAY, ARRIVAL_CHANGE, DELIVERY_REJECTED, LOAD_SHORTFALL] }
+                        body: { type: string }
+                        status: { type: string, enum: [PENDING, SENDING, QUEUED, SENT, DELIVERED, FAILED, UNKNOWN, SUPPRESSED] }
+                        createdAt: { type: string, format: date-time }
+        "401": { description: Unauthenticated }
+        "403": { description: Not allowed to read this outlet }
+        "404": { description: Outlet not found }
   /shared/travel:
     get:
       operationId: listTravel

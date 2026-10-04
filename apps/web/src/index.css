@@ -1059,6 +1059,9 @@ td {
 
 .sm-notif-badge--receipt { background: #e7ebfc; color: #3a57e8; }
 .sm-notif-badge--deferred { background: #f9ebe9; color: #c03221; }
+.sm-message-text { font-weight: 500; overflow-wrap: anywhere; }
+.sm-messages-note { margin: 0; padding: 12px 24px 0; font-size: 0.875rem; }
+.sm-page-body .sm-panel .sm-load-error { margin: 16px 24px; }
 
 .sm-notif-action {
   display: inline-flex;

@@ -390,6 +390,42 @@ func (s Store) UpdateNotificationStatus(ctx context.Context, messageSID, provide
 	return fmt.Errorf("notification status transition conflict")
 }
 
+// OutletNotification is one message the system queued for an outlet, as the outlet itself may read
+// it back. It never carries the phone number.
+type OutletNotification struct {
+	ID        int64     `json:"id"`
+	EventType string    `json:"eventType"`
+	Body      string    `json:"body"`
+	Status    string    `json:"status"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+// OutletNotifications returns the newest messages queued for an outlet. Rows whose text has been
+// purged or was never kept (suppressed by the outlet's opt-out) have nothing to show and are left out.
+func (s Store) OutletNotifications(ctx context.Context, outletID string, limit int) ([]OutletNotification, error) {
+	var known bool
+	if err := s.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM shared.outlets WHERE id=$1)`, outletID).Scan(&known); err != nil {
+		return nil, err
+	}
+	if !known {
+		return nil, fmt.Errorf("outlet not found")
+	}
+	rows, err := s.Pool.Query(ctx, `SELECT id,event_type,body,status,created_at FROM shared.notification_outbox WHERE outlet_id=$1 AND body<>'' ORDER BY created_at DESC,id DESC LIMIT $2`, outletID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []OutletNotification{}
+	for rows.Next() {
+		var n OutletNotification
+		if err := rows.Scan(&n.ID, &n.EventType, &n.Body, &n.Status, &n.CreatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, n)
+	}
+	return items, rows.Err()
+}
+
 func (s Store) NotificationPreferences(ctx context.Context, outletID string) (NotificationPreferences, error) {
 	var p NotificationPreferences
 	err := s.Pool.QueryRow(ctx, `SELECT outlet_id,phone_e164,consent_enabled,deferrals_enabled,major_delays_enabled,locale,consented_at,version,updated_at FROM shared.outlet_notification_preferences WHERE outlet_id=$1`, outletID).
