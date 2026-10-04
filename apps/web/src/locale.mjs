@@ -1190,11 +1190,25 @@ Object.assign(labels.ta, {
 });
 Object.assign(labels.si, {
 
+  "Recovery is not complete": "ප්‍රතිසාධනය සම්පූර්ණ නැත",
+  "could not be marked as in the workshop, so it can still be planned. The replacement is not confirmed until this succeeds.": "වැඩමුළුවේ ඇති බව සටහන් කළ නොහැකි විය, එබැවින් එය තවමත් සැලසුම් කළ හැක. මෙය සාර්ථක වන තුරු ප්‍රතිස්ථාපනය තහවුරු කර නැත.",
+  "Trips already published:": "දැනටමත් ප්‍රකාශිත ගමන්:",
+  "Retry workshop update": "වැඩමුළු යාවත්කාලීනය නැවත උත්සාහ කරන්න",
+});
+Object.assign(labels.ta, {
+  "Recovery is not complete": "மீட்பு நிறைவடையவில்லை",
+  "could not be marked as in the workshop, so it can still be planned. The replacement is not confirmed until this succeeds.": "பட்டறையில் உள்ளதாகக் குறிக்க முடியவில்லை, எனவே இதைத் தொடர்ந்து திட்டமிட முடியும். இது வெற்றி பெறும் வரை மாற்று வாகனம் உறுதிசெய்யப்படாது.",
+  "Trips already published:": "ஏற்கனவே வெளியிடப்பட்ட பயணங்கள்:",
+  "Retry workshop update": "பட்டறைப் புதுப்பிப்பை மீண்டும் முயலவும்",
+});
+Object.assign(labels.si, {
   "Differs from driver record": "රියදුරු වාර්තාවට වෙනස්",
   "Count differs from the driver's record": "ගණන රියදුරුගේ වාර්තාවට වෙනස් වේ",
   "you counted": "ඔබ ගණන් කළේ",
   "Report the difference so the dispatcher can review it before you confirm.": "ඔබ තහවුරු කිරීමට පෙර සම්ප්‍රේෂකයාට සමාලෝචනය කළ හැකි වන පරිදි වෙනස වාර්තා කරන්න.",
   "Confirm receipt & report difference": "ලැබීම තහවුරු කර වෙනස වාර්තා කරන්න",
+  "The helper isn't available right now — you can fill this in by hand.": "සහායකය දැන් නොලැබේ — ඔබට මෙය අතින්ම පිරවිය හැකිය.",
+  "Pick the cards by hand": "කාඩ්පත් අතින් තෝරන්න",
 });
 Object.assign(labels.ta, {
   "Differs from driver record": "ஓட்டுநர் பதிவுடன் வேறுபடுகிறது",
@@ -1204,8 +1218,4 @@ Object.assign(labels.ta, {
   "Confirm receipt & report difference": "பெறுதலை உறுதிப்படுத்தி வேறுபாட்டைப் புகாரளிக்கவும்",
   "The helper isn't available right now — you can fill this in by hand.": "உதவியாளர் இப்போது கிடைக்கவில்லை — இதை நீங்களே கைமுறையாக நிரப்பலாம்.",
   "Pick the cards by hand": "அட்டைகளை கைமுறையாகத் தேர்ந்தெடுக்கவும்",
-
-  "The helper isn't available right now — you can fill this in by hand.": "සහායකය දැන් නොලැබේ — ඔබට මෙය අතින්ම පිරවිය හැකිය.",
-  "Pick the cards by hand": "කාඩ්පත් අතින් තෝරන්න",
-
 });

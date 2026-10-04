@@ -37,7 +37,7 @@ func main() {
 			TokenURL:     getenv("OIDC_TOKEN_URL", "http://thunderid:8090/oauth2/token"),
 			ClientID:     os.Getenv("M2M_CLIENT_ID"),
 			ClientSecret: os.Getenv("M2M_CLIENT_SECRET"),
-			Scope:        "orders:read-internal fleet:read-internal outlets:read-internal deliveries:read-internal audit:write policy:read-internal",
+			Scope:        "orders:read-internal fleet:read-internal fleet:update outlets:read-internal deliveries:read-internal audit:write policy:read-internal",
 			Resource:     getenv("OIDC_AUDIENCE", "waypoint-api"),
 		},
 	}

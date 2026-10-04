@@ -29,6 +29,11 @@ var validReasons = map[string]bool{
 	domain.ReasonVehicleUnavailable: true, domain.ReasonManualDeferral: true,
 }
 
+// ErrCodeWorkshopPending prefixes the error ConfirmBreakdown returns when the
+// broken vehicle could not be moved to the workshop. The handler turns it into
+// a 502 with the same stable code; it is never reported as a confirmed recovery.
+const ErrCodeWorkshopPending = "workshop_pending"
+
 type planVersionStore interface {
 	Publish(context.Context, string, string, string) (domain.Publication, error)
 	Publication(context.Context, string) (domain.Publication, error)
@@ -549,6 +554,7 @@ func (s Service) BreakdownProposals(ctx context.Context, planID, vehicleID strin
 		}
 	}
 	var proposals []map[string]any
+	critical := false
 	for _, tn := range tripNos {
 		moving := groups[tn]
 		for i := 0; i < len(moving); i++ {
@@ -599,14 +605,23 @@ func (s Service) BreakdownProposals(ctx context.Context, planID, vehicleID strin
 			}
 			options = append(options, map[string]any{"vehicleId": candidate.ID, "valid": len(failures) == 0, "failures": failures, "projectedStops": len(state.Stops)})
 		}
-		ordersOut := make([]map[string]any, 0, len(moving))
-		for _, a := range moving {
-			o := orders[a.OrderID]
-			ordersOut = append(ordersOut, map[string]any{"allocationId": a.ID, "orderId": a.OrderID, "orderRef": o.OrderRef, "outletId": o.OutletID, "stopSequence": a.Sequence})
+		ranked := rankStrandedStops(moving, orders, world.Outlets)
+		ordersOut := make([]map[string]any, 0, len(ranked))
+		tripChilled := false
+		for i, r := range ranked {
+			tripChilled = tripChilled || r.Chilled
+			ordersOut = append(ordersOut, map[string]any{"allocationId": r.Alloc.ID, "orderId": r.Alloc.OrderID, "orderRef": r.Order.OrderRef, "outletId": r.Order.OutletID, "stopSequence": r.Alloc.Sequence, "urgencyRank": i + 1, "chilled": r.Chilled, "windowClose": r.WindowClose})
 		}
-		proposals = append(proposals, map[string]any{"tripNumber": tn, "stops": ordersOut, "options": options})
+		if tripChilled {
+			critical = true
+		}
+		proposals = append(proposals, map[string]any{"tripNumber": tn, "stops": ordersOut, "options": options, "chilledOnBoard": tripChilled})
 	}
-	return map[string]any{"planId": pl.ID, "vehicleId": vehicleID, "items": proposals, "confirmed": false}, nil
+	severity := "high"
+	if critical {
+		severity = "critical"
+	}
+	return map[string]any{"planId": pl.ID, "vehicleId": vehicleID, "items": proposals, "confirmed": false, "critical": critical, "severity": severity}, nil
 }
 
 func (s Service) ConfirmBreakdown(ctx context.Context, profile *authorization.Profile, planID, sourceVehicle, targetVehicle string, tripNo int) (map[string]any, error) {
@@ -646,13 +661,9 @@ func (s Service) ConfirmBreakdown(ctx context.Context, profile *authorization.Pr
 	if !feasible {
 		return nil, fmt.Errorf("conflict: replacement vehicle failed one or more hard constraints")
 	}
-	// Keep the published plan intact until a replacement has passed the same
-	// feasibility checks shown to the dispatcher.
-	if pl.Status == domain.StatusConfirmed {
-		if err := versionStore.Revise(ctx, pl.ID); err != nil {
-			return nil, err
-		}
-	}
+	// The published plan stays untouched until the replacement has passed the
+	// same feasibility checks shown to the dispatcher and every in-memory step
+	// below has succeeded.
 	world, err := s.loadWorld(ctx, pl)
 	if err != nil {
 		return nil, err
@@ -710,6 +721,24 @@ func (s Service) ConfirmBreakdown(ctx context.Context, profile *authorization.Pr
 	if len(moved) == 0 {
 		return nil, fmt.Errorf("not found: affected trip")
 	}
+	// The broken vehicle must be out of the planning pool before the revision is
+	// committed, and the recovery is not complete without it. The fleet update
+	// is an upsert, so repeating it on a retry is harmless. If fleet-service is
+	// unreachable nothing has been committed yet, so the dispatcher can retry
+	// the same request without a half-applied plan version or duplicate audit.
+	if err := s.Peers.SetVehicleWorkshop(ctx, sourceVehicle, pl.DeliveryDate, "breakdown recovery for plan "+pl.PlanRef); err != nil {
+		if s.Peers.Logger != nil {
+			s.Peers.Logger.Error("breakdown_workshop_failed", "vehicle_id", sourceVehicle, "error", err)
+		}
+		return nil, fmt.Errorf("%s: vehicle %s could not be marked in the workshop, so the recovery is not complete and the plan was not changed; retry the same request", ErrCodeWorkshopPending, sourceVehicle)
+	}
+	// Keep the published plan intact until the replacement is feasible and the
+	// vehicle is in the workshop.
+	if pl.Status == domain.StatusConfirmed {
+		if err := versionStore.Revise(ctx, pl.ID); err != nil {
+			return nil, err
+		}
+	}
 	if err := versionStore.MoveTripAllocations(ctx, pl.ID, sourceVehicle, targetVehicle, tripNo, moved); err != nil {
 		return nil, err
 	}
@@ -717,6 +746,7 @@ func (s Service) ConfirmBreakdown(ctx context.Context, profile *authorization.Pr
 		return map[string]any{"status": "reassignment_saved_plan_not_published", "noticeDrafts": notices}, err
 	}
 	updated, _ := s.Repo.Get(ctx, pl.ID)
+	s.Peers.Publish(ctx, audit.ActionBreakdownRecoveryConfirmed, actorID(profile), "PLAN", pl.PlanRef, map[string]any{"decidedBy": actorID(profile), "sourceVehicleId": sourceVehicle, "replacementVehicleId": targetVehicle, "tripNumber": tripNo, "version": updated.CurrentVersion, "movedStops": len(moved), "vehicleInWorkshop": true})
 	s.Peers.Publish(ctx, audit.ActionPlanConfirmed, actorID(profile), "PLAN", pl.PlanRef, map[string]any{"reason": "vehicle_breakdown", "sourceVehicleId": sourceVehicle, "replacementVehicleId": targetVehicle, "tripNumber": tripNo, "version": updated.CurrentVersion})
 	oldByOrder := make(map[string]domain.Allocation, len(allocs))
 	for _, a := range allocs {
@@ -736,7 +766,7 @@ func (s Service) ConfirmBreakdown(ctx context.Context, profile *authorization.Pr
 			s.Peers.Logger.Error("notification_enqueue_failed", "event", "major_delay", "order_id", a.OrderID, "error", err)
 		}
 	}
-	return map[string]any{"status": "confirmed", "planVersion": updated.CurrentVersion, "sourceVehicleId": sourceVehicle, "replacementVehicleId": targetVehicle, "tripNumber": tripNo, "movedStops": len(moved), "noticeDrafts": notices}, nil
+	return map[string]any{"status": "confirmed", "planVersion": updated.CurrentVersion, "sourceVehicleId": sourceVehicle, "replacementVehicleId": targetVehicle, "tripNumber": tripNo, "movedStops": len(moved), "noticeDrafts": notices, "vehicleInWorkshop": true, "decidedBy": actorID(profile)}, nil
 }
 
 func majorDelayMinutes(previous, next *time.Time) int {
