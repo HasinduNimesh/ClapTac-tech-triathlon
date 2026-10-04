@@ -38,6 +38,7 @@ const read = (rel) => readFileSync(join(srcRoot, rel), "utf8");
 const liveOpsSrc   = read("dispatcher/LiveOperationsPage.tsx");
 const tripWatchSrc = read("dispatcher/tripWatch.mjs");
 const indexCssSrc  = read("index.css");
+const dispatcherCssSrc = read("dispatcher/dispatcher.css");
 
 const minutesAgo = (now, minutes) => new Date(now - minutes * 60 * 1000).toISOString();
 
@@ -89,19 +90,20 @@ test("W8-1: Live operations page greys out silent trips with last update and loc
   assert.match(liveOpsSrc, /import \{[^}]*enrichTripWithWatch[^}]*\} from "\.\/tripWatch\.mjs"/, "Page must use the tripWatch logic");
   assert.match(
     liveOpsSrc,
-    /row\.state === "silent" \? " trip-greyed-out silent-trip" : ""/,
-    "List row must apply 'trip-greyed-out silent-trip' when the trip is silent",
+    /row\.state === "silent" \? " is-silent" : ""/,
+    "List row must apply 'is-silent' when the trip is silent",
   );
   assert.match(
     liveOpsSrc,
-    /<span className="badge-grey">\{t\("No update since"\)\} \{row\.watch\.silentTime\}<\/span>/,
+    /<Tag tone="silent" block>\{t\("No update since"\)\} \{row\.watch\.silentTime\}<\/Tag>/,
     "List must render a grey 'No update since HH:MM' badge",
   );
   assert.match(liveOpsSrc, /\{t\("Last known"\)\}: \{row\.watch\.lastKnownPlace\}/, "List must render 'Last known: place'");
   assert.match(liveOpsSrc, /lastKnownPlace: lastReported/, "Last known place comes from the last reported stop");
-  assert.match(indexCssSrc, /\.trip-greyed-out/);
-  assert.match(indexCssSrc, /\.silent-trip/);
-  assert.match(indexCssSrc, /\.badge-grey/);
+  // The grey row and badge use the dispatcher workspace tokens and Tag component.
+  assert.match(dispatcherCssSrc, /\.dp-table tr\.is-silent td/);
+  assert.match(dispatcherCssSrc, /\.dp-tag--silent/);
+  assert.match(dispatcherCssSrc, /--dp-silent:/);
 });
 
 // ---------------------------------------------------------------------------
@@ -137,14 +139,13 @@ test("W8-2: Live operations page derives chilled time from the real trip start a
   assert.match(liveOpsSrc, /chilledStartedAt: row\.detail\?\.run\?\.startedAt/, "Chilled time on board starts when the run started");
   assert.match(liveOpsSrc, /isChilled\(s\.temperatureRequirement\)\)/, "Only chilled stops still to deliver count");
   assert.match(liveOpsSrc, /row\.watch\?\.isChilledLong &&/, "Amber indicator must be conditional on running long");
-  assert.match(liveOpsSrc, /className="status-amber chilled-amber"/);
+  assert.match(liveOpsSrc, /<Tag tone="amber" block>\{t\("Chilled time on board"\)\}/, "Amber marker is the dispatcher amber Tag");
   assert.match(
     liveOpsSrc,
     /\{t\("Chilled time on board"\)\}: \{row\.watch\.chilledMinutes\}m \(\{t\("exceeds allowed limit"\)\}\)/,
     "Must show 'Chilled time on board: {minutes}m (exceeds allowed limit)'",
   );
-  assert.match(indexCssSrc, /\.status-amber/);
-  assert.match(indexCssSrc, /\.chilled-amber/);
+  assert.match(dispatcherCssSrc, /\.dp-tag--amber/);
 });
 
 // ---------------------------------------------------------------------------
@@ -186,7 +187,7 @@ test("W8-3: Live operations Needs action list offers Acknowledge and Open for wa
 // ---------------------------------------------------------------------------
 
 test("W8 done-when: a silent trip is grey with its last update in both the list and the map", () => {
-  assert.match(liveOpsSrc, /trip-greyed-out silent-trip/, "List row is greyed");
+  assert.match(liveOpsSrc, /" is-silent"/, "List row is greyed");
   assert.match(liveOpsSrc, /s === "silent" \|\| s === "waiting" \? "#8a92a6"/, "Map marker colour is grey for silent trips");
   assert.match(
     liveOpsSrc,
@@ -195,6 +196,13 @@ test("W8 done-when: a silent trip is grey with its last update in both the list 
   );
   assert.match(liveOpsSrc, /label: `\$\{row\.summary\.vehicleId\} · \$\{silentText\(row\)\}`/, "Map marker uses that label");
   assert.match(liveOpsSrc, /const truck = at\(last\) \|\| depotAt;/, "Marker sits at the last reported stop (last known place)");
+});
+
+test("W8 styling: the pre-Figma W8 classes are gone and the page no longer uses them", () => {
+  for (const old of ["trip-greyed-out", "silent-trip ", "badge-grey", "status-amber", "chilled-amber", "needs-action-", "delivery-map-", "marker-silent", "marker-normal"]) {
+    assert.ok(!indexCssSrc.includes(old), `index.css must not keep the unused ${old} styles`);
+    assert.ok(!liveOpsSrc.includes(old), `LiveOperationsPage must not use ${old}`);
+  }
 });
 
 // ---------------------------------------------------------------------------
