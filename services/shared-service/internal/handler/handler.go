@@ -40,6 +40,7 @@ func (h Handler) Routes(r chi.Router) {
 		r.With(authorization.RequireWith(h.Authn, h.Store, authorization.PermOrderViewOwn)).Post("/outlets/{id}/access-instructions/confirm", h.confirmOutletAccessInstructions)
 		r.With(authorization.RequireWith(h.Authn, h.Store, authorization.PermMasterDataUpdate)).Get("/outlets/{id}/notification-preferences", h.notificationPreferences)
 		r.With(authorization.RequireWith(h.Authn, h.Store, authorization.PermMasterDataUpdate)).Put("/outlets/{id}/notification-preferences", h.updateNotificationPreferences)
+		r.With(authorization.RequireAnyWith(h.Authn, h.Store, authorization.PermOrderViewOwn, authorization.PermOrderViewAll)).Get("/outlets/{id}/notifications", h.outletNotifications)
 		r.With(authorization.RequireAnyWith(h.Authn, h.Store, authorization.PermMasterDataUpdate, authorization.PermOutletsReadInternal)).Get("/calendar", h.calendar)
 		r.With(authorization.RequireWith(h.Authn, h.Store, authorization.PermMasterDataUpdate)).Put("/calendar/{date}", h.updateCalendar)
 		r.With(authorization.RequireAnyWith(h.Authn, h.Store, authorization.PermMasterDataUpdate, authorization.PermPolicyReadInternal)).Get("/policies/current", h.currentPolicy)
@@ -178,6 +179,27 @@ func (h Handler) notificationPreferences(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"preferences": p})
+}
+
+// outletNotifications lists the messages queued for one outlet, newest first. A store manager may
+// read only their own outlet; anyone with order:view-all (dispatchers) may read any.
+func (h Handler) outletNotifications(w http.ResponseWriter, r *http.Request) {
+	outletID := chi.URLParam(r, "id")
+	profile, _ := authorization.ProfileFrom(r.Context())
+	if err := (authorization.OutletScoped{}).Authorize(r.Context(), nil, profile, authorization.ResourceRef{OutletID: outletID}); err != nil {
+		apierrors.Forbidden(w, "store manager may only read their authorized outlet")
+		return
+	}
+	items, err := h.Store.OutletNotifications(r.Context(), outletID, 50)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			apierrors.NotFound(w, "outlet not found")
+		} else {
+			apierrors.Internal(w, "outlet notifications could not be loaded")
+		}
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
 func (h Handler) updateNotificationPreferences(w http.ResponseWriter, r *http.Request) {

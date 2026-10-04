@@ -1339,3 +1339,31 @@ Object.assign(labels.ta, {
   "The helper isn't available right now — you can fill this in by hand.": "உதவியாளர் இப்போது கிடைக்கவில்லை — இதை நீங்களே கைமுறையாக நிரப்பலாம்.",
   "Pick the cards by hand": "அட்டைகளை கைமுறையாகத் தேர்ந்தெடுக்கவும்",
 });
+
+// W4: the store manager's Notifications page lists the messages queued for the outlet.
+Object.assign(labels.si, {
+  "Messages sent to your store": "ඔබේ වෙළඳසැලට යවන ලද පණිවුඩ",
+  "Text messages the system queued for your store appear here, newest first.": "පද්ධතිය ඔබේ වෙළඳසැල සඳහා පෝලිමට දැමූ කෙටි පණිවුඩ මෙහි අලුත්ම ඒවා මුලින් පෙන්වයි.",
+  "Loading messages…": "පණිවුඩ පූරණය වෙමින්…",
+  "Messages could not be loaded. The rest of this page is not affected.": "පණිවුඩ පූරණය කළ නොහැකි විය. මෙම පිටුවේ අනෙක් කොටස් බලපාන්නේ නැත.",
+  "No messages have been sent to your store yet.": "ඔබේ වෙළඳසැලට තවමත් පණිවුඩ යවා නැත.",
+  "SHORT LOAD": "බර අඩුවීම",
+  "DELAY": "ප්‍රමාදය",
+  "DELIVERY REFUSED": "බෙදාහැරීම ප්‍රතික්ෂේප කළා",
+  "NOTICE": "දැනුම්දීම",
+  "Queued": "පෝලිමේ ඇත",
+  "Not sent": "යවා නැත",
+});
+Object.assign(labels.ta, {
+  "Messages sent to your store": "உங்கள் கடைக்கு அனுப்பப்பட்ட செய்திகள்",
+  "Text messages the system queued for your store appear here, newest first.": "உங்கள் கடைக்காக அமைப்பு வரிசைப்படுத்திய குறுஞ்செய்திகள் இங்கே, புதியவை முதலில், காட்டப்படும்.",
+  "Loading messages…": "செய்திகள் ஏற்றப்படுகின்றன…",
+  "Messages could not be loaded. The rest of this page is not affected.": "செய்திகளை ஏற்ற முடியவில்லை. இந்தப் பக்கத்தின் மற்ற பகுதிகள் பாதிக்கப்படவில்லை.",
+  "No messages have been sent to your store yet.": "உங்கள் கடைக்கு இன்னும் செய்திகள் அனுப்பப்படவில்லை.",
+  "SHORT LOAD": "ஏற்றுதல் குறைவு",
+  "DELAY": "தாமதம்",
+  "DELIVERY REFUSED": "விநியோகம் மறுக்கப்பட்டது",
+  "NOTICE": "அறிவிப்பு",
+  "Queued": "வரிசையில் உள்ளது",
+  "Not sent": "அனுப்பப்படவில்லை",
+});

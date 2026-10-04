@@ -7,6 +7,7 @@ import { PlanDetail } from "../api/planning";
 import { useLocale } from "../i18n";
 import { AuditEvent, Availability, Incident, ReceiptIssue } from "./types";
 import { DpHero, Drawer, Note, Panel, Tag, Toast } from "./ui";
+import { failedSourceCount } from "./sourceFailures.mjs";
 import { dateTime, errorText, useApi, useToken } from "./useApi";
 
 type Alert = { key: string; tone: "red" | "amber" | "cool" | "primary"; tag: string; title: string; text: string; action: string; onOpen?: () => void; to?: string };
@@ -20,6 +21,7 @@ export function DispatcherNotificationsPage() {
   const [exceptionTrip, setExceptionTrip] = useState<LoadingTripSummary | null>(null);
   const [conflictsOpen, setConflictsOpen] = useState(false);
   const [toast, setToast] = useState("");
+  // 404 here only means no plan has been built for the day yet, which is an empty state, not an error.
   const plan = useApi<PlanDetail>(`/planning/plans?date=${date}`);
   const incidents = useApi<{ items: Incident[] }>("/fleet/incidents?openOnly=true");
   const availability = useApi<{ items: Availability[] }>(`/fleet/availability?date=${date}`);
@@ -104,7 +106,7 @@ export function DispatcherNotificationsPage() {
             <Link to="/dispatcher/forecast" className="dp-link">{t("Open demand forecast")} →</Link>
           </Panel>
         </div>}
-        {[plan.error, loading.error, incidents.error].filter(Boolean).length > 0 && <p className="dp-note dp-note--amber" role="status">{t("Some notification sources could not be loaded. The list may be incomplete.")}</p>}
+        {failedSourceCount([{ ...plan, missingIsEmpty: true }, loading, incidents]) > 0 && <p className="dp-note dp-note--amber" role="status">{t("Some notification sources could not be loaded. The list may be incomplete.")}</p>}
       </div>
       <LoadExceptionDrawer trip={exceptionTrip} plan={plan.data} token={token} onClose={() => setExceptionTrip(null)} onDone={(m) => { setExceptionTrip(null); setToast(m); void plan.reload(); void loading.reload(); }} />
       <Drawer open={conflictsOpen} onClose={() => setConflictsOpen(false)} title={plan.data ? `${t("After plan")} v${plan.data.publication?.version || plan.data.plan.currentVersion || 1} · ${plan.data.plan.planRef}` : t("After plan change")} sub={t("Who has the new plan, what came back from the road, and what the store confirmed.")}
