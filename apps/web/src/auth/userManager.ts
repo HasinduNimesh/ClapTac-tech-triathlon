@@ -9,6 +9,8 @@ export function createUserManager(): UserManager {
     redirect_uri: config.redirectUri,
     response_type: "code",
     scope: "openid profile",
+    resource: config.resource,
+    extraTokenParams: { resource: config.resource },
     automaticSilentRenew: false,
     loadUserInfo: false,
     userStore: new WebStorageStateStore({ store: window.sessionStorage }),
