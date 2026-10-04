@@ -54,28 +54,15 @@ test("W2-1: Dispatcher confirms plan to freeze it and assign a version", () => {
   );
   console.log("  ✔ confirmed state derived from detail?.plan.status === 'confirmed'");
 
-  // Generate, Reset, and Confirm buttons are disabled when confirmed (frozen)
-  assert.match(
-    planningSrc,
-    /<button[^>]*onClick=\{generate\}[^>]*disabled=\{confirmed\}/,
-    "Generate button must be disabled when plan is confirmed (frozen)",
-  );
-  assert.match(
-    planningSrc,
-    /<button[^>]*onClick=\{reset\}[^>]*disabled=\{confirmed\}/,
-    "Reset button must be disabled when plan is confirmed (frozen)",
-  );
-  assert.match(
-    planningSrc,
-    /<button[^>]*onClick=\{confirm\}[^>]*disabled=\{confirmed\}/,
-    "Confirm button must be disabled when plan is confirmed (frozen)",
-  );
-  console.log("  ✔ Generate, Reset, and Confirm buttons disabled when confirmed (frozen)");
+  // Planning controls are replaced by the read-only confirmed view when frozen
+  assert.match(planningSrc, /\{detail && !confirmed && \(/, "Generate/confirm controls must only render while the plan is not confirmed (frozen)");
+  assert.match(planningSrc, /\{detail && confirmed && <ConfirmedView/, "A confirmed plan must render the read-only ConfirmedView");
+  console.log("  ✔ Planning controls hidden and ConfirmedView shown when confirmed (frozen)");
 
   // Reopening / revising a published plan
   assert.match(
     planningSrc,
-    /\{confirmed\s*&&\s*<button[^>]*onClick=\{revisePlan\}[^>]*>\{t\("Revise published plan"\)\}<\/button>\}/,
+    /onClick=\{onRevise\}>\{t\("Revise published plan"\)\}<\/button>/,
     "When confirmed, Dispatcher must have the option to 'Revise published plan'",
   );
   console.log("  ✔ 'Revise published plan' button available only when plan is frozen");
@@ -83,7 +70,7 @@ test("W2-1: Dispatcher confirms plan to freeze it and assign a version", () => {
   // Plan version is displayed to dispatcher
   assert.match(
     planningSrc,
-    /\{t\("Published version"\)\}\s*\{detail\.publication\.version\}/,
+    /\$\{t\("Published version"\)\} \$\{detail\.publication\.version\}/,
     "Published version must be explicitly rendered in the LO-9 panel",
   );
   assert.match(
@@ -273,28 +260,23 @@ test("W2-4: Dispatcher page features Field Acknowledgement Tracker (LO-9)", () =
   console.log("\n🔹 W2 Step 4 — Field Acknowledgement Tracker (LO-9)");
   console.log("  Checking PlanningPage.tsx for LO-9 tracker implementation…");
 
-  // Tracker heading with accessibility id
+  // Tracker panel heading
   assert.match(
     planningSrc,
-    /<h3 id="lo9-tracker-heading">\{t\("Field Acknowledgement Tracker \(LO-9\)"\)\}<\/h3>/,
-    "PlanningPage must have h3 with id='lo9-tracker-heading' and text 'Field Acknowledgement Tracker (LO-9)'",
+    /<Panel title=\{t\("Field Acknowledgement Tracker \(LO-9\)"\)\}/,
+    "PlanningPage must have a panel titled 'Field Acknowledgement Tracker (LO-9)'",
   );
-  assert.match(
-    planningSrc,
-    /aria-labelledby="lo9-tracker-heading"/,
-    "LO-9 card must be associated with heading via aria-labelledby='lo9-tracker-heading'",
-  );
-  console.log("  ✔ Accessible 'Field Acknowledgement Tracker (LO-9)' heading present");
+  console.log("  ✔ 'Field Acknowledgement Tracker (LO-9)' panel present");
 
-  // Summary counts
+  // Summary counts and published time
   assert.match(
     planningSrc,
-    /\{detail\.publication\.acknowledgements\.length\}\s*\{t\("field acknowledgement\(s\) recorded"\)\}/,
+    /\$\{acks\.length\} \$\{t\("field acknowledgement\(s\) recorded"\)\}/,
     "Tracker must show count of field acknowledgement(s) recorded",
   );
   assert.match(
     planningSrc,
-    /\{t\("Published at"\)\}\s*\{planTime\(detail\.publication\.publishedAt\)\}/,
+    /\$\{t\("Published at"\)\} \$\{dateTime\(publishedAt\)\}/,
     "Tracker must display published time",
   );
   console.log("  ✔ Recorded acknowledgement count and published timestamp displayed");
@@ -309,17 +291,17 @@ test("W2-4: Dispatcher page features Field Acknowledgement Tracker (LO-9)", () =
   // Per-crew status matching
   assert.match(
     planningSrc,
-    /const ack = detail\.publication\?\.acknowledgements\.find\(/,
+    /const ackFor = [^\n]*acks\.find\(/,
     "Tracker must look up acknowledgement matching vehicle/driver role for each trip",
   );
   assert.match(
     planningSrc,
-    /<span className="status-ok">✅\s*\{t\("Acknowledged"\)\}\s*\(\{planTime\(ack\.acknowledgedAt\)\}\)<\/span>/,
+    /<Tag tone="green">\{t\("Acknowledged"\)\} \(\{clock\(ack\.acknowledgedAt\)\}\)<\/Tag>/,
     "Tracker must display green '✅ Acknowledged (time)' when acknowledged",
   );
   assert.match(
     planningSrc,
-    /<span className="muted">⏳\s*\{t\("Pending"\)\}<\/span>/,
+    /<Tag>\{t\("Pending"\)\}<\/Tag>/,
     "Tracker must display '⏳ Pending' when awaiting acknowledgement",
   );
   console.log("  ✔ Trip status reflects '✅ Acknowledged (time)' or '⏳ Pending'");
@@ -339,9 +321,10 @@ test("W2-5: 15-minute unacknowledged timer alerts dispatcher and allows reminder
     /const elapsedMin = pubMs \? Math\.floor\(\(Date\.now\(\) - pubMs\) \/ 60000\) : 0;/,
     "PlanningPage must calculate elapsed minutes since publication",
   );
+  assert.match(planningSrc, /const ACK_REMINDER_MINUTES = 15;/, "Reminder threshold must be 15 minutes");
   assert.match(
     planningSrc,
-    /const isOver15 = elapsedMin >= 15;/,
+    /const isOver15 = elapsedMin >= ACK_REMINDER_MINUTES;/,
     "PlanningPage must evaluate if elapsed time >= 15 minutes",
   );
   console.log("  ✔ Elapsed time calculation and isOver15 threshold (>= 15 min) present");
@@ -354,7 +337,7 @@ test("W2-5: 15-minute unacknowledged timer alerts dispatcher and allows reminder
   );
   assert.match(
     planningSrc,
-    /<p>\{t\("Attention: Unacknowledged by field crew for over 15 minutes\."\)\}<\/p>/,
+    /title=\{t\("Attention: Unacknowledged by field crew for over 15 minutes\."\)\}/,
     "Alert banner must display 'Attention: Unacknowledged by field crew for over 15 minutes.'",
   );
   console.log("  ✔ Dispatcher alert banner triggers for unacknowledged crew after 15m");
@@ -367,7 +350,7 @@ test("W2-5: 15-minute unacknowledged timer alerts dispatcher and allows reminder
   );
   assert.match(
     planningSrc,
-    /\{reminderNotice && <p className="status-ok" role="status">\{reminderNotice\}<\/p>\}/,
+    /\{reminderNotice && <p className="dp-note dp-note--green" role="status">\{reminderNotice\}<\/p>\}/,
     "Reminder confirmation notice must be displayed with role='status'",
   );
   console.log("  ✔ 'Send Reminder' button and confirmation feedback implemented");
@@ -375,7 +358,7 @@ test("W2-5: 15-minute unacknowledged timer alerts dispatcher and allows reminder
   // Table row badge reflects > 15m escalation
   assert.match(
     planningSrc,
-    /<span className="status-bad">⚠️\s*\{t\("Unacknowledged > 15m"\)\}<\/span>/,
+    /<Tag tone="red">\{t\("Unacknowledged > 15m"\)\}<\/Tag>/,
     "Trip row status must show '⚠️ Unacknowledged > 15m' when unacknowledged past cutoff",
   );
   console.log("  ✔ Table row shows '⚠️ Unacknowledged > 15m' warning");

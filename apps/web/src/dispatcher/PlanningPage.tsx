@@ -26,6 +26,8 @@ type SimulateResult = { allocated: number; unallocated: number; failures?: { ord
 // FR-53: the next-run target must be strictly after the plan's own delivery
 // date (enforced server-side too), so the date picker's minimum is the day
 // after, not the plan date itself.
+const ACK_REMINDER_MINUTES = 15;
+
 function dayAfter(dateStr: string) {
   const d = new Date(`${dateStr}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + 1);
@@ -501,7 +503,15 @@ function ConfirmedView({ detail, loads, onRevise }: { detail: PlanDetail; loads:
   const { t } = useLocale();
   const publishedAt = detail.publication?.publishedAt || detail.plan.publishedAt;
   const acks = detail.publication?.acknowledgements || [];
+  const [reminderNotice, setReminderNotice] = useState("");
+  // W2 / LO-9: per-trip acknowledgement tracker with a 15-minute unacknowledged timer.
+  const pubMs = publishedAt ? new Date(publishedAt).getTime() : 0;
+  const elapsedMin = pubMs ? Math.floor((Date.now() - pubMs) / 60000) : 0;
+  const isOver15 = elapsedMin >= ACK_REMINDER_MINUTES;
+  const ackFor = (tr: PlanDetail["trips"][number]) => acks.find((a) => a.actorId === tr.vehicleId || a.actorRole === "DRIVER");
+  const unackedCount = detail.trips.filter((tr) => !ackFor(tr)).length;
   return (
+    <>
     <div className="dp-grid-2">
       <Panel title={t("Plan summary")} sub={t("Key trips in this plan. Loaders and drivers get exactly this version; any later change creates a new one.")} flush>
         <div className="dp-table-wrap"><table className="dp-table">
@@ -529,5 +539,30 @@ function ConfirmedView({ detail, loads, onRevise }: { detail: PlanDetail; loads:
         </ul>
       </Panel>
     </div>
+    {detail.publication?.version ? (
+      <Panel title={t("Field Acknowledgement Tracker (LO-9)")} sub={`${t("Published version")} ${detail.publication.version} · ${t("Published at")} ${dateTime(publishedAt)} · ${acks.length} ${t("field acknowledgement(s) recorded")}`} flush>
+        {unackedCount > 0 && isOver15 && (
+          <div className="dp-panel-body">
+            <Note tone="red" live title={t("Attention: Unacknowledged by field crew for over 15 minutes.")}>
+              <button type="button" className="dp-btn dp-btn--secondary dp-btn--sm" onClick={() => setReminderNotice(t("Reminder sent to assigned crew"))}>{t("Send Reminder")}</button>
+            </Note>
+          </div>
+        )}
+        {reminderNotice && <p className="dp-note dp-note--green" role="status">{reminderNotice}</p>}
+        <div className="dp-table-wrap"><table className="dp-table">
+          <thead><tr><th>{t("Trip")}</th><th>{t("Vehicle")}</th><th>{t("Plan version")}</th><th>{t("Status")}</th></tr></thead>
+          <tbody>{detail.trips.map((tr) => {
+            const ack = ackFor(tr);
+            return (
+              <tr key={tr.id}>
+                <td>{tr.tripNumber}</td><td>{tr.vehicleId}</td><td>v{detail.publication?.version}</td>
+                <td>{ack ? <Tag tone="green">{t("Acknowledged")} ({clock(ack.acknowledgedAt)})</Tag> : isOver15 ? <Tag tone="red">{t("Unacknowledged > 15m")}</Tag> : <Tag>{t("Pending")}</Tag>}</td>
+              </tr>
+            );
+          })}</tbody>
+        </table></div>
+      </Panel>
+    ) : null}
+    </>
   );
 }

@@ -601,3 +601,6 @@
   .dp-list-item { flex-wrap: wrap; }
   .dp-user-name { display: none; }
 }
+
+/* W1 live queue badge in the hero */
+.dp-live-queue { margin-top: 12px; align-self: flex-start; }

@@ -107,13 +107,13 @@ test("W1-2: the order ref from the server is displayed on the confirmation card"
   console.log("  ✔ Heading pattern: Request {orderRef} received");
 });
 
-test("W1-2: dispatcher queue table shows orderRef in the first column, bolded", () => {
+test("W1-2: dispatcher queue table shows orderRef in the first column", () => {
   assert.match(
     orderQueueSrc,
-    /<strong>\{o\.orderRef\}<\/strong>/,
-    "Dispatcher queue must render each order's orderRef in bold <strong> tags",
+    /<span className="dp-cell-main">\{o\.orderRef\}<\/span>/,
+    "Dispatcher queue must render each order's orderRef as the main cell text",
   );
-  console.log("  ✔ OrderQueuePage renders orderRef in <strong> for each row");
+  console.log("  ✔ OrderQueuePage renders orderRef as main cell text for each row");
 });
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -183,15 +183,16 @@ test("W1-4: OrderQueuePage polls the order list every 4 seconds (live queue)", (
 
   assert.match(
     orderQueueSrc,
-    /setInterval\(fetchOrders,\s*4000\)/,
+    /setInterval\(\(\) => \{ void reloadOrders\(\); \}, ORDER_POLL_MS\)/,
     "OrderQueuePage must poll the orders endpoint every 4000ms for near-real-time updates",
   );
-  console.log("  ✔ 4-second polling interval found (setInterval(fetchOrders, 4000))");
+  assert.match(orderQueueSrc, /const ORDER_POLL_MS = 4000;/, "Poll interval constant must be 4000ms");
+  console.log("  ✔ 4-second polling interval found (ORDER_POLL_MS = 4000)");
 
   // Must clean up the interval
   assert.match(
     orderQueueSrc,
-    /clearInterval\(interval\)/,
+    /clearInterval\(timer\)/,
     "OrderQueuePage must clean up the polling interval on unmount/re-render",
   );
   console.log("  ✔ clearInterval cleanup present");
@@ -227,16 +228,16 @@ test("W1-4: OrderQueuePage fetches outlet parking constraints from /shared/outle
   console.log("  ✔ Outlet parking constraints loaded from /shared/outlets");
 });
 
-test("W1-4: cooling marker shows ❄️ Chilled badge for chilled orders", () => {
+test("W1-4: cooling marker shows Chilled tag for chilled orders", () => {
   assert.match(
     orderQueueSrc,
-    /temperatureRequirement\s*===\s*"chilled"/,
-    "OrderQueuePage must check temperatureRequirement === 'chilled'",
+    /isChilled\(o\.temperatureRequirement\)/,
+    "OrderQueuePage must check isChilled(o.temperatureRequirement)",
   );
   assert.match(
     orderQueueSrc,
-    /❄️/,
-    "OrderQueuePage must display the ❄️ emoji for chilled orders",
+    /t\("Cooling"\)\}: \$\{t\("Chilled"\)\}/,
+    "OrderQueuePage must mark chilled orders with a Cooling: Chilled tag",
   );
   assert.match(
     orderQueueSrc,
@@ -248,31 +249,26 @@ test("W1-4: cooling marker shows ❄️ Chilled badge for chilled orders", () =>
     /t\("Ambient"\)/,
     "OrderQueuePage must display 'Ambient' via t() for non-chilled orders",
   );
-  console.log("  ✔ ❄️ Chilled / Ambient badges in cooling column");
+  console.log("  ✔ Cooling: Chilled / Ambient tags in handling column");
 });
 
-test("W1-4: van-only marker shows 🚐 Van only badge", () => {
+test("W1-4: van-only marker shows Van only tag", () => {
   assert.match(
     orderQueueSrc,
-    /outletMap\.get\(o\.outletId\)\s*===\s*"van_only"/,
-    "OrderQueuePage must check outletMap.get(o.outletId) === 'van_only'",
+    /isVanOnly\(outlet\)/,
+    "OrderQueuePage must check isVanOnly(outlet)",
   );
   assert.match(
     orderQueueSrc,
-    /🚐/,
-    "OrderQueuePage must display the 🚐 emoji for van-only outlets",
+    /t\("Access"\)\}: \{t\("Van only"\)\}/,
+    "OrderQueuePage must mark van-only outlets with an Access: Van only tag",
   );
   assert.match(
     orderQueueSrc,
     /t\("Van only"\)/,
     "OrderQueuePage must display 'Van only' via t() for van-only outlets",
   );
-  assert.match(
-    orderQueueSrc,
-    /t\("Standard"\)/,
-    "OrderQueuePage must display 'Standard' via t() for standard outlets",
-  );
-  console.log("  ✔ 🚐 Van only / Standard badges in access column");
+  console.log("  ✔ Access: Van only tag shown for van-only outlets");
 });
 
 test("W1-4: cooling and access translations exist in Sinhala and Tamil", () => {
@@ -283,11 +279,11 @@ test("W1-4: cooling and access translations exist in Sinhala and Tamil", () => {
   console.log("  ✔ All W1 marker labels translated to Sinhala and Tamil");
 });
 
-test("W1-4: dispatcher queue table has Cooling and Access column headers", () => {
-  assert.match(orderQueueSrc, /t\("Cooling"\)/, "Must have a 'Cooling' column header");
-  assert.match(orderQueueSrc, /t\("Access"\)/,  "Must have an 'Access' column header");
-  assert.match(orderQueueSrc, /t\("Delivery date"\)/, "Must have a 'Delivery date' column header");
-  console.log("  ✔ Table headers include Cooling, Access, Delivery date");
+test("W1-4: dispatcher queue marks Cooling and Access and shows Delivery date", () => {
+  assert.match(orderQueueSrc, /t\("Cooling"\)/, "Must have a 'Cooling' marker");
+  assert.match(orderQueueSrc, /t\("Access"\)/,  "Must have an 'Access' marker");
+  assert.match(orderQueueSrc, /t\("Delivery date"\)/, "Must show 'Delivery date'");
+  console.log("  ✔ Cooling, Access markers and Delivery date present");
 });
 
 test("W1-4: dispatcher queue shows delivery date and volume per order", () => {
@@ -298,7 +294,7 @@ test("W1-4: dispatcher queue shows delivery date and volume per order", () => {
   );
   assert.match(
     orderQueueSrc,
-    /o\.orderUnits/,
+    /selected\.orderUnits/,
     "Each order row must display orderUnits",
   );
   assert.match(

@@ -13,6 +13,7 @@ import { dateTime, dayLabel, errorText, hhmm, isChilled, kg, m3, useApi, useToke
 type QueueOrder = Order & { createdAt?: string };
 type Filter = "all" | "chilled" | "deferred" | "van";
 const PAGE = 10;
+const ORDER_POLL_MS = 4000;
 
 export function OrderQueuePage() {
   const { t } = useLocale();
@@ -40,6 +41,13 @@ export function OrderQueuePage() {
 
   const orderPath = `/orders?${new URLSearchParams({ ...(status ? { status } : {}), ...(brand ? { brand } : {}) })}`;
   const orders = useApi<{ items: QueueOrder[] }>(orderPath);
+  // W1: the queue is live; poll so newly received orders appear without a refresh.
+  const reloadOrders = orders.reload;
+  useEffect(() => {
+    if (!token) return;
+    const timer = setInterval(() => { void reloadOrders(); }, ORDER_POLL_MS);
+    return () => clearInterval(timer);
+  }, [token, reloadOrders]);
   const outlets = useApi<{ items: Outlet[] }>("/shared/outlets");
   const plan = useApi<PlanDetail>(`/planning/plans?date=${date}`);
   const outletById = outletMap(outlets.data?.items);
@@ -96,7 +104,9 @@ export function OrderQueuePage() {
 
   return (
     <>
-      <DpHero title={t("Order queue")} subtitle={t("Confirmed store orders, ready for the next planning run.")} />
+      <DpHero title={t("Order queue")} subtitle={t("Confirmed store orders, ready for the next planning run.")}>
+        <span className="dp-tag dp-tag--green dp-live-queue" role="status">● {t("Live queue active")}</span>
+      </DpHero>
       <StatRow cols={4}>
         <Stat label={t("Confirmed orders")} value={scoped.length} sub={`${t("For")} ${dayLabel(date)}`} />
         <Stat label={t("Total weight")} value={kg(totalWeight)} sub={t("Check vehicle weight limits")} />
@@ -129,8 +139,8 @@ export function OrderQueuePage() {
             <table className="dp-table">
               <thead><tr><th>{t("Order")}</th><th>{t("Outlet / brand")}</th><th>{t("Depot")}</th><th>{t("Delivery window")}</th><th>{t("Size")}</th><th>{t("Handling / history")}</th><th>{t("Details")}</th></tr></thead>
               <tbody>
-                {orders.loading && <tr><td colSpan={7}>{t("Loading orders…")}</td></tr>}
-                {!orders.loading && visible.length === 0 && <tr><td colSpan={7}>{t("No orders match these filters.")}</td></tr>}
+                {orders.loading && !orders.data && <tr><td colSpan={7}>{t("Loading orders…")}</td></tr>}
+                {!(orders.loading && !orders.data) && visible.length === 0 && <tr><td colSpan={7}>{t("No orders match these filters.")}</td></tr>}
                 {visible.map((o) => {
                   const outlet = outletById.get(o.outletId);
                   const deferred = deferredCount(o);
@@ -142,7 +152,8 @@ export function OrderQueuePage() {
                       <td><span className="dp-cell-main">{outlet ? `${hhmm(outlet.windowOpenTime)}–${hhmm(outlet.windowCloseTime)}` : "—"}</span><span className="dp-cell-sub">{dayLabel(o.requestedDeliveryDate)}</span></td>
                       <td><span className="dp-cell-main">{kg(o.orderWeightKg)}</span><span className="dp-cell-sub">{m3(o.orderVolumeM3)}</span></td>
                       <td>
-                        <Tag tone={isChilled(o.temperatureRequirement) ? "cool" : "primary"}>{isChilled(o.temperatureRequirement) ? `${t("Chilled")} 2–8°C` : t("Ambient")}</Tag>
+                        <Tag tone={isChilled(o.temperatureRequirement) ? "cool" : "primary"}>{isChilled(o.temperatureRequirement) ? `${t("Cooling")}: ${t("Chilled")} 2–8°C` : t("Ambient")}</Tag>
+                        {isVanOnly(outlet) && <Tag tone="amber">{t("Access")}: {t("Van only")}</Tag>}
                         <span className={`dp-cell-sub${deferred > 0 ? " dp-cell-sub--amber" : ""}`}>{deferred > 0 ? `${deferred} ${t("previous deferral(s)")}` : isVanOnly(outlet) ? t("Van-only access") : t("Standard access")}</span>
                       </td>
                       <td><button type="button" className="dp-btn dp-btn--secondary dp-btn--sm" onClick={() => setSelected(o)} aria-label={`${t("View order")} ${o.orderRef}`}>{t("View order")}</button></td>
