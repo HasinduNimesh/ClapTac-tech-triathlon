@@ -40,6 +40,7 @@ const (
 	ActionDeliveryProofCaptured        = "DELIVERY_PROOF_CAPTURED"
 	ActionDeliverySyncApplied          = "DELIVERY_SYNC_APPLIED"
 	ActionDeliverySyncConflict         = "DELIVERY_SYNC_CONFLICT"
+	ActionDeliverySyncConflictSettled  = "DELIVERY_SYNC_CONFLICT_SETTLED"
 	ActionDeliveryTemperatureRecorded  = "DELIVERY_TEMPERATURE_RECORDED"
 	ActionDeliveryTemperatureException = "DELIVERY_TEMPERATURE_EXCEPTION"
 	ActionDeliveryIncidentReported     = "DELIVERY_INCIDENT_REPORTED"
