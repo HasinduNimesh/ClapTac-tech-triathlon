@@ -54,10 +54,14 @@ type stubPlanner struct {
 	breakdownSourceVehicleID      string
 	breakdownReplacementVehicleID string
 	breakdownTripNumber           int
-	ackTripID                     string
-	remindTripID                  string
-	remindAudience                string
-	remindErr                     error
+
+	ackTripID      string
+	remindTripID   string
+	remindAudience string
+	remindErr      error
+
+	breakdownErrs  []error
+	breakdownCalls int
 }
 
 func (s *stubPlanner) Acknowledge(_ context.Context, _ *authorization.Profile, _ string, _ int, tripID string) error {
@@ -81,6 +85,14 @@ func (s *stubPlanner) ConfirmBreakdown(_ context.Context, _ *authorization.Profi
 	s.breakdownSourceVehicleID = sourceVehicleID
 	s.breakdownReplacementVehicleID = replacementVehicleID
 	s.breakdownTripNumber = tripNumber
+	s.breakdownCalls++
+	if len(s.breakdownErrs) > 0 {
+		err := s.breakdownErrs[0]
+		s.breakdownErrs = s.breakdownErrs[1:]
+		if err != nil {
+			return nil, err
+		}
+	}
 	return map[string]any{"status": "confirmed"}, nil
 }
 
@@ -371,5 +383,27 @@ func TestBreakdownReassignmentRequiresDispatcherAndValidRequest(t *testing.T) {
 	testRouter("usr-store-manager", &stubPlanner{}).ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/planning/plans/p1/breakdowns/reassign", bytes.NewBufferString(`{"sourceVehicleId":"VEH001","replacementVehicleId":"VEH002","tripNumber":1}`)))
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("store manager must not reassign a breakdown trip, got %d", rec.Code)
+	}
+}
+
+func TestBreakdownReassignmentReportsPendingWorkshopAsRetryableNotConfirmed(t *testing.T) {
+	svc := &stubPlanner{breakdownErrs: []error{errString("workshop_pending: vehicle VEH001 could not be marked in the workshop"), nil}}
+	r := testRouter("usr-dispatcher", svc)
+	post := func() *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/planning/plans/p1/breakdowns/reassign", bytes.NewBufferString(`{"sourceVehicleId":"VEH001","replacementVehicleId":"VEH002","tripNumber":1}`)))
+		return rec
+	}
+	rec := post()
+	var problem struct {
+		Code   string `json:"code"`
+		Status int    `json:"status"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &problem)
+	if rec.Code != http.StatusBadGateway || problem.Code != "workshop_pending" || problem.Status != http.StatusBadGateway || strings.Contains(rec.Body.String(), `"confirmed"`) {
+		t.Fatalf("pending workshop must be a 502 with a stable code and never confirmed: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec = post(); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"confirmed"`) || svc.breakdownCalls != 2 {
+		t.Fatalf("the same request must be retryable and then confirm: %d %s calls=%d", rec.Code, rec.Body.String(), svc.breakdownCalls)
 	}
 }

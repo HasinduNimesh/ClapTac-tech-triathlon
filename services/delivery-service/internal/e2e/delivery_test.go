@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"sync/atomic"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -77,6 +78,8 @@ func (staticProfiles) Resolve(_ context.Context, subject string) (*authorization
 		return &authorization.Profile{UserID: "USR002", Subject: subject, Roles: []string{"DISPATCHER"}}, nil
 	case "usr-loader":
 		return &authorization.Profile{UserID: "USR004", Subject: subject, Roles: []string{"LOADER"}, Depot: "DEPOT_NORTH"}, nil
+	case "usr-loader-south":
+		return &authorization.Profile{UserID: "USR005", Subject: subject, Roles: []string{"LOADER"}, Depot: "DEPOT_SOUTH"}, nil
 	default:
 		return &authorization.Profile{Subject: subject}, nil
 	}
@@ -189,6 +192,10 @@ func TestOutletLastAttemptedScopedByDate(t *testing.T) {
 	}
 }
 
+var stubPlanVersion atomic.Int64
+
+func init() { stubPlanVersion.Store(1) }
+
 func TestDeliveryWorkflow(t *testing.T) {
 	ctx := context.Background()
 	req := testcontainers.ContainerRequest{
@@ -232,6 +239,13 @@ func TestDeliveryWorkflow(t *testing.T) {
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0040_delivery_stop_expected_units.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0041_delivery_outcome_units.sql"))
 
+	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0071_delivery_sync_conflicts.sql"))
+
+	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0055_delivery_checkout.sql"))
+	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0057_delivery_arrival_predictions.sql"))
+	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0058_delivery_returns.sql"))
+
+
 	peers := httptest.NewServer(peerStub())
 	t.Cleanup(peers.Close)
 
@@ -246,7 +260,7 @@ func TestDeliveryWorkflow(t *testing.T) {
 		Profiles: staticProfiles{},
 		Service: delservice.Service{
 			Repo:    delstore.Postgres{Pool: pool},
-			Peers:   delclient.Peers{LoadingURL: peers.URL, SharedURL: peers.URL, M2M: staticToken("svc-delivery")},
+			Peers:   delclient.Peers{LoadingURL: peers.URL, SharedURL: peers.URL, OrdersURL: peers.URL, M2M: staticToken("svc-delivery")},
 			Objects: objects,
 		},
 	}
@@ -284,6 +298,47 @@ func TestDeliveryWorkflow(t *testing.T) {
 		t.Fatalf("other driver %d", code)
 	}
 
+	beforeCheckout := do(t, srv, http.MethodPost, "/api/v1/delivery/trips/trip-north/start", "usr-driver", nil, "start-before-checkout")
+	if beforeCheckout.status != http.StatusConflict { t.Fatalf("departure without checkout %d %s", beforeCheckout.status, beforeCheckout.body) }
+	staleCheckout := do(t, srv, http.MethodPost, "/api/v1/delivery/trips/trip-north/checkout", "usr-driver", []byte(`{"planVersion":2,"confirmedOrderIds":["ord-1","ord-2","ord-4","ord-5"]}`), "")
+	if staleCheckout.status != http.StatusConflict { t.Fatalf("stale plan checkout %d %s", staleCheckout.status, staleCheckout.body) }
+	wrongDriver := do(t, srv, http.MethodPost, "/api/v1/delivery/trips/trip-north/checkout", "usr-driver-other", []byte(`{"planVersion":1,"confirmedOrderIds":["ord-1","ord-2","ord-4","ord-5"]}`), "")
+	if wrongDriver.status != http.StatusForbidden { t.Fatalf("other vehicle checkout %d %s", wrongDriver.status, wrongDriver.body) }
+	blockedCheckout := do(t, srv, http.MethodPost, "/api/v1/delivery/trips/trip-north/checkout", "usr-driver", []byte(`{"planVersion":1,"confirmedOrderIds":["ord-1","ord-4","ord-5"]}`), "")
+	if blockedCheckout.status != http.StatusOK || !strings.Contains(blockedCheckout.body, `"status":"blocked"`) {
+		t.Fatalf("missing goods did not block checkout %d %s", blockedCheckout.status, blockedCheckout.body)
+	}
+	if alert := do(t, srv, http.MethodGet, "/api/v1/delivery/trips/trip-north/checkout", "usr-loader", nil, ""); alert.status != http.StatusOK || !strings.Contains(alert.body, "ord-2") {
+		t.Fatalf("loader did not receive checkout alert %d %s", alert.status, alert.body)
+	}
+	if alert := do(t, srv, http.MethodGet, "/api/v1/delivery/trips/trip-north/checkout", "usr-dispatcher", nil, ""); alert.status != http.StatusOK || !strings.Contains(alert.body, "ord-2") {
+		t.Fatalf("dispatcher did not receive checkout alert %d %s", alert.status, alert.body)
+	}
+	if other := do(t, srv, http.MethodGet, "/api/v1/delivery/trips/trip-north/checkout", "usr-loader-south", nil, ""); other.status != http.StatusForbidden {
+		t.Fatalf("other depot saw checkout alert %d %s", other.status, other.body)
+	}
+	if denied := do(t, srv, http.MethodPost, "/api/v1/delivery/trips/trip-north/start", "usr-driver", nil, "start-blocked"); denied.status != http.StatusConflict {
+		t.Fatalf("departure after blocked checkout %d %s", denied.status, denied.body)
+	}
+	confirmedCheckout := do(t, srv, http.MethodPost, "/api/v1/delivery/trips/trip-north/checkout", "usr-driver", []byte(`{"planVersion":1,"confirmedOrderIds":["ord-1","ord-2","ord-4","ord-5"]}`), "")
+	if confirmedCheckout.status != http.StatusOK || !strings.Contains(confirmedCheckout.body, `"status":"confirmed"`) {
+		t.Fatalf("complete checkout %d %s", confirmedCheckout.status, confirmedCheckout.body)
+	}
+	duplicateCheckout := do(t, srv, http.MethodPost, "/api/v1/delivery/trips/trip-north/checkout", "usr-driver", []byte(`{"planVersion":1,"confirmedOrderIds":["ord-5","ord-4","ord-2","ord-1"]}`), "")
+	if duplicateCheckout.status != http.StatusOK || duplicateCheckout.body != confirmedCheckout.body {
+		t.Fatalf("duplicate checkout changed the recorded report: %d %s", duplicateCheckout.status, duplicateCheckout.body)
+	}
+	reblockedCheckout := do(t, srv, http.MethodPost, "/api/v1/delivery/trips/trip-north/checkout", "usr-driver", []byte(`{"planVersion":1,"confirmedOrderIds":["ord-1","ord-4","ord-5"]}`), "")
+	if reblockedCheckout.status != http.StatusOK || !strings.Contains(reblockedCheckout.body, `"status":"blocked"`) {
+		t.Fatalf("new missing goods must block a prior checkout: %d %s", reblockedCheckout.status, reblockedCheckout.body)
+	}
+	if denied := do(t, srv, http.MethodPost, "/api/v1/delivery/trips/trip-north/start", "usr-driver", nil, "start-reblocked"); denied.status != http.StatusConflict {
+		t.Fatalf("departure after a revised blocked checkout %d %s", denied.status, denied.body)
+	}
+	reconfirmed := do(t, srv, http.MethodPost, "/api/v1/delivery/trips/trip-north/checkout", "usr-driver", []byte(`{"planVersion":1,"confirmedOrderIds":["ord-1","ord-2","ord-4","ord-5"]}`), "")
+	if reconfirmed.status != http.StatusOK || !strings.Contains(reconfirmed.body, `"status":"confirmed"`) {
+		t.Fatalf("reconfirmed checkout %d %s", reconfirmed.status, reconfirmed.body)
+	}
 	started := do(t, srv, http.MethodPost, "/api/v1/delivery/trips/trip-north/start", "usr-driver", nil, "start-1")
 	if started.status != http.StatusOK {
 		t.Fatalf("start %d %s", started.status, started.body)
@@ -542,6 +597,59 @@ func TestDeliveryWorkflow(t *testing.T) {
 	if arrive3.status != http.StatusOK || !strings.Contains(arrive3.body, `"APPLIED"`) {
 		t.Fatalf("sync arrive 3 %d %s", arrive3.status, arrive3.body)
 	}
+	// W11: a record made offline on plan v3 while the plan is now v4 is kept,
+	// applied, and listed for the dispatcher as a conflict. Nothing is overwritten.
+	stubPlanVersion.Store(4)
+	staleOp := do(t, srv, http.MethodPost, "/api/v1/delivery/sync", "usr-driver", []byte(`{"operations":[{"operationId":"offline-v3-incident","type":"INCIDENT_REPORT","tripId":"trip-north","stopId":"`+stop3+`","planVersion":3,"occurredAt":"2026-09-29T09:20:00Z","payload":{"category":"OUTLET","description":"Gate locked, recorded offline on v3"}}]}`), "")
+	if staleOp.status != http.StatusOK || !strings.Contains(staleOp.body, `"APPLIED"`) || !strings.Contains(staleOp.body, `"currentPlanVersion":4`) || !strings.Contains(staleOp.body, `"recordedPlanVersion":3`) {
+		t.Fatalf("stale-version op must apply and report the newer version %d %s", staleOp.status, staleOp.body)
+	}
+	staleReplay := do(t, srv, http.MethodPost, "/api/v1/delivery/sync", "usr-driver", []byte(`{"operations":[{"operationId":"offline-v3-incident","type":"INCIDENT_REPORT","tripId":"trip-north","planVersion":3}]}`), "")
+	if !strings.Contains(staleReplay.body, `"DUPLICATE"`) || !strings.Contains(staleReplay.body, `"recordedPlanVersion":3`) {
+		t.Fatalf("replay %s", staleReplay.body)
+	}
+	// If the conflict row was never written (the insert failed after the op was
+	// applied), the retry arrives as a DUPLICATE and must create it exactly once.
+	if _, err := pool.Exec(ctx, `DELETE FROM delivery.sync_conflicts WHERE operation_id='offline-v3-incident'`); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		repaired := do(t, srv, http.MethodPost, "/api/v1/delivery/sync", "usr-driver", []byte(`{"operations":[{"operationId":"offline-v3-incident","type":"INCIDENT_REPORT","tripId":"trip-north","planVersion":3}]}`), "")
+		if !strings.Contains(repaired.body, `"DUPLICATE"`) || !strings.Contains(repaired.body, `"currentPlanVersion":4`) || strings.Contains(repaired.body, `"RETRY"`) {
+			t.Fatalf("retry %d must recover the conflict %s", i, repaired.body)
+		}
+	}
+	var conflictRows int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM delivery.sync_conflicts WHERE operation_id='offline-v3-incident'`).Scan(&conflictRows); err != nil || conflictRows != 1 {
+		t.Fatalf("missing conflict must be recreated exactly once: %d %v", conflictRows, err)
+	}
+	if code := do(t, srv, http.MethodGet, "/api/v1/delivery/sync-conflicts", "usr-driver", nil, "").status; code != http.StatusForbidden {
+		t.Fatalf("driver must not list sync conflicts: %d", code)
+	}
+	conflicts := do(t, srv, http.MethodGet, "/api/v1/delivery/sync-conflicts?date=2026-09-29", "usr-dispatcher", nil, "")
+	var conflictList struct {
+		Items []struct {
+			ID                  string `json:"id"`
+			OperationID         string `json:"operationId"`
+			RecordedPlanVersion int    `json:"recordedPlanVersion"`
+			CurrentPlanVersion  int    `json:"currentPlanVersion"`
+			SettledBy           string `json:"settledBy"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(conflicts.body), &conflictList); err != nil || len(conflictList.Items) != 1 || conflictList.Items[0].OperationID != "offline-v3-incident" || conflictList.Items[0].RecordedPlanVersion != 3 || conflictList.Items[0].CurrentPlanVersion != 4 {
+		t.Fatalf("conflict list %d %s", conflicts.status, conflicts.body)
+	}
+	if other := do(t, srv, http.MethodGet, "/api/v1/delivery/sync-conflicts?date=2026-01-01", "usr-dispatcher", nil, ""); strings.Contains(other.body, "offline-v3-incident") {
+		t.Fatalf("date filter ignored %s", other.body)
+	}
+	settled := do(t, srv, http.MethodPost, "/api/v1/delivery/sync-conflicts/"+conflictList.Items[0].ID+"/settle", "usr-dispatcher", nil, "")
+	if settled.status != http.StatusOK || !strings.Contains(settled.body, `"settledBy"`) {
+		t.Fatalf("settle %d %s", settled.status, settled.body)
+	}
+	if openOnly := do(t, srv, http.MethodGet, "/api/v1/delivery/sync-conflicts?status=open", "usr-dispatcher", nil, ""); strings.Contains(openOnly.body, "offline-v3-incident") {
+		t.Fatalf("settled conflict still open %s", openOnly.body)
+	}
+	stubPlanVersion.Store(1)
 	ambientTemp := do(t, srv, http.MethodPost, "/api/v1/delivery/sync", "usr-driver", []byte(`{"operations":[{"operationId":"temp-ambient","type":"TEMPERATURE_READING","tripId":"trip-north","stopId":"`+stop3+`","payload":{"valueC":2.0}}]}`), "")
 	if ambientTemp.status != http.StatusOK || !strings.Contains(ambientTemp.body, `"REJECTED"`) {
 		t.Fatalf("ambient stop must reject cold-chain reading %d %s", ambientTemp.status, ambientTemp.body)
@@ -596,11 +704,36 @@ func TestDeliveryWorkflow(t *testing.T) {
 	if refusedWithoutReason.status != http.StatusBadRequest {
 		t.Fatalf("refused outcome with an invalid structured reason should fail: %d %s", refusedWithoutReason.status, refusedWithoutReason.body)
 	}
-	refused := do(t, srv, http.MethodPost, "/api/v1/delivery/sync", "usr-driver", []byte(`{"operations":[{"operationId":"out-4","type":"STOP_OUTCOME","tripId":"trip-north","stopId":"`+stop4+`","payload":{"code":"REFUSED","reason":"GOODS_REJECTED"}}]}`), "")
+	missingReturn := do(t, srv, http.MethodPost, "/api/v1/delivery/trips/trip-north/stops/"+stop4+"/outcome", "usr-driver", []byte(`{"code":"REFUSED","reason":"GOODS_REJECTED"}`), "refused-missing-return")
+	if missingReturn.status != http.StatusBadRequest {
+		t.Fatalf("refused outcome must require return details: %d %s", missingReturn.status, missingReturn.body)
+	}
+	refused := do(t, srv, http.MethodPost, "/api/v1/delivery/sync", "usr-driver", []byte(`{"operations":[{"operationId":"out-4","type":"STOP_OUTCOME","tripId":"trip-north","stopId":"`+stop4+`","payload":{"code":"REFUSED","reason":"GOODS_REJECTED","returnedGoods":{"goods":"Rejected cartons","units":2,"resolution":"NEXT_RUN"}}}]}`), "")
 	if refused.status != http.StatusOK || !strings.Contains(refused.body, `"APPLIED"`) {
 		t.Fatalf("sync refused outcome %d %s", refused.status, refused.body)
 	}
+	replayedReturn := do(t, srv, http.MethodPost, "/api/v1/delivery/sync", "usr-driver", []byte(`{"operations":[{"operationId":"out-4","type":"STOP_OUTCOME","tripId":"trip-north","stopId":"`+stop4+`","payload":{"code":"REFUSED","reason":"GOODS_REJECTED","returnedGoods":{"goods":"Rejected cartons","units":2,"resolution":"NEXT_RUN"}}}]}`), "")
+	if replayedReturn.status != http.StatusOK || !strings.Contains(replayedReturn.body, `"DUPLICATE"`) {
+		t.Fatalf("duplicate return must not create a new attempt: %d %s", replayedReturn.status, replayedReturn.body)
+	}
+	changedReturn := do(t, srv, http.MethodPost, "/api/v1/delivery/sync", "usr-driver", []byte(`{"operations":[{"operationId":"out-4-changed","type":"STOP_OUTCOME","tripId":"trip-north","stopId":"`+stop4+`","payload":{"code":"REFUSED","reason":"GOODS_REJECTED","returnedGoods":{"goods":"Other goods","units":1,"resolution":"REQUEST_DEFERRAL"}}}]}`), "")
+	if changedReturn.status != http.StatusOK || !strings.Contains(changedReturn.body, `"CONFLICT"`) {
+		t.Fatalf("changed return cannot replace the original attempt: %d %s", changedReturn.status, changedReturn.body)
+	}
+	var returnCount int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM delivery.returned_goods WHERE stop_id=$1::uuid`, stop4).Scan(&returnCount); err != nil || returnCount != 1 {
+		t.Fatalf("returned goods count=%d err=%v", returnCount, err)
+	}
 
+    returnedTracking := do(t, srv, http.MethodGet, "/api/v1/delivery/internal/orders/ord-5", "svc-order", nil, "")
+    if returnedTracking.status != http.StatusOK || !strings.Contains(returnedTracking.body, `"goods":"Rejected cartons"`) ||
+        !strings.Contains(returnedTracking.body, `"followupOrderRef":"ORD000006"`) {
+        t.Fatalf("returned goods tracking: %d %s", returnedTracking.status, returnedTracking.body)
+    }
+    var dispatcherNotices int
+    if err := pool.QueryRow(ctx, `SELECT count(*) FROM delivery.trip_messages WHERE stop_id=$1::uuid AND sent_by='system:returned-goods'`, stop4).Scan(&dispatcherNotices); err != nil || dispatcherNotices != 1 {
+        t.Fatalf("dispatcher return notice count=%d err=%v", dispatcherNotices, err)
+    }
 	done := do(t, srv, http.MethodPost, "/api/v1/delivery/sync", "usr-driver", []byte(`{"operations":[{"operationId":"done-1","type":"ROUTE_COMPLETED","tripId":"trip-north"}]}`), "")
 	if done.status != http.StatusOK || !strings.Contains(done.body, `"APPLIED"`) {
 		t.Fatalf("complete %d %s", done.status, done.body)
@@ -669,10 +802,10 @@ func peerStub() http.Handler {
 		"tripId": "trip-north", "planId": "plan-1", "planRef": "PLAN000001", "deliveryDate": "2026-09-29",
 		"vehicleId": "VEH001", "vehicleType": "truck", "vehicleTemperatureCapability": "reefer",
 		"depot": "DEPOT_NORTH", "tripNumber": 1, "loadingStatus": "ready",
-		"planVersion": 1, "planAcknowledgements": []map[string]any{{"actorId": "USR006", "actorRole": "DRIVER"}},
+		"planVersion": int(stubPlanVersion.Load()), "planAcknowledgements": []map[string]any{{"actorId": "USR006", "actorRole": "DRIVER"}},
 		"orders": []map[string]any{
 			{"allocationId": "a1", "orderId": "ord-1", "orderRef": "ORD000001", "outletId": "OUT034", "brand": "Fresh", "stopSequence": 1, "loadingStatus": "loaded", "temperatureRequirement": "chilled", "expectedUnits": 10, "shortfallSummary": []any{}},
-			{"allocationId": "a2", "orderId": "ord-2", "orderRef": "ORD000002", "outletId": "OUT021", "brand": "Fresh", "stopSequence": 2, "loadingStatus": "shortfall", "temperatureRequirement": "chilled", "expectedUnits": 8, "shortfallSummary": []any{map[string]any{"type": "MISSING", "affectedUnits": 2}}},
+			{"allocationId": "a2", "orderId": "ord-2", "orderRef": "ORD000002", "outletId": "OUT021", "brand": "Fresh", "stopSequence": 2, "loadingStatus": "loaded", "temperatureRequirement": "chilled", "expectedUnits": 8, "shortfallSummary": []any{}},
 			{"allocationId": "a4", "orderId": "ord-4", "orderRef": "ORD000004", "outletId": "OUT055", "brand": "Fresh", "stopSequence": 3, "loadingStatus": "loaded", "temperatureRequirement": "ambient", "expectedUnits": 6, "shortfallSummary": []any{}},
 			{"allocationId": "a5", "orderId": "ord-5", "orderRef": "ORD000005", "outletId": "OUT056", "brand": "Fresh", "stopSequence": 4, "loadingStatus": "loaded", "temperatureRequirement": "ambient", "expectedUnits": 4, "shortfallSummary": []any{}},
 		},
@@ -685,6 +818,7 @@ func peerStub() http.Handler {
 		},
 	}
 	r.Get("/api/v1/loading/internal/trips", func(w http.ResponseWriter, req *http.Request) {
+		north["planVersion"] = int(stubPlanVersion.Load())
 		items := []map[string]any{north, south}
 		if v := req.URL.Query().Get("vehicleId"); v != "" {
 			var filtered []map[string]any
@@ -704,6 +838,7 @@ func peerStub() http.Handler {
 			return
 		}
 		if id == "trip-north" {
+			north["planVersion"] = int(stubPlanVersion.Load())
 			httpx.WriteJSON(w, http.StatusOK, north)
 			return
 		}
@@ -730,6 +865,14 @@ func peerStub() http.Handler {
 	r.Post("/api/v1/shared/audit-events", func(w http.ResponseWriter, _ *http.Request) {
 		httpx.WriteJSON(w, http.StatusAccepted, map[string]any{"status": "ingested"})
 	})
+    r.Post("/api/v1/orders/internal/delivery-followups", func(w http.ResponseWriter, _ *http.Request) {
+        httpx.WriteJSON(w, http.StatusOK, map[string]any{"order": map[string]any{
+            "id": "followup-ord-5", "orderRef": "ORD000006", "requestedDeliveryDate": "2026-09-30",
+        }})
+    })
+    r.Post("/api/v1/shared/internal/notifications/enqueue", func(w http.ResponseWriter, _ *http.Request) {
+        httpx.WriteJSON(w, http.StatusAccepted, map[string]any{"notification": map[string]any{"status": "enqueued"}})
+    })
 	return r
 }
 

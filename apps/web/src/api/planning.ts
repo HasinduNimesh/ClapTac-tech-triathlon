@@ -93,6 +93,7 @@ export type DisruptionRisk = {
 export type PlanOrder = {
   id: string;
   orderRef: string;
+  sourceSystem?: string;
   outletId: string;
   brand: string;
   temperatureRequirement: string;
@@ -104,6 +105,7 @@ export type PlanOrder = {
   fairnessScore: number;
   deferredLastRun?: boolean;
   lastDeferralDate?: string;
+  priorityNextPlan?: boolean;
 };
 
 export type PlanAcknowledgement = { actorId: string; actorRole: string; tripId?: string; vehicleId?: string; acknowledgedAt: string };

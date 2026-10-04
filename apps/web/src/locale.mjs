@@ -1,3 +1,4 @@
+import { automationLabels } from "./automations/labels.mjs";
 import { storeWorkspaceLabels } from "./store-manager/storeWorkspaceLabels.mjs";
 import { dispatcherWorkspaceLabels } from "./dispatcher/dispatcherLabels.mjs";
 export const labels = {
@@ -277,6 +278,13 @@ const followUpLabels = {
     Issue: "ගැටලුව",
     Reported: "වාර්තා කළේ",
     "Completing sign-in…": "පිවිසීම සම්පූර්ණ කරමින්…",
+    "Orders awaiting planning": "සැලසුම් කිරීම බලා සිටින ඇණවුම්",
+    "Confirmed orders not yet planned, by brand, product type and depot.": "තවම සැලසුම් නොකළ තහවුරු කළ ඇණවුම්, වෙළඳ නාමය, නිෂ්පාදන වර්ගය සහ ඩිපෝව අනුව.",
+    "overdue": "කල් ඉකුත් වූ",
+    "due today": "අද නියමිත",
+    "later": "පසුව",
+    "Overdue orders": "කල් ඉකුත් වූ ඇණවුම්",
+    "confirmed orders are past their delivery date and have not been planned.": "තහවුරු කළ ඇණවුම් බෙදාහැරීමේ දිනය පසුවී ඇති අතර සැලසුම් කර නැත.",
     "your depot": "ඔබගේ ඩිපෝව",
     "These orders are saved, but their progress could not be loaded right now.": "මෙම ඇණවුම් සුරැකී ඇත, නමුත් ඒවායේ ප්‍රගතිය දැන් පූරණය කළ නොහැකි විය.",
     "Open the shop in a map app, copy its latitude and longitude, and paste them here. Leave it unchanged to keep the current position.": "වෙළඳසැල සිතියම් යෙදුමක විවෘත කර එහි අක්ෂාංශ සහ දේශාංශ පිටපත් කර මෙහි අලවන්න. වත්මන් ස්ථානය තබා ගැනීමට එය වෙනස් නොකර තබන්න.",
@@ -395,6 +403,13 @@ const followUpLabels = {
     Issue: "சிக்கல்",
     Reported: "தெரிவிக்கப்பட்டது",
     "Completing sign-in…": "உள்நுழைவு நிறைவுபெறுகிறது…",
+    "Orders awaiting planning": "திட்டமிடலுக்காகக் காத்திருக்கும் ஆர்டர்கள்",
+    "Confirmed orders not yet planned, by brand, product type and depot.": "இன்னும் திட்டமிடப்படாத உறுதிசெய்யப்பட்ட ஆர்டர்கள், பிராண்ட், தயாரிப்பு வகை மற்றும் கிடங்கு வாரியாக.",
+    "overdue": "தாமதமானவை",
+    "due today": "இன்று உரியவை",
+    "later": "பின்னர்",
+    "Overdue orders": "தாமதமான ஆர்டர்கள்",
+    "confirmed orders are past their delivery date and have not been planned.": "உறுதிசெய்யப்பட்ட ஆர்டர்களின் விநியோக தேதி கடந்துவிட்டது, அவை திட்டமிடப்படவில்லை.",
     "your depot": "உங்கள் கிடங்கு",
     "These orders are saved, but their progress could not be loaded right now.": "இந்த ஆர்டர்கள் சேமிக்கப்பட்டுள்ளன, ஆனால் அவற்றின் முன்னேற்றத்தை இப்போது ஏற்ற முடியவில்லை.",
     "Open the shop in a map app, copy its latitude and longitude, and paste them here. Leave it unchanged to keep the current position.": "கடையை வரைபட செயலியில் திறந்து அதன் அகலாங்கு, நெடுங்கோட்டை நகலெடுத்து இங்கே ஒட்டவும். தற்போதைய இடத்தை வைத்திருக்க அதை மாற்றாமல் விடவும்.",
@@ -967,6 +982,7 @@ const storeManagerDashboardLabels = {
   },
 };
 
+
 const workflowEnhancementLabels = {
   si: {
     Cooling: "ශීතකරණය",
@@ -1097,7 +1113,74 @@ const workflowEnhancementLabels = {
     "Inspect vehicle": "வாகனத்தை ஆய்வு செய்",
   },
 };
-function lookupTranslation(locale, source) { return labels[locale]?.[source] ?? workflowEnhancementLabels[locale]?.[source] ?? disruptionLabels[locale]?.[source] ?? driverPrivacyLabels[locale]?.[source] ?? loaderLabels[locale]?.[source] ?? loaderOfflineLabels[locale]?.[source] ?? loaderStatusLabels[locale]?.[source] ?? loaderScannerLabels[locale]?.[source] ?? storeLabels[locale]?.[source] ?? storeTrackingLabels[locale]?.[source] ?? dispatcherLabels[locale]?.[source] ?? planningLabels[locale]?.[source] ?? breakdownLabels[locale]?.[source] ?? auditLabels[locale]?.[source] ?? masterDataLabels[locale]?.[source] ?? liveOpsLabels[locale]?.[source] ?? loadingOpsLabels[locale]?.[source] ?? operationalValueLabels[locale]?.[source] ?? masterNoticeLabels[locale]?.[source] ?? policyConflictLabels[locale]?.[source] ?? followUpLabels[locale]?.[source] ?? forecastLabels[locale]?.[source] ?? serviceTimeLabels[locale]?.[source] ?? etaLabels[locale]?.[source] ?? latenessLabels[locale]?.[source] ?? notificationLabels[locale]?.[source] ?? coldChainLabels[locale]?.[source] ?? custodyLabels[locale]?.[source] ?? deferralLabels[locale]?.[source] ?? storeManagerDashboardLabels[locale]?.[source] ?? dispatcherWorkspaceLabels[locale]?.[source] ?? storeWorkspaceLabels[locale]?.[source]; }
+function lookupTranslation(locale, source) { return automationLabels[locale]?.[source] ?? labels[locale]?.[source] ?? workflowEnhancementLabels[locale]?.[source] ?? disruptionLabels[locale]?.[source] ?? driverPrivacyLabels[locale]?.[source] ?? loaderLabels[locale]?.[source] ?? loaderOfflineLabels[locale]?.[source] ?? loaderStatusLabels[locale]?.[source] ?? loaderScannerLabels[locale]?.[source] ?? storeLabels[locale]?.[source] ?? storeTrackingLabels[locale]?.[source] ?? dispatcherLabels[locale]?.[source] ?? planningLabels[locale]?.[source] ?? breakdownLabels[locale]?.[source] ?? auditLabels[locale]?.[source] ?? masterDataLabels[locale]?.[source] ?? liveOpsLabels[locale]?.[source] ?? loadingOpsLabels[locale]?.[source] ?? operationalValueLabels[locale]?.[source] ?? masterNoticeLabels[locale]?.[source] ?? policyConflictLabels[locale]?.[source] ?? followUpLabels[locale]?.[source] ?? forecastLabels[locale]?.[source] ?? serviceTimeLabels[locale]?.[source] ?? etaLabels[locale]?.[source] ?? latenessLabels[locale]?.[source] ?? notificationLabels[locale]?.[source] ?? coldChainLabels[locale]?.[source] ?? custodyLabels[locale]?.[source] ?? deferralLabels[locale]?.[source] ?? storeManagerDashboardLabels[locale]?.[source] ?? dispatcherWorkspaceLabels[locale]?.[source] ?? storeWorkspaceLabels[locale]?.[source]; }
+
+Object.assign(labels.si, {
+  "Truck check-out": "ට්‍රක් රථය පිටත් කිරීමේ පරීක්ෂාව",
+  "Current load list unavailable. Refresh the trip before departure.": "වත්මන් පැටවුම් ලැයිස්තුව නොමැත. පිටත් වීමට පෙර ගමන නැවුම් කරන්න.",
+  "On board": "රථයේ ඇත",
+  "Missing": "නොමැත",
+  "Check-out blocked. Loader and dispatcher alerted.": "පිටත් කිරීම අවහිරයි. පැටවුම්කරුට සහ යැවීම් කළමනාකරුට දන්වා ඇත.",
+  "Check-out recorded": "පිටත් කිරීමේ පරීක්ෂාව සටහන් කර ඇත",
+  "Confirm check-out": "පිටත් කිරීම තහවුරු කරන්න",
+  "Driver reported missing goods at check-out": "රියදුරු පිටත් කිරීමේදී භාණ්ඩ නොමැති බව වාර්තා කළේය",
+  "Check-out blocked. Review this load with dispatch.": "පිටත් කිරීම අවහිරයි. යැවීම් අංශය සමඟ පැටවුම පරීක්ෂා කරන්න.",
+  "Check-out blocked. Review this load with the loader.": "පිටත් කිරීම අවහිරයි. පැටවුම්කරු සමඟ පැටවුම පරීක්ෂා කරන්න.",
+});
+Object.assign(labels.ta, {
+  "Truck check-out": "லாரி புறப்பாடு சரிபார்ப்பு",
+  "Current load list unavailable. Refresh the trip before departure.": "தற்போதைய ஏற்றப்பட்ட பட்டியல் கிடைக்கவில்லை. புறப்படும் முன் பயணத்தைப் புதுப்பிக்கவும்.",
+  "On board": "வண்டியில் உள்ளது",
+  "Missing": "காணவில்லை",
+  "Check-out blocked. Loader and dispatcher alerted.": "புறப்பாடு தடுக்கப்பட்டது. ஏற்றுபவருக்கும் அனுப்புநருக்கும் அறிவிக்கப்பட்டது.",
+  "Check-out recorded": "புறப்பாடு சரிபார்ப்பு பதிவு செய்யப்பட்டது",
+  "Confirm check-out": "புறப்பாட்டை உறுதிசெய்",
+  "Driver reported missing goods at check-out": "புறப்பாட்டின் போது பொருட்கள் காணவில்லை என்று ஓட்டுநர் தெரிவித்தார்",
+  "Check-out blocked. Review this load with dispatch.": "புறப்பாடு தடுக்கப்பட்டது. அனுப்புநருடன் ஏற்றத்தைச் சரிபார்க்கவும்.",
+  "Check-out blocked. Review this load with the loader.": "புறப்பாடு தடுக்கப்பட்டது. ஏற்றுபவருடன் ஏற்றத்தைச் சரிபார்க்கவும்.",
+});
+
+Object.assign(labels.si, {
+  "Predicted arrival": "පුරෝකථිත පැමිණීම",
+  "Arrival range": "පැමිණීමේ කාල පරාසය",
+  "Arrival changed from": "පැමිණීම වෙනස් වූයේ",
+  "to": "සිට",
+});
+Object.assign(labels.ta, {
+  "Predicted arrival": "கணிக்கப்பட்ட வருகை",
+  "Arrival range": "வருகை நேர வரம்பு",
+  "Arrival changed from": "வருகை மாறியது",
+  "to": "இலிருந்து",
+});
+
+Object.assign(labels.si, {
+  "Rejected goods / take-back": "ආපසු ගන්නා ප්‍රතික්ෂේපිත භාණ්ඩ",
+  "Goods or items being returned": "ආපසු එන භාණ්ඩ හෝ අයිතම",
+  "Quantity returning": "ආපසු එන ප්‍රමාණය",
+  "Follow-up choice": "ඊළඟ පියවර තේරීම",
+  "Re-attempt on next run": "ඊළඟ ගමනේ නැවත බෙදාහරින්න",
+  "Request dispatcher deferral": "ඩිස්පැචර්ගෙන් කල් දැමීම ඉල්ලන්න",
+  "Enter the returned goods and quantity.": "ආපසු එන භාණ්ඩ හා ප්‍රමාණය ඇතුළත් කරන්න.",
+  "Returned goods": "ආපසු ලැබුණු භාණ්ඩ",
+  "Dispatcher deferral requested": "ඩිස්පැචර්ගෙන් කල් දැමීම ඉල්ලා ඇත",
+  "Follow-up order": "ඊළඟ ඇණවුම",
+  "Rejected delivery": "ප්‍රතික්ෂේපිත බෙදාහැරීම",
+});
+Object.assign(labels.ta, {
+  "Rejected goods / take-back": "திரும்பப் பெறப்படும் நிராகரிக்கப்பட்ட பொருட்கள்",
+  "Goods or items being returned": "திரும்ப வரும் பொருட்கள்",
+  "Quantity returning": "திரும்ப வரும் அளவு",
+  "Follow-up choice": "அடுத்த நடவடிக்கைத் தேர்வு",
+  "Re-attempt on next run": "அடுத்த பயணத்தில் மீண்டும் வழங்கு",
+  "Request dispatcher deferral": "அனுப்புநரிடம் ஒத்திவைப்பைக் கோரு",
+  "Enter the returned goods and quantity.": "திரும்ப வரும் பொருட்களையும் அளவையும் உள்ளிடவும்.",
+  "Returned goods": "திரும்பிய பொருட்கள்",
+  "Dispatcher deferral requested": "அனுப்புநரிடம் ஒத்திவைப்பு கோரப்பட்டது",
+  "Follow-up order": "தொடர்ச்சி ஆர்டர்",
+  "Rejected delivery": "நிராகரிக்கப்பட்ட விநியோகம்",
+});
+
+
 
 const countMessages = [
   [/^Sync paused \(401\)\. (\d+) kept in IndexedDB\.$/, "Sync paused (401). {count} kept in IndexedDB."],
@@ -1118,6 +1201,122 @@ export function translate(locale, source) {
   }
   return source;
 }
+
+
+// W4: chilled load exceptions rank first in dispatcher notifications.
+Object.assign(labels.si, { "Critical · chilled load exception": "විවේචනාත්මක · සිසිල් භාණ්ඩ බර ගැටලුව" });
+Object.assign(labels.ta, { "Critical · chilled load exception": "மிக முக்கியம் · குளிர் பொருள் ஏற்றுதல் சிக்கல்" });
+
+
+// W11: sync conflicts list with Settle on the dispatcher Notifications page.
+Object.assign(labels.si, { "Sync conflict settled": "සමමුහුර්ත ගැටුම විසඳා ඇත", "Recorded on plan": "සටහන් කළ සැලැස්ම", "current plan": "වත්මන් සැලැස්ම", "Settled by": "විසඳූයේ", "Settle": "විසඳන්න" });
+Object.assign(labels.ta, { "Sync conflict settled": "ஒத்திசைவு மோதல் தீர்க்கப்பட்டது", "Recorded on plan": "பதிவு செய்யப்பட்ட திட்டம்", "current plan": "தற்போதைய திட்டம்", "Settled by": "தீர்த்தவர்", "Settle": "தீர்க்கவும்" });
+
+
+// W14 audit export
+Object.assign(labels.si, { "Export CSV": "CSV ලෙස අපනයනය" });
+Object.assign(labels.ta, { "Export CSV": "CSV ஆக ஏற்றுமதி" });
+
+
+// W12 receipt report-by deadline
+Object.assign(labels.si, {
+  "2 working days after delivery": "බෙදාහැරීමෙන් වැඩ කරන දින 2කට පසු",
+  "Overdue": "කල් ඉකුත් වී ඇත",
+  "Due today": "අද නියමිතයි",
+  "Due tomorrow": "හෙට නියමිතයි",
+  "Report-by deadline passed.": "වාර්තා කළ යුතු අවසාන දිනය පසු වී ඇත.",
+  "Report-by deadline is today.": "වාර්තා කළ යුතු අවසාන දිනය අදයි.",
+  "Report-by deadline is tomorrow.": "වාර්තා කළ යුතු අවසාන දිනය හෙට වේ.",
+});
+Object.assign(labels.ta, {
+  "2 working days after delivery": "டெலிவரிக்குப் பிறகு 2 வேலை நாட்கள்",
+  "Overdue": "காலக்கெடு கடந்தது",
+  "Due today": "இன்று கடைசி நாள்",
+  "Due tomorrow": "நாளை கடைசி நாள்",
+  "Report-by deadline passed.": "அறிக்கையிட வேண்டிய காலக்கெடு முடிந்துவிட்டது.",
+  "Report-by deadline is today.": "அறிக்கையிட வேண்டிய காலக்கெடு இன்று.",
+  "Report-by deadline is tomorrow.": "அறிக்கையிட வேண்டிய காலக்கெடு நாளை.",
+});
+
+
+// W3 deferral rules
+Object.assign(labels.si, {
+  "Required. The store is told this date in its deferral notice.": "අවශ්‍යයි. කල් දැමීම් දැනුම්දීමේදී මෙම දිනය වෙළඳසැලට දැනුම් දෙනු ලැබේ.",
+  "Priority for next plan": "ඊළඟ සැලසුමට ප්‍රමුඛතාව", "Priority outlet": "ප්‍රමුඛතා අලෙවිසැල",
+});
+Object.assign(labels.ta, {
+  "Required. The store is told this date in its deferral notice.": "கட்டாயம். ஒத்திவைப்பு அறிவிப்பில் இந்தத் தேதி கடைக்குத் தெரிவிக்கப்படும்.",
+  "Priority for next plan": "அடுத்த திட்டத்திற்கு முன்னுரிமை", "Priority outlet": "முன்னுரிமை கடை",
+});
+
+// Store Manager order text helper (A1) and saved dashboards.
+const helperLabels = {
+  si: {
+    "The dashboard could not be saved. Check your connection and try again.": "ඩෑෂ්බෝඩය සුරැකිය නොහැකි විය. ඔබගේ සම්බන්ධතාව පරීක්ෂා කර නැවත උත්සාහ කරන්න.",
+    "The form below was filled in from your text. Check every value before you submit.": "පහත පෝරමය ඔබගේ පෙළෙන් පුරවා ඇත. ඉදිරිපත් කිරීමට පෙර සෑම අගයක්ම පරීක්ෂා කරන්න.",
+    "Which one did you mean?": "ඔබ අදහස් කළේ කුමක්ද?",
+    "How many?": "කීයද?",
+    "Not in your product list. Add it to the totals by hand if you need it.": "ඔබගේ නිෂ්පාදන ලැයිස්තුවේ නැත. අවශ්‍ය නම් එය අතින් එකතුවට එක් කරන්න.",
+    "We could not find that earlier order. Type the items instead.": "එම පෙර ඇණවුම සොයාගත නොහැකි විය. ඒ වෙනුවට අයිතම ටයිප් කරන්න.",
+    "Choose the delivery date on the form.": "පෝරමයේ බෙදාහැරීමේ දිනය තෝරන්න.",
+    "Product": "නිෂ්පාදනය",
+    "Choose a product": "නිෂ්පාදනයක් තෝරන්න",
+    "Quantity": "ප්‍රමාණය",
+    "Add line": "පේළිය එක් කරන්න",
+    "Skip": "මඟ හරින්න",
+    "OK": "හරි",
+    "This is not available right now. Fill in the form below.": "මෙය දැනට ලබා ගත නොහැක. පහත පෝරමය පුරවන්න.",
+    "We could not read that order. Check your connection or fill in the form below.": "එම ඇණවුම කියවිය නොහැකි විය. ඔබගේ සම්බන්ධතාව පරීක්ෂා කරන්න හෝ පහත පෝරමය පුරවන්න.",
+    "Paste or type your order": "ඔබගේ ඇණවුම අලවන්න හෝ ටයිප් කරන්න",
+    "Write it the way you would tell a colleague, for example “same as last Tuesday” or “rice 10 bags, oil 24 bottles”. We fill in the form for you to check. Nothing is sent until you press Submit Order.": "සගයකුට කියන ආකාරයටම ලියන්න, උදාහරණයක් ලෙස “පසුගිය අඟහරුවාදා වගේම” හෝ “සහල් මලු 10, තෙල් බෝතල් 24”. ඔබට පරීක්ෂා කිරීමට අපි පෝරමය පුරවමු. ඇණවුම ඉදිරිපත් කරන්න ඔබන තුරු කිසිවක් යවන්නේ නැත.",
+    "Your order in your own words": "ඔබගේම වචනවලින් ඔබගේ ඇණවුම",
+    "Reading your order…": "ඔබගේ ඇණවුම කියවමින්…",
+    "Fill in for me": "මා වෙනුවෙන් පුරවන්න",
+    "Include the totals from order": "මෙම ඇණවුමේ එකතු ඇතුළත් කරන්න",
+    "Earlier orders only kept totals, not item lines, so the totals are copied.": "පෙර ඇණවුම්වල අයිතම පේළි නොව එකතු පමණක් සුරැකී ඇති බැවින් එකතු පිටපත් කෙරේ.",
+    "Order lines": "ඇණවුම් පේළි",
+    "Please check": "කරුණාකර පරීක්ෂා කරන්න",
+    "Ambient and chilled goods are separate orders. Fill in one, submit it, then fill in the other.": "සාමාන්‍ය සහ ශීතකළ භාණ්ඩ වෙනම ඇණවුම් වේ. එකක් පුරවා ඉදිරිපත් කර, පසුව අනෙක පුරවන්න.",
+    "Use for the order form": "ඇණවුම් පෝරමයට භාවිතා කරන්න",
+    "Nothing to fill in yet. Try writing the items with quantities.": "පිරවීමට තවම කිසිවක් නැත. ප්‍රමාණ සමඟ අයිතම ලිවීමට උත්සාහ කරන්න.",
+  },
+  ta: {
+    "The dashboard could not be saved. Check your connection and try again.": "டாஷ்போர்டைச் சேமிக்க முடியவில்லை. உங்கள் இணைப்பைச் சரிபார்த்து மீண்டும் முயற்சிக்கவும்.",
+    "The form below was filled in from your text. Check every value before you submit.": "கீழே உள்ள படிவம் உங்கள் உரையிலிருந்து நிரப்பப்பட்டது. சமர்ப்பிக்கும் முன் ஒவ்வொரு மதிப்பையும் சரிபார்க்கவும்.",
+    "Which one did you mean?": "நீங்கள் எதைக் குறிப்பிட்டீர்கள்?",
+    "How many?": "எத்தனை?",
+    "Not in your product list. Add it to the totals by hand if you need it.": "உங்கள் பொருள் பட்டியலில் இல்லை. தேவைப்பட்டால் மொத்தத்தில் கைமுறையாகச் சேர்க்கவும்.",
+    "We could not find that earlier order. Type the items instead.": "அந்த முந்தைய ஆர்டரைக் கண்டுபிடிக்க முடியவில்லை. அதற்குப் பதிலாகப் பொருட்களைத் தட்டச்சு செய்யவும்.",
+    "Choose the delivery date on the form.": "படிவத்தில் விநியோகத் தேதியைத் தேர்ந்தெடுக்கவும்.",
+    "Product": "பொருள்",
+    "Choose a product": "ஒரு பொருளைத் தேர்ந்தெடு",
+    "Quantity": "அளவு",
+    "Add line": "வரியைச் சேர்",
+    "Skip": "தவிர்",
+    "OK": "சரி",
+    "This is not available right now. Fill in the form below.": "இது இப்போது கிடைக்கவில்லை. கீழே உள்ள படிவத்தை நிரப்பவும்.",
+    "We could not read that order. Check your connection or fill in the form below.": "அந்த ஆர்டரைப் படிக்க முடியவில்லை. உங்கள் இணைப்பைச் சரிபார்க்கவும் அல்லது கீழே உள்ள படிவத்தை நிரப்பவும்.",
+    "Paste or type your order": "உங்கள் ஆர்டரை ஒட்டவும் அல்லது தட்டச்சு செய்யவும்",
+    "Write it the way you would tell a colleague, for example “same as last Tuesday” or “rice 10 bags, oil 24 bottles”. We fill in the form for you to check. Nothing is sent until you press Submit Order.": "ஒரு சக ஊழியரிடம் சொல்வது போலவே எழுதுங்கள், உதாரணமாக “கடந்த செவ்வாய் போலவே” அல்லது “அரிசி 10 பைகள், எண்ணெய் 24 போத்தல்கள்”. நீங்கள் சரிபார்க்க நாங்கள் படிவத்தை நிரப்புகிறோம். ஆர்டரைச் சமர்ப்பி அழுத்தும் வரை எதுவும் அனுப்பப்படாது.",
+    "Your order in your own words": "உங்கள் சொந்த வார்த்தைகளில் உங்கள் ஆர்டர்",
+    "Reading your order…": "உங்கள் ஆர்டரைப் படிக்கிறது…",
+    "Fill in for me": "எனக்காக நிரப்பு",
+    "Include the totals from order": "இந்த ஆர்டரின் மொத்தங்களைச் சேர்",
+    "Earlier orders only kept totals, not item lines, so the totals are copied.": "முந்தைய ஆர்டர்களில் பொருள் வரிகள் அல்ல, மொத்தங்கள் மட்டுமே சேமிக்கப்பட்டதால் மொத்தங்கள் நகலெடுக்கப்படுகின்றன.",
+    "Order lines": "ஆர்டர் வரிகள்",
+    "Please check": "தயவுசெய்து சரிபார்க்கவும்",
+    "Ambient and chilled goods are separate orders. Fill in one, submit it, then fill in the other.": "சாதாரண மற்றும் குளிரூட்டப்பட்ட பொருட்கள் தனி ஆர்டர்கள். ஒன்றை நிரப்பிச் சமர்ப்பித்த பின் மற்றதை நிரப்பவும்.",
+    "Use for the order form": "ஆர்டர் படிவத்திற்குப் பயன்படுத்து",
+    "Nothing to fill in yet. Try writing the items with quantities.": "நிரப்ப இன்னும் எதுவும் இல்லை. அளவுகளுடன் பொருட்களை எழுதிப் பாருங்கள்.",
+  },
+};
+// Registered here rather than in lookupTranslation so other branches can extend that line freely.
+for (const locale of ["si", "ta"]) Object.assign(labels[locale], helperLabels[locale]);
+
+
+
+
+
 Object.assign(labels.si, {
   "Account name": "ගිණුමේ නම",
   "Your name": "ඔබේ නම",
@@ -1141,6 +1340,7 @@ Object.assign(labels.ta, {
   "Saving…": "சேமிக்கிறது…",
 });
 
+
 // W2 / LO-9: per-trip acknowledgement tracker and persisted dispatcher reminders.
 Object.assign(labels.si, {
   "Reminder sent": "සිහිපත් කිරීම යවන ලදී",
@@ -1159,4 +1359,112 @@ Object.assign(labels.ta, {
   "Sending…": "அனுப்புகிறது…",
   "Plan-level acknowledgements without a trip (recorded before trip tracking; they do not mark any trip acknowledged)": "பயணம் குறிப்பிடப்படாத திட்ட அளவிலான ஒப்புதல்கள் (பயணக் கண்காணிப்புக்கு முன் பதிவானவை; அவை எந்த பயணத்தையும் ஒப்புக்கொண்டதாகக் குறிக்காது)",
   "Dispatch reminded you to acknowledge this plan at": "இந்தத் திட்டத்தை ஒப்புக்கொள்ளுமாறு அனுப்புநர் உங்களுக்கு நினைவூட்டிய நேரம்",
+});
+
+
+// W4: the store manager's Notifications page lists the messages queued for the outlet.
+Object.assign(labels.si, {
+  "Messages sent to your store": "ඔබේ වෙළඳසැලට යවන ලද පණිවුඩ",
+  "Text messages the system queued for your store appear here, newest first.": "පද්ධතිය ඔබේ වෙළඳසැල සඳහා පෝලිමට දැමූ කෙටි පණිවුඩ මෙහි අලුත්ම ඒවා මුලින් පෙන්වයි.",
+  "Loading messages…": "පණිවුඩ පූරණය වෙමින්…",
+  "Messages could not be loaded. The rest of this page is not affected.": "පණිවුඩ පූරණය කළ නොහැකි විය. මෙම පිටුවේ අනෙක් කොටස් බලපාන්නේ නැත.",
+  "No messages have been sent to your store yet.": "ඔබේ වෙළඳසැලට තවමත් පණිවුඩ යවා නැත.",
+  "SHORT LOAD": "බර අඩුවීම",
+  "DELAY": "ප්‍රමාදය",
+  "DELIVERY REFUSED": "බෙදාහැරීම ප්‍රතික්ෂේප කළා",
+  "NOTICE": "දැනුම්දීම",
+  "Queued": "පෝලිමේ ඇත",
+  "Not sent": "යවා නැත",
+});
+Object.assign(labels.ta, {
+  "Messages sent to your store": "உங்கள் கடைக்கு அனுப்பப்பட்ட செய்திகள்",
+  "Text messages the system queued for your store appear here, newest first.": "உங்கள் கடைக்காக அமைப்பு வரிசைப்படுத்திய குறுஞ்செய்திகள் இங்கே, புதியவை முதலில், காட்டப்படும்.",
+  "Loading messages…": "செய்திகள் ஏற்றப்படுகின்றன…",
+  "Messages could not be loaded. The rest of this page is not affected.": "செய்திகளை ஏற்ற முடியவில்லை. இந்தப் பக்கத்தின் மற்ற பகுதிகள் பாதிக்கப்படவில்லை.",
+  "No messages have been sent to your store yet.": "உங்கள் கடைக்கு இன்னும் செய்திகள் அனுப்பப்படவில்லை.",
+  "SHORT LOAD": "ஏற்றுதல் குறைவு",
+  "DELAY": "தாமதம்",
+  "DELIVERY REFUSED": "விநியோகம் மறுக்கப்பட்டது",
+  "NOTICE": "அறிவிப்பு",
+  "Queued": "வரிசையில் உள்ளது",
+  "Not sent": "அனுப்பப்படவில்லை",
+});
+
+// W4: a store with no text-message consent or alert still sees its notices in-app.
+Object.assign(labels.si, {
+  "In your Notifications only": "ඔබේ දැනුම්දීම් තුළ පමණි",
+  "Notices the system recorded for your store appear here, newest first. Some are also sent as text messages.": "පද්ධතිය ඔබේ වෙළඳසැල සඳහා සටහන් කළ දැනුම්දීම් මෙහි අලුත්ම ඒවා මුලින් පෙන්වයි. ඒවායින් සමහරක් කෙටි පණිවුඩ ලෙසද යැවේ.",
+  "No notices have been recorded for your store yet.": "ඔබේ වෙළඳසැල සඳහා තවමත් දැනුම්දීම් සටහන් වී නැත.",
+});
+Object.assign(labels.ta, {
+  "In your Notifications only": "உங்கள் அறிவிப்புகளில் மட்டும்",
+  "Notices the system recorded for your store appear here, newest first. Some are also sent as text messages.": "உங்கள் கடைக்காக அமைப்பு பதிவு செய்த அறிவிப்புகள் புதியவை முதலில் இங்கே தோன்றும். அவற்றில் சில குறுஞ்செய்தியாகவும் அனுப்பப்படும்.",
+  "No notices have been recorded for your store yet.": "உங்கள் கடைக்கு இன்னும் அறிவிப்புகள் பதிவாகவில்லை.",
+});
+
+
+// W11 driver offline sync: per-stop status, waiting count, retry, and older-plan notice.
+Object.assign(labels.si, {
+  "Saved on this phone": "මෙම දුරකථනයේ සුරැකිණි",
+  "Sending": "යවමින්",
+  "Sent": "යවන ලදී",
+  "Could not send": "යැවීමට නොහැකි විය",
+  "Got it": "තේරුණා",
+  "{count} waiting": "{count}ක් බලා සිටී",
+  "{count} photo(s) waiting": "ඡායාරූප {count}ක් බලා සිටී",
+  "Saved records are sent first, then photos.": "සුරැකි සටහන් මුලින් යවයි, ඉන්පසු ඡායාරූප.",
+  "This could not be sent. Your record is still saved on this phone.": "මෙය යැවීමට නොහැකි විය. ඔබේ සටහන තවමත් මෙම දුරකථනයේ සුරැකිව ඇත.",
+  "the current plan is": "වත්මන් සැලැස්ම",
+  "Your record was kept; dispatch will review it.": "ඔබේ සටහන තබාගෙන ඇත; යැවීම් අංශය එය සමාලෝචනය කරනු ඇත.",
+});
+Object.assign(labels.ta, {
+  "Saved on this phone": "இந்த ஃபோனில் சேமிக்கப்பட்டது",
+  "Sending": "அனுப்புகிறது",
+  "Sent": "அனுப்பப்பட்டது",
+  "Could not send": "அனுப்ப முடியவில்லை",
+  "Got it": "புரிந்தது",
+  "{count} waiting": "{count} காத்திருக்கிறது",
+  "{count} photo(s) waiting": "{count} புகைப்படம்(கள்) காத்திருக்கின்றன",
+  "Saved records are sent first, then photos.": "சேமித்த பதிவுகள் முதலில் அனுப்பப்படும், பிறகு புகைப்படங்கள்.",
+  "This could not be sent. Your record is still saved on this phone.": "இதை அனுப்ப முடியவில்லை. உங்கள் பதிவு இன்னும் இந்த ஃபோனில் சேமிக்கப்பட்டுள்ளது.",
+  "the current plan is": "தற்போதைய திட்டம்",
+  "Your record was kept; dispatch will review it.": "உங்கள் பதிவு வைத்துக்கொள்ளப்பட்டது; அனுப்பல் குழு அதை மதிப்பாய்வு செய்யும்.",
+});
+countMessages.push(
+  [/^(\d+) waiting$/, "{count} waiting"],
+  [/^(\d+) photo\(s\) waiting$/, "{count} photo(s) waiting"],
+);
+
+Object.assign(labels.si, {
+
+  "Recovery is not complete": "ප්‍රතිසාධනය සම්පූර්ණ නැත",
+  "could not be marked as in the workshop, so it can still be planned. The replacement is not confirmed until this succeeds.": "වැඩමුළුවේ ඇති බව සටහන් කළ නොහැකි විය, එබැවින් එය තවමත් සැලසුම් කළ හැක. මෙය සාර්ථක වන තුරු ප්‍රතිස්ථාපනය තහවුරු කර නැත.",
+  "Trips already published:": "දැනටමත් ප්‍රකාශිත ගමන්:",
+  "Retry workshop update": "වැඩමුළු යාවත්කාලීනය නැවත උත්සාහ කරන්න",
+});
+Object.assign(labels.ta, {
+  "Recovery is not complete": "மீட்பு நிறைவடையவில்லை",
+  "could not be marked as in the workshop, so it can still be planned. The replacement is not confirmed until this succeeds.": "பட்டறையில் உள்ளதாகக் குறிக்க முடியவில்லை, எனவே இதைத் தொடர்ந்து திட்டமிட முடியும். இது வெற்றி பெறும் வரை மாற்று வாகனம் உறுதிசெய்யப்படாது.",
+  "Trips already published:": "ஏற்கனவே வெளியிடப்பட்ட பயணங்கள்:",
+  "Retry workshop update": "பட்டறைப் புதுப்பிப்பை மீண்டும் முயலவும்",
+});
+Object.assign(labels.si, {
+  "Differs from driver record": "රියදුරු වාර්තාවට වෙනස්",
+  "Count differs from the driver's record": "ගණන රියදුරුගේ වාර්තාවට වෙනස් වේ",
+  "you counted": "ඔබ ගණන් කළේ",
+  "Report the difference so the dispatcher can review it before you confirm.": "ඔබ තහවුරු කිරීමට පෙර සම්ප්‍රේෂකයාට සමාලෝචනය කළ හැකි වන පරිදි වෙනස වාර්තා කරන්න.",
+  "Confirm receipt & report difference": "ලැබීම තහවුරු කර වෙනස වාර්තා කරන්න",
+  "The helper isn't available right now — you can fill this in by hand.": "සහායකය දැන් නොලැබේ — ඔබට මෙය අතින්ම පිරවිය හැකිය.",
+  "Pick the cards by hand": "කාඩ්පත් අතින් තෝරන්න",
+});
+Object.assign(labels.ta, {
+  "Differs from driver record": "ஓட்டுநர் பதிவுடன் வேறுபடுகிறது",
+  "Count differs from the driver's record": "எண்ணிக்கை ஓட்டுநரின் பதிவுடன் வேறுபடுகிறது",
+  "you counted": "நீங்கள் எண்ணியது",
+  "Report the difference so the dispatcher can review it before you confirm.": "நீங்கள் உறுதிப்படுத்தும் முன் அனுப்புநர் மதிப்பாய்வு செய்யும்படி வேறுபாட்டைப் புகாரளிக்கவும்.",
+  "Confirm receipt & report difference": "பெறுதலை உறுதிப்படுத்தி வேறுபாட்டைப் புகாரளிக்கவும்",
+  "The helper isn't available right now — you can fill this in by hand.": "உதவியாளர் இப்போது கிடைக்கவில்லை — இதை நீங்களே கைமுறையாக நிரப்பலாம்.",
+  "Pick the cards by hand": "அட்டைகளை கைமுறையாகத் தேர்ந்தெடுக்கவும்",
+
+
 });

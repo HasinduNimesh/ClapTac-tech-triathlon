@@ -459,15 +459,27 @@ func (p Postgres) GetAllocation(ctx context.Context, planID, allocID string) (do
 	return a, err
 }
 
+// DeleteAllocation removes one allocation. A trip left with no allocations is removed with it,
+// so a published plan never shows loaders and drivers an empty trip. Adding an order to that
+// vehicle again recreates the trip (EnsureTrip).
 func (p Postgres) DeleteAllocation(ctx context.Context, planID, allocID string) error {
-	tag, err := p.Pool.Exec(ctx, `DELETE FROM allocations WHERE plan_id::text = $1 AND id::text = $2`, planID, allocID)
+	tx, err := p.Pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
-	if tag.RowsAffected() == 0 {
+	defer tx.Rollback(ctx)
+	var tripID string
+	err = tx.QueryRow(ctx, `DELETE FROM allocations WHERE plan_id::text = $1 AND id::text = $2 RETURNING trip_id::text`, planID, allocID).Scan(&tripID)
+	if err == pgx.ErrNoRows {
 		return fmt.Errorf("not found")
 	}
-	return nil
+	if err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, `DELETE FROM planning.trips t WHERE t.id::text=$1 AND NOT EXISTS(SELECT 1 FROM planning.allocations a WHERE a.trip_id=t.id)`, tripID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func (p Postgres) ListAllocations(ctx context.Context, planID string) ([]domain.Allocation, error) {
@@ -612,6 +624,38 @@ func (p Postgres) LatestDeferralsByOutlet(ctx context.Context, beforeDate string
 		JOIN planning.plans pl ON pl.id = d.plan_id
 		WHERE d.outlet_id IS NOT NULL AND d.outlet_id <> '' AND pl.delivery_date < $1::date
 		ORDER BY d.outlet_id, pl.delivery_date DESC
+	`, beforeDate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]string{}
+	for rows.Next() {
+		var outletID, date string
+		if err := rows.Scan(&outletID, &date); err != nil {
+			return nil, err
+		}
+		out[outletID] = date
+	}
+	return out, rows.Err()
+}
+
+// EarlierDeferralsByOutlet returns, for every outlet deferred on at least two
+// distinct plan delivery dates strictly before beforeDate, the second most
+// recent of those dates (the deferral that preceded LatestDeferralsByOutlet's).
+// Together the two dates are the persisted history from which an outlet's
+// priorityNextPlan flag is derived on any later plan.
+func (p Postgres) EarlierDeferralsByOutlet(ctx context.Context, beforeDate string) (map[string]string, error) {
+	rows, err := p.Pool.Query(ctx, `
+		SELECT outlet_id, delivery_date::text FROM (
+			SELECT d.outlet_id, pl.delivery_date,
+			       dense_rank() OVER (PARTITION BY d.outlet_id ORDER BY pl.delivery_date DESC) AS rk
+			FROM deferrals d
+			JOIN planning.plans pl ON pl.id = d.plan_id
+			WHERE d.outlet_id IS NOT NULL AND d.outlet_id <> '' AND pl.delivery_date < $1::date
+		) ranked
+		WHERE rk = 2
+		GROUP BY outlet_id, delivery_date
 	`, beforeDate)
 	if err != nil {
 		return nil, err

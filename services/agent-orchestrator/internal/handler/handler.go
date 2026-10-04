@@ -42,6 +42,7 @@ type Handler struct {
 func (h Handler) Routes(r chi.Router) {
 	r.Route("/api/v1/agent", func(r chi.Router) {
 		r.Post("/chat", h.withAuth(h.chat))
+		r.Post("/workflows/draft", h.withAuth(h.draftWorkflow))
 		r.Get("/tools", h.withAuth(h.listTools))
 		r.Post("/approvals", h.withAuth(h.propose))
 		r.Post("/approvals/{id}/decide", h.withAuth(h.decide))
