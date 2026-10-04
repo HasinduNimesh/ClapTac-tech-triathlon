@@ -310,8 +310,27 @@ class _DriverHomeState extends State<_DriverHome> {
     }
   }
 
+  /// Tells the driver, wherever they are in the app, that dispatch sent something new.
+  late int _noticedMessageSerial = session.newMessageSerial;
+
+  void _noticeNewMessage() {
+    if (session.newMessageSerial == _noticedMessageSerial) return;
+    _noticedMessageSerial = session.newMessageSerial;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _notify('Dispatch sent you a message. Open Updates to read and acknowledge it.');
+    });
+  }
+
   void _openUpdate(UpdateItem item) {
-    if (item.id != DriverSession.planConflictId) return;
+    final id = item.id;
+    if (id != null && id.startsWith(messageUpdatePrefix)) {
+      showDialog<void>(
+        context: context,
+        builder: (dialogContext) => _MessageDialog(session: session, messageId: id.substring(messageUpdatePrefix.length)),
+      );
+      return;
+    }
+    if (id != DriverSession.planConflictId) return;
     Navigator.of(context).push(MaterialPageRoute<void>(
       builder: (context) => PlanConflictScreen(
         info: samplePlanConflict,
@@ -340,6 +359,7 @@ class _DriverHomeState extends State<_DriverHome> {
           return _NoRoute(session: session);
         }
         _openLoadCheckOnce();
+        _noticeNewMessage();
         switch (session.tab) {
           case DriverTab.route:
             return RouteHomeScreen(
@@ -460,6 +480,86 @@ class _InProgressSummary extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// One of dispatch's messages in full. An unread message can be acknowledged here, which needs a
+/// connection; when it fails the reason is shown and the message stays unread.
+class _MessageDialog extends StatefulWidget {
+  const _MessageDialog({required this.session, required this.messageId});
+
+  final DriverSession session;
+  final String messageId;
+
+  @override
+  State<_MessageDialog> createState() => _MessageDialogState();
+}
+
+class _MessageDialogState extends State<_MessageDialog> {
+  bool _busy = false;
+  String? _error;
+
+  Future<void> _acknowledge() async {
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    final problem = await widget.session.acknowledgeMessage(widget.messageId);
+    if (!mounted) return;
+    if (problem == null) {
+      Navigator.of(context).pop();
+    } else {
+      setState(() {
+        _busy = false;
+        _error = problem;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: widget.session,
+      builder: (context, _) {
+        final matches = widget.session.messages.where((message) => message.id == widget.messageId);
+        if (matches.isEmpty) {
+          return AlertDialog(
+            title: const Text('Message from dispatch'),
+            content: const Text('This message is no longer available.'),
+            actions: [TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Close'))],
+          );
+        }
+        final message = matches.first;
+        final stops = widget.session.hasRoute ? widget.session.trip.stops.where((stop) => stop.stopId == message.stopId) : const <StopInfo>[];
+        final about = stops.isEmpty ? 'About the whole trip' : 'About stop ${stops.first.sequence} - ${stops.first.name}';
+        return AlertDialog(
+          title: const Text('Message from dispatch'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('${businessClockLabel(message.createdAt)} \u00b7 $about', style: AppText.of(12, FontWeight.w400, color: AppColors.muted)),
+                const SizedBox(height: 12),
+                Text(message.body, style: AppText.of(16, FontWeight.w500)),
+                if (message.acknowledged) ...[
+                  const SizedBox(height: 12),
+                  Text('You acknowledged this message.', style: AppText.of(13, FontWeight.w400, color: AppColors.green)),
+                ],
+                if (_error != null) ...[
+                  const SizedBox(height: 12),
+                  Semantics(liveRegion: true, child: Text(_error!, style: AppText.of(13, FontWeight.w500, color: AppColors.red))),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: _busy ? null : () => Navigator.of(context).pop(), child: const Text('Close')),
+            if (!message.acknowledged) TextButton(onPressed: _busy ? null : _acknowledge, child: Text(_busy ? 'Acknowledging\u2026' : 'Acknowledge')),
+          ],
+        );
+      },
     );
   }
 }
