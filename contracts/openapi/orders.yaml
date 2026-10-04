@@ -185,6 +185,7 @@ paths:
               required: [receivedUnits]
               properties:
                 receivedUnits: { type: integer, minimum: 1 }
+                receivedTemperatureC: { type: number, minimum: -40, maximum: 60, description: Optional manual reading of chilled goods on arrival. Chilled orders only. }
                 issue: { $ref: "#/components/schemas/ReceiptIssueRequest" }
       responses:
         "201": { description: Receipt confirmed }

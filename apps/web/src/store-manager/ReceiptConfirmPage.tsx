@@ -26,6 +26,7 @@ export function ReceiptConfirmPage() {
   const [note, setNote] = useState("");
   const [custody, setCustody] = useState({ sealId: "", serials: "", condition: "", receiver: "" });
   const [busy, setBusy] = useState(false);
+  const [temperature, setTemperature] = useState("");
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -42,6 +43,7 @@ export function ReceiptConfirmPage() {
     setReceived(String(current.order.orderUnits));
     setNote("");
     setIssueChoice("");
+    setTemperature("");
     const loaded = current.tracking.custody?.[0];
     setCustody({ sealId: loaded?.sealId || "", serials: (loaded?.serialNumbers || []).join(", "), condition: "", receiver: "" });
   }, [current?.order.id]);
@@ -57,16 +59,21 @@ export function ReceiptConfirmPage() {
   const short = disc.short;
   const issueType = issueChoice || disc.suggestedIssueType;
   const issueBlocked = disc.needsIssue && issueType === "DAMAGED" && !note.trim();
+  // Manual temperature at receipt for chilled goods (small-change amendment to LO-4 and LD-3). Optional.
+  const chilled = order?.temperatureRequirement === "chilled";
+  const temperatureC = temperature.trim() === "" ? undefined : Number(temperature);
+  const temperatureInvalid = temperatureC !== undefined && (!Number.isFinite(temperatureC) || temperatureC < -40 || temperatureC > 60);
 
   async function confirm(e: FormEvent) {
     e.preventDefault();
     if (!order) return;
     setError(""); setMessage("");
     if (tech && (!custody.sealId.trim() || !custody.serials.trim() || !custody.condition.trim() || !custody.receiver.trim())) { setError(t("Tech receipt requires the seal, serials, received condition, and receiver name.")); return; }
-    if (issueBlocked) return;
+    if (issueBlocked || temperatureInvalid) return;
     setBusy(true);
     try {
-      const payload: { receivedUnits: number; issue?: { issueType: string; affectedUnits: number; note: string; idempotencyKey: string } } = { receivedUnits: units };
+      const payload: { receivedUnits: number; receivedTemperatureC?: number; issue?: { issueType: string; affectedUnits: number; note: string; idempotencyKey: string } } = { receivedUnits: units };
+      if (chilled && temperatureC !== undefined) payload.receivedTemperatureC = Math.round(temperatureC * 10) / 10;
       if (disc.needsIssue) payload.issue = { issueType, affectedUnits: disc.affectedUnits, note, idempotencyKey: key() };
       await apiJSON(`/orders/${order.id}/receipt/confirm`, token, { method: "POST", headers: { "Idempotency-Key": payload.issue?.idempotencyKey || key() }, body: JSON.stringify(payload) });
       if (tech) {
@@ -133,6 +140,10 @@ export function ReceiptConfirmPage() {
                     </div>
                     <label className="dp-field">{t("Serial number(s), comma separated")}<textarea value={custody.serials} onChange={(e) => setCustody({ ...custody, serials: e.target.value })} /></label>
                   </fieldset>}
+                  {chilled && <label className="dp-field" style={{ maxWidth: 260 }}>{t("Temperature on arrival (°C, optional)")}
+                    <input type="number" inputMode="decimal" step="0.1" min={-40} max={60} value={temperature} onChange={(e) => setTemperature(e.target.value)} placeholder={t("e.g. 4.5")} aria-invalid={temperatureInvalid} />
+                    <span className="muted" style={{ fontSize: "0.75rem" }}>{temperatureInvalid ? t("Enter a reading between -40 and 60 °C.") : t("Probe the chilled goods as they come off the truck.")}</span>
+                  </label>}
                   {driverShort > 0 && <p className="dp-note dp-note--amber" style={{ margin: 0 }}>{t("Loading shortfall reported")}: {driverShort} {t("units short before departure.")}</p>}
                 </div>
               </section>
@@ -142,7 +153,7 @@ export function ReceiptConfirmPage() {
                   <label className="dp-field">{t("Note")}<textarea value={note} onChange={(e) => setNote(e.target.value)} maxLength={1000} placeholder={t("e.g. 4 crates of 24 received, seal intact")} /></label>
                   <p className="muted" style={{ margin: 0, fontSize: "0.75rem" }}>{t("Optional for shortages · required for damage")}</p>
                   <div className="dp-note dp-note--amber"><strong>{t("Report-by deadline")}</strong>{due ? `${formatDay(colomboDate(due))}, ${colomboTime(due)} · ${tracking?.receiptDue ? t("2 working days after delivery") : `${REPORT_WINDOW_HOURS} ${t("hours after delivery")}`}` : t("Opens after delivery")}{tracking?.receiptDue?.state === "overdue" && <span className="dp-tag dp-tag--red" style={{ marginLeft: 8 }}>{t("Overdue")}</span>}{(tracking?.receiptDue?.state === "due_tomorrow" || tracking?.receiptDue?.state === "due_today") && <span className="dp-tag dp-tag--amber" style={{ marginLeft: 8 }}>{tracking.receiptDue.state === "due_today" ? t("Due today") : t("Due tomorrow")}</span>}</div>
-                  <button type="submit" className="dp-btn dp-btn--block" disabled={busy || issueBlocked}>{short > 0 ? t("Confirm receipt & report shortage") : disc.needsIssue ? t("Confirm receipt & report difference") : t("Confirm Receipt")}</button>
+                  <button type="submit" className="dp-btn dp-btn--block" disabled={busy || issueBlocked || temperatureInvalid}>{short > 0 ? t("Confirm receipt & report shortage") : disc.needsIssue ? t("Confirm receipt & report difference") : t("Confirm Receipt")}</button>
                 </div>
               </aside>
             </div>

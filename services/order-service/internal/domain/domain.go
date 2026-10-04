@@ -137,6 +137,9 @@ type ReceiptConfirmation struct {
 	DeliveryStopID  string               `json:"-"`
 	DeliveryOutcome string               `json:"-"`
 	ExpectedUnits   int                  `json:"-"`
+
+	// ReceivedTemperatureC is an optional manual reading of chilled goods on arrival.
+	ReceivedTemperatureC *float64 `json:"receivedTemperatureC,omitempty"`
 }
 
 type Receipt struct {
@@ -151,6 +154,9 @@ type Receipt struct {
 	ConfirmedBy     string    `json:"confirmedBy"`
 	ConfirmedAt     time.Time `json:"confirmedAt"`
 	Version         int       `json:"version"`
+
+	// ReceivedTemperatureC is the store's manual reading of chilled goods on arrival, when taken.
+	ReceivedTemperatureC *float64 `json:"receivedTemperatureC,omitempty"`
 }
 
 type ReceiptIssue struct {

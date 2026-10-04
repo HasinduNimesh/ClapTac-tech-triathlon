@@ -219,7 +219,7 @@ func (m *Memory) ConfirmReceipt(order domain.Order, c domain.ReceiptConfirmation
 	if c.Issue != nil {
 		status = "confirmed_with_issue"
 	}
-	r := domain.Receipt{ID: fmt.Sprintf("receipt-%d", m.seq), OrderID: order.ID, DeliveryRunID: c.DeliveryRunID, DeliveryStopID: c.DeliveryStopID, DeliveryOutcome: c.DeliveryOutcome, ExpectedUnits: c.ExpectedUnits, ReceivedUnits: c.ReceivedUnits, Status: status, ConfirmedBy: c.ConfirmedBy, ConfirmedAt: time.Now(), Version: 1}
+	r := domain.Receipt{ID: fmt.Sprintf("receipt-%d", m.seq), OrderID: order.ID, DeliveryRunID: c.DeliveryRunID, DeliveryStopID: c.DeliveryStopID, DeliveryOutcome: c.DeliveryOutcome, ExpectedUnits: c.ExpectedUnits, ReceivedUnits: c.ReceivedUnits, Status: status, ConfirmedBy: c.ConfirmedBy, ConfirmedAt: time.Now(), Version: 1, ReceivedTemperatureC: c.ReceivedTemperatureC}
 	m.receipts[order.ID] = r
 	var added []domain.ReceiptIssue
 	if c.Issue != nil {
