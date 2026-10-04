@@ -3,6 +3,7 @@ import { DeliveryTripDetail, DeliveryTripSummary } from "../api/delivery";
 import { canPurgeCompletedCache } from "./queueRetention.mjs";
 import { clearableCompletedTripIds } from "./driverDataPrivacy.mjs";
 import { bindSingleOwner } from "./singleOwner.mjs";
+import type { SyncConflictNotice } from "./syncQueue.mjs";
 
 export type QueueItem = {
   id?: number;
@@ -17,6 +18,8 @@ export type QueueItem = {
   mimeType?: string;
   proofType?: string;
   receiverName?: string;
+  /** Plan version the driver app was showing when the record was made. */
+  planVersion?: number;
   createdAt: string;
 };
 
@@ -86,6 +89,36 @@ export async function listQueue(ownerId: string) {
   return driverDb.queue.orderBy("id").toArray();
 }
 
+const CONFLICT_PREFIX = "syncConflict:";
+
+/** Keep the plan-version notice for a record the server accepted; it outlives the queue entry. */
+export async function putSyncConflictNotice(ownerId: string, notice: SyncConflictNotice) {
+  await requireOwner(ownerId);
+  await driverDb.meta.put({ key: `${CONFLICT_PREFIX}${notice.operationId}`, value: JSON.stringify(notice) });
+}
+
+export async function listSyncConflictNotices(ownerId: string): Promise<SyncConflictNotice[]> {
+  await requireOwner(ownerId);
+  const rows = await driverDb.meta.where("key").startsWith(CONFLICT_PREFIX).toArray();
+  const notices: SyncConflictNotice[] = [];
+  for (const row of rows) {
+    try { notices.push(JSON.parse(row.value) as SyncConflictNotice); } catch { /* ignore an unreadable notice */ }
+  }
+  return notices.sort((a, b) => a.receivedAt.localeCompare(b.receivedAt));
+}
+
+async function deleteConflictNoticesForTrip(tripId: string) {
+  const rows = await driverDb.meta.where("key").startsWith(CONFLICT_PREFIX).toArray();
+  for (const row of rows) {
+    try { if ((JSON.parse(row.value) as SyncConflictNotice).tripId === tripId) await driverDb.meta.delete(row.key); } catch { /* keep an unreadable row */ }
+  }
+}
+
+export async function dismissSyncConflictNotice(ownerId: string, operationId: string) {
+  await requireOwner(ownerId);
+  await driverDb.meta.delete(`${CONFLICT_PREFIX}${operationId}`);
+}
+
 export async function getCachedTrips(ownerId: string) {
   await requireOwner(ownerId);
   await purgeExpiredCompletedCache(ownerId);
@@ -127,6 +160,7 @@ export async function purgeExpiredCompletedCache(ownerId: string, now = Date.now
       await driverDb.details.delete(tripId);
       await driverDb.trips.delete(tripId);
       await driverDb.meta.delete(marker.key);
+      await deleteConflictNoticesForTrip(tripId);
       purged.push(tripId);
     }
     return purged;
@@ -155,6 +189,7 @@ export async function clearCompletedDriverCache(ownerId: string) {
       await driverDb.details.delete(tripId);
       await driverDb.trips.delete(tripId);
       await driverDb.meta.delete(`serverCompletedAt:${encodeURIComponent(tripId)}`);
+      await deleteConflictNoticesForTrip(tripId);
     }
     return { clearedTripIds: completedTripIds, pendingQueueCount };
   });
