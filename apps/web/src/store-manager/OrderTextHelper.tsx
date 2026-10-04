@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { draftOrder, OrderDraftResponse, OrderQuestion } from "../api/assistants";
 import { useLocale } from "../i18n";
 import { DraftLine, FormFill, formFills, lineFromProduct } from "./orderDraft.mjs";
 import { formatDay } from "./orderStage.mjs";
 import { HelperUnavailableNote } from "./HelperUnavailableNote";
 import { isHelperUnavailable } from "./helperAvailability.mjs";
+import { appendSpoken, speechErrorMessage, speechLanguage, speechRecognitionCtor } from "./speechInput.mjs";
 
 const MAX_TEXT = 2000;
 
@@ -46,8 +47,40 @@ function QuestionRow({ question, onAnswer, onSkip }: { question: OrderQuestion; 
 }
 
 export function OrderTextHelper({ token, onFill, onUnavailable }: Props) {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   const [text, setText] = useState("");
+  // ST-3: speak the order. The browser turns speech into text in the box; the manager checks it before "Fill in for me".
+  const Recognition = speechRecognitionCtor(typeof window === "undefined" ? undefined : window);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const recognition = useRef<any>(null);
+  const [listening, setListening] = useState(false);
+  const [heard, setHeard] = useState("");
+  const [speechError, setSpeechError] = useState("");
+  useEffect(() => () => recognition.current?.abort(), []);
+
+  function toggleSpeech() {
+    if (listening) { recognition.current?.stop(); return; }
+    if (!Recognition) return;
+    const r = new Recognition();
+    r.lang = speechLanguage(locale);
+    r.interimResults = true;
+    r.continuous = true;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    r.onresult = (event: any) => {
+      let interim = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const said = event.results[i][0]?.transcript || "";
+        if (event.results[i].isFinal) setText((current) => appendSpoken(current, said).slice(0, MAX_TEXT));
+        else interim += said;
+      }
+      setHeard(interim.trim());
+    };
+    r.onerror = (event: { error: string }) => setSpeechError(speechErrorMessage(event.error));
+    r.onend = () => { setListening(false); setHeard(""); recognition.current = null; };
+    setSpeechError("");
+    recognition.current = r;
+    try { r.start(); setListening(true); } catch { setListening(false); }
+  }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [unavailable, setUnavailable] = useState(false);
@@ -85,15 +118,22 @@ export function OrderTextHelper({ token, onFill, onUnavailable }: Props) {
 
   return (
     <section className="sm-form-card sm-helper-card" aria-labelledby="order-text-heading">
-      <h2 id="order-text-heading" className="sm-form-card-title">{t("Paste or type your order")}</h2>
+      <h2 id="order-text-heading" className="sm-form-card-title">{t("Paste, type or speak your order")}</h2>
       <p className="sm-form-card-sub muted">{t("Write it the way you would tell a colleague, for example “same as last Tuesday” or “rice 10 bags, oil 24 bottles”. We fill in the form for you to check. Nothing is sent until you press Submit Order.")}</p>
       {unavailable ? <HelperUnavailableNote /> : <>
       <div className="sm-field">
         <label htmlFor="order-text">{t("Your order in your own words")}</label>
         <textarea id="order-text" rows={3} maxLength={MAX_TEXT} value={text} onChange={(e) => setText(e.target.value)} />
+        {listening && <p className="sm-field-hint" role="status" aria-live="polite">{heard ? `${t("Hearing")}: “${heard}”` : t("Listening… say the items and quantities, then tap Stop.")}</p>}
+        {speechError && <p className="status-bad sm-form-error" role="alert">{t(speechError)}</p>}
       </div>
       <div className="sm-helper-actions">
-        <button type="button" className="tap primary" onClick={() => void read()} disabled={busy || !text.trim()}>
+        {Recognition && (
+          <button type="button" className="sm-btn-secondary" aria-pressed={listening} onClick={toggleSpeech} disabled={busy}>
+            {listening ? `■ ${t("Stop")}` : `🎤 ${t("Speak your order")}`}
+          </button>
+        )}
+        <button type="button" className="tap primary" onClick={() => { recognition.current?.stop(); void read(); }} disabled={busy || !text.trim()}>
           {busy ? t("Reading your order…") : t("Fill in for me")}
         </button>
         {result && <button type="button" className="sm-helper-link" onClick={() => { setResult(null); setLines([]); setQuestions([]); setText(""); }}>{t("Clear")}</button>}
