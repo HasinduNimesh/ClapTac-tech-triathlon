@@ -1,7 +1,7 @@
 import Dexie, { Table } from "dexie";
 import { DeliveryTripDetail, DeliveryTripSummary } from "../api/delivery";
 import { canPurgeCompletedCache } from "./queueRetention.mjs";
-import { clearableCompletedTripIds } from "./driverDataPrivacy.mjs";
+import { clearableCompletedTripIds, otherDayTripIds } from "./driverDataPrivacy.mjs";
 import { bindSingleOwner } from "./singleOwner.mjs";
 import type { SyncConflictNotice } from "./syncQueue.mjs";
 
@@ -192,5 +192,21 @@ export async function clearCompletedDriverCache(ownerId: string) {
       await deleteConflictNoticesForTrip(tripId);
     }
     return { clearedTripIds: completedTripIds, pendingQueueCount };
+  });
+}
+
+/** DR-8: keep only today's route on this device; trips from other days with nothing left to sync are removed. */
+export async function purgeOtherDayRoutes(ownerId: string, today: string) {
+  await requireOwner(ownerId);
+  return driverDb.transaction("rw", driverDb.trips, driverDb.details, driverDb.queue, driverDb.meta, async () => {
+    const queuedTripIds = (await driverDb.queue.toArray()).map((item) => item.tripId);
+    const stale = otherDayTripIds({ trips: await driverDb.trips.toArray(), details: await driverDb.details.toArray(), queuedTripIds, today });
+    for (const tripId of stale) {
+      await driverDb.details.delete(tripId);
+      await driverDb.trips.delete(tripId);
+      await driverDb.meta.delete(`serverCompletedAt:${encodeURIComponent(tripId)}`);
+      await deleteConflictNoticesForTrip(tripId);
+    }
+    return stale;
   });
 }
