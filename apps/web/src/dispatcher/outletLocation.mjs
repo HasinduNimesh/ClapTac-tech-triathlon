@@ -40,16 +40,19 @@ export function formatCoordinates(latitude, longitude) {
 export function locationChange(text, current, removeExact = false) {
   const typed = String(text ?? "").trim();
   const exact = current && current.latitude != null && current.longitude != null && !current.locationApproximate;
+  // The field shows the recorded position rounded to six decimals, so "unchanged" means "same as what
+  // was shown", not "equal to the stored value at full precision".
+  const parsed = typed ? parseCoordinates(typed) : undefined;
+  const unchanged = Boolean(exact && parsed && parsed.ok && formatCoordinates(parsed.latitude, parsed.longitude) === formatCoordinates(current.latitude, current.longitude));
   if (removeExact) {
     if (!exact) return { change: "keep" };
-    const sameAsRecorded = !typed || (parseCoordinates(typed).ok && Math.abs(parseCoordinates(typed).latitude - current.latitude) < 1e-9 && Math.abs(parseCoordinates(typed).longitude - current.longitude) < 1e-9);
-    if (!sameAsRecorded) return { change: "invalid", message: "Either enter a new location or remove the recorded one, not both." };
+    if (typed && !unchanged) return { change: "invalid", message: "Either enter a new location or remove the recorded one, not both." };
     return { change: "clear" };
   }
   if (!typed) return { change: "keep" };
-  const parsed = parseCoordinates(typed);
   if (!parsed.ok) return { change: "invalid", message: parsed.message };
-  if (exact && Math.abs(parsed.latitude - current.latitude) < 1e-9 && Math.abs(parsed.longitude - current.longitude) < 1e-9) return { change: "keep" };
+  // Saving other fields must not rewrite a precisely recorded position with its rounded display.
+  if (unchanged) return { change: "keep" };
   return { change: "set", latitude: parsed.latitude, longitude: parsed.longitude };
 }
 

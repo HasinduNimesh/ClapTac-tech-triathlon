@@ -37,6 +37,16 @@ test("a typed position is set, unless it is the one already recorded", () => {
   assert.equal(locationChange("nonsense", exact).change, "invalid");
 });
 
+test("a position stored with more than six decimals is unchanged when the pre-filled, rounded value is saved or removed", () => {
+  const precise = { latitude: 6.934412345678, longitude: 79.842811234567, locationApproximate: false };
+  const shown = formatCoordinates(precise.latitude, precise.longitude);
+  assert.equal(shown, "6.934412, 79.842811");
+  assert.deepEqual(locationChange(shown, precise), { change: "keep" }, "saving the pre-filled value must not rewrite the stored precision");
+  assert.deepEqual(locationChange(shown, precise, true), { change: "clear" }, "'remove' with the pre-filled value is a removal, not a conflict");
+  assert.equal(locationChange("6.934413, 79.842811", precise, true).change, "invalid", "a genuinely different value with 'remove' is still refused");
+  assert.deepEqual(locationChange("6.934413, 79.842811", precise), { change: "set", latitude: 6.934413, longitude: 79.842811 }, "a change in the sixth decimal is a change");
+});
+
 test("links open the point, or search the shop by name when there is no point", () => {
   assert.equal(openStreetMapLink(6.93441, 79.84281), "https://www.openstreetmap.org/?mlat=6.93441&mlon=79.84281#map=18/6.93441/79.84281");
   assert.equal(openStreetMapSearchLink("Fresh Pettah", "Colombo"), "https://www.openstreetmap.org/search?query=Fresh%20Pettah%2C%20Colombo%2C%20Sri%20Lanka");
