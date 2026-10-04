@@ -821,6 +821,7 @@ func peerStub() http.Handler {
 		},
 	}
 	r.Get("/api/v1/loading/internal/trips", func(w http.ResponseWriter, req *http.Request) {
+		north["planVersion"] = int(stubPlanVersion.Load())
 		items := []map[string]any{north, south}
 		if v := req.URL.Query().Get("vehicleId"); v != "" {
 			var filtered []map[string]any
@@ -840,6 +841,7 @@ func peerStub() http.Handler {
 			return
 		}
 		if id == "trip-north" {
+			north["planVersion"] = int(stubPlanVersion.Load())
 			httpx.WriteJSON(w, http.StatusOK, north)
 			return
 		}
