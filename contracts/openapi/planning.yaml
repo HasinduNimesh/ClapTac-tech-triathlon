@@ -249,6 +249,84 @@ paths:
               schema:
                 $ref: "#/components/schemas/Problem"
               example: { type: "about:blank", title: Bad Gateway, status: 502, detail: "workshop_pending: vehicle VEH001 could not be marked in the workshop, so the recovery is not complete and the plan was not changed; retry the same request", code: workshop_pending }
+  /planning/plans/{id}/acknowledgements:
+    post:
+      operationId: acknowledgePlanVersion
+      security: [{ bearerAuth: [] }]
+      description: >-
+        Requires plan:acknowledge (driver or loader). Records the caller's receipt of the current published version for one trip.
+        tripId is optional only for legacy clients; a receipt without a trip is plan-level and does not mark any trip acknowledged.
+        A driver may acknowledge only a trip of their assigned vehicle and a loader only a trip of their depot. Repeating is idempotent.
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [version]
+              properties:
+                version: { type: integer, minimum: 1 }
+                tripId: { type: string, format: uuid, description: "Trip of this plan the receipt covers." }
+      responses:
+        "200": { description: Acknowledged }
+        "403": { description: Trip belongs to another vehicle or depot }
+        "404": { description: Plan not found, or tripId is not a trip of this plan }
+        "409": { description: Plan not published or version is stale }
+  /planning/plans/{id}/reminders:
+    post:
+      operationId: sendPlanAcknowledgementReminder
+      security: [{ bearerAuth: [] }]
+      description: >-
+        Requires plan:update (dispatcher). Records a persisted reminder asking the trip's driver or loader to acknowledge the current
+        plan version, writes a PLAN_ACK_REMINDER_SENT audit event (trip, audience, version, actor) and, for DRIVER, posts a message on
+        the delivery trip message channel as the calling dispatcher. A repeat for the same trip, audience and version within 5 minutes
+        changes nothing and returns the earlier reminder with alreadySent=true.
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tripId, audience]
+              properties:
+                tripId: { type: string, format: uuid }
+                audience: { type: string, enum: [DRIVER, LOADER] }
+      responses:
+        "200":
+          description: Reminder recorded, or already sent within the last 5 minutes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  reminder:
+                    type: object
+                    properties:
+                      tripId: { type: string }
+                      audience: { type: string, enum: [DRIVER, LOADER] }
+                      version: { type: integer }
+                      remindedAt: { type: string, format: date-time }
+                      remindedBy: { type: string }
+                  alreadySent: { type: boolean }
+                  tripMessage: { type: string, description: "DRIVER only: 'sent', or 'unavailable' when the driver has not prepared the trip run yet; the persisted reminder is still shown in the driver app." }
+        "400": { description: Missing tripId or invalid audience }
+        "403": { description: Caller lacks plan:update }
+        "404": { description: tripId is not a trip of this plan }
+        "409": { description: Plan not published, or that recipient already acknowledged the trip }
+    get:
+      operationId: listPlanAcknowledgementReminders
+      security: [{ bearerAuth: [] }]
+      description: Requires plan:acknowledge (driver or loader). Reminders for the current published version addressed to the caller's role, optionally for one trip.
+      parameters:
+        - $ref: "#/components/parameters/ID"
+        - { name: tripId, in: query, schema: { type: string } }
+      responses:
+        "200": { description: Reminders addressed to the caller's role }
+        "403": { description: Not a driver or loader }
   /planning/internal/trips:
     get:
       operationId: listConfirmedTripsInternal
