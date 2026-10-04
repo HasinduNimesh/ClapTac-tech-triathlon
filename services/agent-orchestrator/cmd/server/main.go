@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/HasinduNimesh/ClapTac-tech-triathlon/pkg/agenttrace"
 	"github.com/HasinduNimesh/ClapTac-tech-triathlon/pkg/audit"
 	"github.com/HasinduNimesh/ClapTac-tech-triathlon/pkg/bootstrap"
 	"github.com/HasinduNimesh/ClapTac-tech-triathlon/services/agent-orchestrator/internal/approvals"
@@ -35,6 +36,8 @@ func main() {
 		Approvals: approvals.NewMemory(),
 		Publisher: audit.LogPublisher{Logger: app.Logger, Source: "agent-orchestrator"},
 		Creds:     creds,
+		// Empty AGENT_TRACE_URL turns tracing off; the agent never depends on the manager.
+		Traces: agenttrace.NewHTTPSink(os.Getenv("AGENT_TRACE_URL"), os.Getenv("AGENT_TRACE_INGEST_TOKEN")),
 	}
 	if err := app.Run(func(r chi.Router) { h.Routes(r) }); err != nil {
 		log.Fatal(err)

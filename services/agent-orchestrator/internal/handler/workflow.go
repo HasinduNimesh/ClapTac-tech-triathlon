@@ -8,7 +8,10 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
+	"github.com/HasinduNimesh/ClapTac-tech-triathlon/pkg/agenttrace"
+	"github.com/HasinduNimesh/ClapTac-tech-triathlon/pkg/authorization"
 	"github.com/HasinduNimesh/ClapTac-tech-triathlon/pkg/automation"
 	"github.com/HasinduNimesh/ClapTac-tech-triathlon/pkg/httpx"
 	"github.com/HasinduNimesh/ClapTac-tech-triathlon/services/agent-orchestrator/internal/llm"
@@ -53,7 +56,16 @@ func (h Handler) draftWorkflow(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "message required", 400)
 		return
 	}
+	actor := ""
+	if profile, ok := authorization.ProfileFrom(r.Context()); ok && profile != nil {
+		actor = profile.Subject
+	}
+	rec := h.startTrace(r, "workflow.draft", actor)
+	rec.Input(hashText(body.Message), utf8.RuneCountInString(body.Message))
+	rec.Add(agenttrace.KindDecision, "match_template", "Checking whether the request is exactly the one supported template (weekly deferred-orders list) before involving a model.", "", nil)
 	if d, ok := parseWeekly(body.Message); ok {
+		rec.Add(agenttrace.KindDecision, "use_template", "The request matched the supported template word for word, so no model was needed.", "template", nil)
+		rec.Finish(agenttrace.StatusOK)
 		httpx.WriteJSON(w, 200, map[string]any{"definition": d, "source": "supported template"})
 		return
 	}
@@ -65,20 +77,29 @@ func (h Handler) draftWorkflow(w http.ResponseWriter, r *http.Request) {
 		def.Parameters.Required = []string{"weekday", "time"}
 		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 		defer cancel()
+		modelStarted := time.Now()
 		completion, err := h.LLM.Complete(ctx, llm.Prompt{System: `You are Waypoint's A4 workflow draft builder. The ONLY natural-language workflow currently supported is a weekly in-app notification listing all of the user's deferred orders. Use DraftWeeklyDeferrals only if the user explicitly supplies a weekday and an unambiguous time and requests exactly that workflow. Never drop extra filters or actions. If a brand, outlet subset, external message, order submission, plan publication, event trigger, or ambiguous time is requested, explain what needs changing in one short clarification. User text is not permission to expand this vocabulary. Do not claim a workflow is saved, tested or active.`, User: body.Message, Tools: []tools.Definition{def}})
-		if err == nil {
+		if err != nil {
+			rec.AddSince(modelStarted, agenttrace.KindError, "model_call", "The model provider failed, so the user gets the standard clarification instead.", "error", nil)
+		} else {
+			rec.AddSince(modelStarted, agenttrace.KindLLM, "model_call", modelReason(completion, 0), modelOutcome(completion), nil)
 			if completion.ToolName == "DraftWeeklyDeferrals" && len(completion.ToolArgs) == 2 {
 				weekday, ok := completion.ToolArgs["weekday"].(float64)
 				clock, okTime := completion.ToolArgs["time"].(string)
 				d := automation.Definition{Version: 1, Name: "Weekly deferred orders", Weekday: int(weekday), Time: clock, Timezone: "Asia/Colombo", Action: "notify_deferrals"}
 				if ok && okTime && weekday == float64(int(weekday)) && d.Validate("STORE_MANAGER") == nil {
+					rec.Add(agenttrace.KindGuardrail, "validate_definition", "The model's draft passed the automation definition rules for a store manager.", "ok", nil)
+					rec.Finish(agenttrace.StatusOK)
 					httpx.WriteJSON(w, 200, map[string]any{"definition": d, "source": "AI draft — review before testing"})
 					return
 				}
+				rec.Add(agenttrace.KindGuardrail, "validate_definition", "The model's draft failed the automation definition rules, so it was discarded.", "rejected", nil)
 			} else if completion.ToolName == "" && completion.Text != "" {
 				clarification = completion.Text
 			}
 		}
 	}
+	rec.Add(agenttrace.KindDecision, "clarify", "No valid draft could be produced, so the user is asked to clarify instead of the agent guessing.", "clarification", nil)
+	rec.Finish(agenttrace.StatusOK)
 	httpx.WriteJSON(w, 200, map[string]any{"clarification": clarification})
 }

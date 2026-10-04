@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agent manager</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <header>
+    <h1>Agent manager</h1>
+    <div class="filters">
+      <select id="agent" aria-label="Agent"><option value="">All agents</option></select>
+      <select id="status" aria-label="Status">
+        <option value="">Any status</option>
+        <option value="ok">ok</option>
+        <option value="pending_approval">pending approval</option>
+        <option value="denied">denied</option>
+        <option value="error">error</option>
+      </select>
+      <input id="q" type="search" placeholder="Search user, id, tool or reason" aria-label="Search">
+      <label class="auto"><input id="auto" type="checkbox" checked> Auto-refresh</label>
+      <button id="refresh" type="button">Refresh</button>
+    </div>
+  </header>
+
+  <form id="login" hidden>
+    <label>View token <input id="token" type="password" autocomplete="off"></label>
+    <button type="submit">Open</button>
+    <span id="loginError" class="muted"></span>
+  </form>
+
+  <main>
+    <section id="list" aria-label="Traces">
+      <table>
+        <thead><tr><th>Time</th><th>Agent</th><th>Operation</th><th>Status</th><th>Steps</th><th>Took</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <p id="empty" class="muted" hidden>No traces yet. They appear once an agent handles a request.</p>
+    </section>
+    <section id="detail" aria-label="Trace detail">
+      <p class="muted">Select a trace to see what the agent did and why.</p>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

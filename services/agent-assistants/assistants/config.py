@@ -19,6 +19,8 @@ class Config:
     llm_base_url: str
     llm_model: str
     llm_api_key: str
+    agent_trace_url: str = ""
+    agent_trace_token: str = ""
 
     @property
     def llm_configured(self) -> bool:
@@ -40,4 +42,6 @@ def load() -> Config:
         llm_base_url=_env("LLM_BASE_URL"),
         llm_model=_env("LLM_MODEL"),
         llm_api_key=_env("LLM_API_KEY"),
+        agent_trace_url=_env("AGENT_TRACE_URL").rstrip("/"),
+        agent_trace_token=_env("AGENT_TRACE_INGEST_TOKEN"),
     )
