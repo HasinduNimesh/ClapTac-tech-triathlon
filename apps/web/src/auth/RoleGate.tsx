@@ -7,7 +7,6 @@ export function RoleGate({ role, children }: { role: string; children: React.Rea
   const { t } = useLocale();
 
   if (profileLoading) return <p role="status">{t("Checking your access…")}</p>;
-  if (import.meta.env.DEV && !user) return <>{children}</>;
   if (!user) return <section className="card"><h2>{t("Sign in required")}</h2><p><Link to="/login">{t("Sign in")}</Link> {t("to continue.")}</p></section>;
   if (!profile) return <p className="status-bad" role="alert">{t("Your access profile could not be loaded. Please try again.")}</p>;
   if (roleOf(profile)?.toUpperCase() !== role) {
