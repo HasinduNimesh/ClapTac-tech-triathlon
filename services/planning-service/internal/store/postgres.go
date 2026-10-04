@@ -143,25 +143,46 @@ func (p Postgres) Publication(ctx context.Context, planID string) (domain.Public
 	if err := p.Pool.QueryRow(ctx, `SELECT version,content_hash,published_by,published_at FROM planning.plan_publications WHERE plan_id=$1::uuid ORDER BY version DESC LIMIT 1`, planID).Scan(&out.Version, &out.ContentHash, &out.PublishedBy, &out.PublishedAt); err != nil {
 		return out, err
 	}
-	rows, err := p.Pool.Query(ctx, `SELECT actor_id,actor_role,acknowledged_at FROM planning.plan_acknowledgements WHERE plan_id=$1::uuid AND version=$2 ORDER BY actor_role,actor_id`, planID, out.Version)
+	rows, err := p.Pool.Query(ctx, `SELECT actor_id,actor_role,COALESCE(trip_id::text,''),COALESCE(vehicle_id,''),acknowledged_at FROM planning.plan_acknowledgements WHERE plan_id=$1::uuid AND version=$2 ORDER BY actor_role,actor_id,trip_id`, planID, out.Version)
 	if err != nil {
 		return out, err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var a domain.PlanAcknowledgement
-		if err := rows.Scan(&a.ActorID, &a.ActorRole, &a.AcknowledgedAt); err != nil {
+		if err := rows.Scan(&a.ActorID, &a.ActorRole, &a.TripID, &a.VehicleID, &a.AcknowledgedAt); err != nil {
 			return out, err
 		}
 		out.Acknowledgements = append(out.Acknowledgements, a)
 	}
+	if err := rows.Err(); err != nil {
+		return out, err
+	}
 	if out.Acknowledgements == nil {
 		out.Acknowledgements = []domain.PlanAcknowledgement{}
 	}
-	return out, rows.Err()
+	reminders, err := p.Pool.Query(ctx, `SELECT DISTINCT ON (trip_id,audience) trip_id::text,audience,version,reminded_at,reminded_by FROM planning.plan_ack_reminders WHERE plan_id=$1::uuid AND version=$2 ORDER BY trip_id,audience,reminded_at DESC`, planID, out.Version)
+	if err != nil {
+		return out, err
+	}
+	defer reminders.Close()
+	for reminders.Next() {
+		var r domain.PlanReminder
+		if err := reminders.Scan(&r.TripID, &r.Audience, &r.Version, &r.RemindedAt, &r.RemindedBy); err != nil {
+			return out, err
+		}
+		out.Reminders = append(out.Reminders, r)
+	}
+	if out.Reminders == nil {
+		out.Reminders = []domain.PlanReminder{}
+	}
+	return out, reminders.Err()
 }
 
-func (p Postgres) Acknowledge(ctx context.Context, planID string, version int, actor, role string) error {
+// Acknowledge records one recipient's receipt of the current version. tripID and
+// vehicleID identify the trip it covers; both are empty only for legacy,
+// plan-level callers. Repeating the same (actor, role, trip) is idempotent.
+func (p Postgres) Acknowledge(ctx context.Context, planID string, version int, actor, role, tripID, vehicleID string) error {
 	tx, err := p.Pool.Begin(ctx)
 	if err != nil {
 		return err
@@ -174,10 +195,45 @@ func (p Postgres) Acknowledge(ctx context.Context, planID string, version int, a
 	if version != current || current == 0 {
 		return fmt.Errorf("stale_version")
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO planning.plan_acknowledgements(plan_id,version,actor_id,actor_role) VALUES($1::uuid,$2,$3,$4) ON CONFLICT DO NOTHING`, planID, version, actor, role); err != nil {
+	if _, err := tx.Exec(ctx, `INSERT INTO planning.plan_acknowledgements(plan_id,version,actor_id,actor_role,trip_id,vehicle_id) VALUES($1::uuid,$2,$3,$4,NULLIF($5,'')::uuid,NULLIF($6,'')) ON CONFLICT DO NOTHING`, planID, version, actor, role, tripID, vehicleID); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+// RecordReminder persists a dispatcher reminder for one trip and audience of the
+// current version. When a reminder for the same trip, audience and version was
+// recorded within window it returns that one with already=true and records
+// nothing, so a double click or retry is idempotent.
+func (p Postgres) RecordReminder(ctx context.Context, planID string, version int, tripID, audience, actor string, window time.Duration) (domain.PlanReminder, bool, error) {
+	tx, err := p.Pool.Begin(ctx)
+	if err != nil {
+		return domain.PlanReminder{}, false, err
+	}
+	defer tx.Rollback(ctx)
+	var current int
+	if err := tx.QueryRow(ctx, `SELECT current_version FROM planning.plans WHERE id=$1::uuid FOR UPDATE`, planID).Scan(&current); err != nil {
+		return domain.PlanReminder{}, false, err
+	}
+	if version != current || current == 0 {
+		return domain.PlanReminder{}, false, fmt.Errorf("stale_version")
+	}
+	r := domain.PlanReminder{TripID: tripID, Audience: audience, Version: version}
+	err = tx.QueryRow(ctx, `SELECT reminded_at,reminded_by FROM planning.plan_ack_reminders WHERE plan_id=$1::uuid AND version=$2 AND trip_id=$3::uuid AND audience=$4 AND reminded_at > now() - make_interval(secs => $5) ORDER BY reminded_at DESC LIMIT 1`, planID, version, tripID, audience, window.Seconds()).Scan(&r.RemindedAt, &r.RemindedBy)
+	if err == nil {
+		return r, true, nil
+	}
+	if err != pgx.ErrNoRows {
+		return domain.PlanReminder{}, false, err
+	}
+	r.RemindedBy = actor
+	if err := tx.QueryRow(ctx, `INSERT INTO planning.plan_ack_reminders(plan_id,version,trip_id,audience,reminded_by) VALUES($1::uuid,$2,$3::uuid,$4,$5) RETURNING reminded_at`, planID, version, tripID, audience, actor).Scan(&r.RemindedAt); err != nil {
+		return domain.PlanReminder{}, false, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return domain.PlanReminder{}, false, err
+	}
+	return r, false, nil
 }
 
 func (p Postgres) ListConfirmedByDate(ctx context.Context, date string) ([]domain.Plan, error) {

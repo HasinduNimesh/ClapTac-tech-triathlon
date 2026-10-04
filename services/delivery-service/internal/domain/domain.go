@@ -248,10 +248,20 @@ type LoadingTrip struct {
 	Orders                       []LoadingOrder        `json:"orders"`
 }
 
+// PlanAcknowledgement mirrors planning's receipt. TripID is empty only for
+// legacy plan-level receipts recorded before trip identity existed.
 type PlanAcknowledgement struct {
 	ActorID        string    `json:"actorId"`
 	ActorRole      string    `json:"actorRole"`
+	TripID         string    `json:"tripId,omitempty"`
+	VehicleID      string    `json:"vehicleId,omitempty"`
 	AcknowledgedAt time.Time `json:"acknowledgedAt"`
+}
+
+// CoversTrip reports whether this receipt acknowledges the given trip: an
+// explicit match, or a legacy plan-level receipt that predates trip identity.
+func (a PlanAcknowledgement) CoversTrip(tripID string) bool {
+	return a.TripID == "" || a.TripID == tripID
 }
 
 type LoadingOrder struct {

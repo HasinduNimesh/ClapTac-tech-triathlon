@@ -106,6 +106,10 @@ export type PlanOrder = {
   lastDeferralDate?: string;
 };
 
+export type PlanAcknowledgement = { actorId: string; actorRole: string; tripId?: string; vehicleId?: string; acknowledgedAt: string };
+export type PlanReminder = { tripId: string; audience: "DRIVER" | "LOADER"; version: number; remindedAt: string; remindedBy: string };
+export type ReminderResult = { reminder: PlanReminder; alreadySent: boolean; tripMessage?: string };
+
 export type PlanDetail = {
   plan: Plan;
   trips: { id: string; vehicleId: string; tripNumber: number; status: string }[];
@@ -123,7 +127,7 @@ export type PlanDetail = {
   policySignalAvailable?: boolean;
   unallocatedReasonsAvailable?: boolean;
   planningPolicy?: { version: number; cutoffLocalTime: string; deferralWeightPoints: number; maxDeferralCount: number; maxUnservedDays: number; maxTripsPerVehicle: number };
-  publication?: { version: number; contentHash: string; publishedBy: string; publishedAt: string; acknowledgements: {actorId:string;actorRole:string;acknowledgedAt:string}[] };
+  publication?: { version: number; contentHash: string; publishedBy: string; publishedAt: string; acknowledgements: PlanAcknowledgement[]; reminders?: PlanReminder[] };
 };
 
 export const DEFER_REASONS = [

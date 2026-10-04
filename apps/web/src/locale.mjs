@@ -1140,3 +1140,23 @@ Object.assign(labels.ta, {
   "Save name": "பெயரைச் சேமி",
   "Saving…": "சேமிக்கிறது…",
 });
+
+// W2 / LO-9: per-trip acknowledgement tracker and persisted dispatcher reminders.
+Object.assign(labels.si, {
+  "Reminder sent": "සිහිපත් කිරීම යවන ලදී",
+  "Already reminded recently": "මෑතකදී දැනටමත් සිහිපත් කර ඇත",
+  "Reminder failed": "සිහිපත් කිරීම අසාර්ථකයි",
+  "Request failed": "ඉල්ලීම අසාර්ථකයි",
+  "Sending…": "යවමින්…",
+  "Plan-level acknowledgements without a trip (recorded before trip tracking; they do not mark any trip acknowledged)": "ගමනක් නොමැති සැලැස්ම මට්ටමේ පිළිගැනීම් (ගමන් නිරීක්ෂණයට පෙර සටහන් කළ; ඒවා කිසිදු ගමනක් පිළිගත් ලෙස සලකුණු නොකරයි)",
+  "Dispatch reminded you to acknowledge this plan at": "මෙම සැලැස්ම පිළිගන්නැයි බෙදාහැරීම ඔබට සිහිපත් කළේ",
+});
+Object.assign(labels.ta, {
+  "Reminder sent": "நினைவூட்டல் அனுப்பப்பட்டது",
+  "Already reminded recently": "சமீபத்தில் ஏற்கனவே நினைவூட்டப்பட்டது",
+  "Reminder failed": "நினைவூட்டல் தோல்வியடைந்தது",
+  "Request failed": "கோரிக்கை தோல்வியடைந்தது",
+  "Sending…": "அனுப்புகிறது…",
+  "Plan-level acknowledgements without a trip (recorded before trip tracking; they do not mark any trip acknowledged)": "பயணம் குறிப்பிடப்படாத திட்ட அளவிலான ஒப்புதல்கள் (பயணக் கண்காணிப்புக்கு முன் பதிவானவை; அவை எந்த பயணத்தையும் ஒப்புக்கொண்டதாகக் குறிக்காது)",
+  "Dispatch reminded you to acknowledge this plan at": "இந்தத் திட்டத்தை ஒப்புக்கொள்ளுமாறு அனுப்புநர் உங்களுக்கு நினைவூட்டிய நேரம்",
+});

@@ -32,7 +32,8 @@ var validReasons = map[string]bool{
 type planVersionStore interface {
 	Publish(context.Context, string, string, string) (domain.Publication, error)
 	Publication(context.Context, string) (domain.Publication, error)
-	Acknowledge(context.Context, string, int, string, string) error
+	Acknowledge(context.Context, string, int, string, string, string, string) error
+	RecordReminder(context.Context, string, int, string, string, string, time.Duration) (domain.PlanReminder, bool, error)
 	Revise(context.Context, string) error
 	MoveTripAllocations(context.Context, string, string, string, int, []domain.Allocation) error
 }
@@ -310,7 +311,7 @@ func (s Service) publication(ctx context.Context, pl domain.Plan) domain.Publica
 		out, _ := st.Publication(ctx, pl.ID)
 		return out
 	}
-	return domain.Publication{Version: pl.CurrentVersion, Acknowledgements: []domain.PlanAcknowledgement{}}
+	return domain.Publication{Version: pl.CurrentVersion, Acknowledgements: []domain.PlanAcknowledgement{}, Reminders: []domain.PlanReminder{}}
 }
 
 func (s Service) Reassign(ctx context.Context, profile *authorization.Profile, planID, allocID, vehicleID string, tripNo int, reason string) ([]domain.Result, error) {
@@ -473,7 +474,15 @@ func (s Service) Confirm(ctx context.Context, profile *authorization.Profile, id
 	return nil
 }
 
-func (s Service) Acknowledge(ctx context.Context, profile *authorization.Profile, planID string, version int) error {
+// ReminderWindow is how long a reminder for the same trip, audience and plan
+// version suppresses another one.
+const ReminderWindow = 5 * time.Minute
+
+// Acknowledge records the caller's receipt of the current published version.
+// tripID identifies the trip being acknowledged; it is empty only for legacy
+// plan-level callers. A driver may acknowledge only a trip of their vehicle and
+// a loader only a trip of their depot.
+func (s Service) Acknowledge(ctx context.Context, profile *authorization.Profile, planID string, version int, tripID string) error {
 	if profile == nil || len(profile.Roles) == 0 || profile.UserID == "" {
 		return fmt.Errorf("forbidden")
 	}
@@ -488,7 +497,124 @@ func (s Service) Acknowledge(ctx context.Context, profile *authorization.Profile
 	if !ok {
 		return fmt.Errorf("plan publication store unavailable")
 	}
-	return store.Acknowledge(ctx, pl.ID, version, profile.UserID, profile.Roles[0])
+	tripID = strings.TrimSpace(tripID)
+	vehicleID := ""
+	if tripID != "" {
+		trip, err := s.Repo.GetTrip(ctx, tripID)
+		if err != nil || trip.PlanID != pl.ID {
+			return fmt.Errorf("not found: trip is not part of this plan")
+		}
+		vehicleID = trip.VehicleID
+		role := profile.Roles[0]
+		switch role {
+		case authorization.RoleDriver:
+			if profile.VehicleID == "" || !strings.EqualFold(profile.VehicleID, trip.VehicleID) {
+				return fmt.Errorf("forbidden: driver may only acknowledge trips for their assigned vehicle")
+			}
+		case authorization.RoleLoader:
+			if profile.Depot != "" {
+				vehicle, err := s.Peers.Vehicle(ctx, trip.VehicleID)
+				if err != nil {
+					return fmt.Errorf("conflict: trip depot unavailable")
+				}
+				if !strings.EqualFold(vehicle.HomeDepot, profile.Depot) {
+					return fmt.Errorf("forbidden: loader may only acknowledge trips for their depot")
+				}
+			}
+		}
+	}
+	return store.Acknowledge(ctx, pl.ID, version, profile.UserID, profile.Roles[0], tripID, vehicleID)
+}
+
+// Remind records a dispatcher reminder asking a trip's driver or loader to
+// acknowledge the current plan version, audits it and tells the recipient.
+// A repeat within ReminderWindow is a no-op that reports the earlier reminder.
+func (s Service) Remind(ctx context.Context, profile *authorization.Profile, planID, tripID, audience string) (domain.ReminderResult, error) {
+	if profile == nil || strings.TrimSpace(profile.UserID) == "" {
+		return domain.ReminderResult{}, fmt.Errorf("forbidden: dispatcher profile required")
+	}
+	audience = strings.ToUpper(strings.TrimSpace(audience))
+	tripID = strings.TrimSpace(tripID)
+	if tripID == "" || !oneOf(audience, "DRIVER", "LOADER") {
+		return domain.ReminderResult{}, fmt.Errorf("invalid: tripId and audience DRIVER or LOADER are required")
+	}
+	pl, err := s.Repo.Get(ctx, planID)
+	if err != nil {
+		return domain.ReminderResult{}, fmt.Errorf("not found")
+	}
+	if pl.Status != domain.StatusConfirmed || pl.CurrentVersion < 1 {
+		return domain.ReminderResult{}, fmt.Errorf("conflict: plan not published")
+	}
+	trip, err := s.Repo.GetTrip(ctx, tripID)
+	if err != nil || trip.PlanID != pl.ID {
+		return domain.ReminderResult{}, fmt.Errorf("not found: trip is not part of this plan")
+	}
+	store, ok := any(s.Repo).(planVersionStore)
+	if !ok {
+		return domain.ReminderResult{}, fmt.Errorf("plan publication store unavailable")
+	}
+	role := authorization.RoleDriver
+	if audience == "LOADER" {
+		role = authorization.RoleLoader
+	}
+	pub := s.publication(ctx, pl)
+	for _, a := range pub.Acknowledgements {
+		if a.ActorRole == role && a.TripID == tripID {
+			return domain.ReminderResult{}, fmt.Errorf("conflict: %s already acknowledged this trip", strings.ToLower(audience))
+		}
+	}
+	reminder, already, err := store.RecordReminder(ctx, pl.ID, pl.CurrentVersion, tripID, audience, profile.UserID, ReminderWindow)
+	if err != nil {
+		return domain.ReminderResult{}, err
+	}
+	result := domain.ReminderResult{Reminder: reminder, AlreadySent: already}
+	if already {
+		return result, nil
+	}
+	s.Peers.Publish(ctx, audit.ActionPlanAckReminderSent, profile.UserID, "PLAN", pl.PlanRef, map[string]any{
+		"tripId": tripID, "vehicleId": trip.VehicleID, "tripNumber": trip.TripNumber, "audience": audience, "version": pl.CurrentVersion,
+	})
+	if audience == "DRIVER" {
+		body := fmt.Sprintf("Dispatch reminder: open this trip and acknowledge plan %s version %d before starting.", pl.PlanRef, pl.CurrentVersion)
+		if err := s.Peers.SendTripMessage(ctx, tripID, body); err != nil {
+			result.TripMessage = "unavailable"
+		} else {
+			result.TripMessage = "sent"
+		}
+	}
+	return result, nil
+}
+
+// Reminders lists the reminders addressed to the caller's role for a trip's
+// current plan version, so the driver and loader apps can show them.
+func (s Service) Reminders(ctx context.Context, profile *authorization.Profile, planID, tripID string) ([]domain.PlanReminder, error) {
+	if profile == nil || len(profile.Roles) == 0 {
+		return nil, fmt.Errorf("forbidden")
+	}
+	audience := ""
+	switch profile.Roles[0] {
+	case authorization.RoleDriver:
+		audience = "DRIVER"
+	case authorization.RoleLoader:
+		audience = "LOADER"
+	default:
+		return nil, fmt.Errorf("forbidden: field role required")
+	}
+	pl, err := s.Repo.Get(ctx, planID)
+	if err != nil {
+		return nil, fmt.Errorf("not found")
+	}
+	out := []domain.PlanReminder{}
+	if pl.Status != domain.StatusConfirmed || pl.CurrentVersion < 1 {
+		return out, nil
+	}
+	tripID = strings.TrimSpace(tripID)
+	for _, r := range s.publication(ctx, pl).Reminders {
+		if r.Audience == audience && (tripID == "" || r.TripID == tripID) {
+			out = append(out, r)
+		}
+	}
+	return out, nil
 }
 
 func (s Service) Revise(ctx context.Context, profile *authorization.Profile, planID string) error {

@@ -71,7 +71,7 @@ export type DeliveryTripDetail = {
   run: DeliveryRun;
   stops: DeliveryStop[];
   currentPlanVersion?: number;
-  planAcknowledgements?: {actorId:string;actorRole:string;acknowledgedAt:string}[];
+  planAcknowledgements?: {actorId:string;actorRole:string;tripId?:string;vehicleId?:string;acknowledgedAt:string}[];
 };
 
 export type LatenessProbability = {
