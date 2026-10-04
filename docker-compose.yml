@@ -368,7 +368,17 @@ services:
   grafana:
     profiles: ["observability"]
     image: grafana/grafana:11.3.0
+    environment:
+      # Local development keeps Grafana's own admin/admin. Anywhere else set GRAFANA_ADMIN_PASSWORD in
+      # .env before starting it (docs/observability.md); scripts/start-grafana.sh refuses without one.
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
     volumes:
+      - grafana_data:/var/lib/grafana
       - ./infrastructure/observability/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./infrastructure/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports:
@@ -386,3 +396,4 @@ services:
 
 volumes:
   postgres_data:
+  grafana_data:

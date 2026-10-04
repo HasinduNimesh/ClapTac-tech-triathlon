@@ -62,7 +62,7 @@ export function FleetPage() {
     <>
       <DpHero title={t("Fleet")} subtitle={t("Vehicle capability, depot readiness and weekly fuel in one place.")} />
       <StatRow cols={4}>
-        <Stat label={t("Fleet vehicles")} value={scoped.length} sub={depot ? DEPOT_LABELS[depot] : t("Across Peliyagoda and Kandy")} />
+        <Stat label={t("Fleet vehicles")} value={scoped.length} sub={depot ? DEPOT_LABELS[depot] : Object.values(DEPOT_LABELS).join(" · ")} />
         <Stat label={t("Available")} value={available.length} sub={`${t("Includes")} ${available.filter(isRefrigerated).length} ${t("refrigerated")}`} subTone="green" />
         <Stat label={t("Assigned / workshop")} value={`${assigned.length} / ${workshop.length}`} sub={t("Workshop vehicles cannot be allocated")} subTone="red" />
         <Stat label={t("Low fuel remaining")} value={lowFuel.length} sub={t("Below 20% of weekly quota")} subTone="amber" />
