@@ -1,11 +1,12 @@
 import { User } from "oidc-client-ts";
 import { createContext, useContext, useEffect, useState } from "react";
 import { userManager } from "./userManager";
-import { clearCachedProfile, loadAuthenticatedProfile } from "./profileCache.mjs";
+import { clearCachedProfile, loadAuthenticatedProfile, saveCachedProfile } from "./profileCache.mjs";
 
 type Profile = {
   userId: string;
   subject: string;
+  displayName?: string;
   roles: string[];
   outletIds?: string[];
   depot?: string;
@@ -18,6 +19,7 @@ type AuthState = {
   profileLoading: boolean;
   login: () => Promise<void>;
   logout: () => Promise<void>;
+  updateDisplayName: (name: string) => Promise<void>;
 };
 
 function profileStorage(): Storage | undefined {
@@ -30,6 +32,7 @@ const AuthContext = createContext<AuthState>({
   profileLoading: true,
   login: async () => undefined,
   logout: async () => undefined,
+  updateDisplayName: async () => undefined,
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -73,6 +76,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         profile,
         profileLoading,
         login: () => userManager.signinRedirect(),
+        updateDisplayName: async (name) => {
+          if (!user?.access_token) throw new Error("Sign in before changing your name.");
+          const response = await fetch("/api/v1/shared/profiles/me/display-name", {
+            method: "PUT",
+            headers: { Authorization: `Bearer ${user.access_token}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ displayName: name }),
+          });
+          if (!response.ok) throw new Error("Could not save your name.");
+          const body = await response.json() as { profile: Profile };
+          if (body.profile?.subject !== user.profile.sub) throw new Error("Invalid profile response.");
+          setProfile(body.profile);
+          saveCachedProfile(profileStorage(), user.profile.sub, body.profile);
+        },
         logout: async () => {
           await userManager.removeUser();
           clearCachedProfile(profileStorage());

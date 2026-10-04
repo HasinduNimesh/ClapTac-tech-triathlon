@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -31,6 +32,7 @@ type Handler struct {
 func (h Handler) Routes(r chi.Router) {
 	r.Route("/api/v1/shared", func(r chi.Router) {
 		r.Get("/profiles/me", h.authed(h.me))
+		r.Put("/profiles/me/display-name", h.authed(h.updateMyDisplayName))
 		r.With(authorization.RequireAnyWith(h.Authn, h.Store, authorization.PermOutletsReadInternal, authorization.PermOrderViewAll, authorization.PermOrderViewOwn, authorization.PermFleetView)).Get("/outlets", h.listOutlets)
 		r.With(authorization.RequireAnyWith(h.Authn, h.Store, authorization.PermOutletsReadInternal, authorization.PermOrderViewAll, authorization.PermOrderViewOwn, authorization.PermFleetView)).Get("/outlets/{id}", h.outlet)
 		r.With(authorization.RequireWith(h.Authn, h.Store, authorization.PermMasterDataUpdate)).Put("/outlets/{id}", h.updateOutlet)
@@ -550,6 +552,49 @@ func (h Handler) me(w http.ResponseWriter, r *http.Request) {
 	profile, err := h.Store.ProfileBySubject(r.Context(), p.Subject)
 	if err != nil {
 		apierrors.NotFound(w, "application user not found")
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"profile": profile})
+}
+
+func (h Handler) updateMyDisplayName(w http.ResponseWriter, r *http.Request) {
+	p, _ := auth.PrincipalFrom(r.Context())
+	var req struct {
+		DisplayName string `json:"displayName"`
+	}
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
+		apierrors.BadRequest(w, "invalid display name request")
+		return
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		apierrors.BadRequest(w, "invalid display name request")
+		return
+	}
+	name := strings.TrimSpace(req.DisplayName)
+	if name == "" || utf8.RuneCountInString(name) > 120 {
+		apierrors.BadRequest(w, "display name must be between 1 and 120 characters")
+		return
+	}
+	for _, char := range name {
+		if unicode.IsControl(char) {
+			apierrors.BadRequest(w, "display name contains a control character")
+			return
+		}
+	}
+	if err := h.Store.SetDisplayName(r.Context(), p.Subject, name); err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			apierrors.NotFound(w, "application user not found")
+		} else {
+			apierrors.Internal(w, "display name could not be saved")
+		}
+		return
+	}
+	profile, err := h.Store.ProfileBySubject(r.Context(), p.Subject)
+	if err != nil {
+		apierrors.Internal(w, "profile could not be loaded")
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"profile": profile})
