@@ -1,6 +1,9 @@
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiJSON, Order } from "../api/client";
+import { LiveLocation } from "../api/delivery";
+import { LiveLocationMap } from "../components/LiveLocationMap";
+import { ESTIMATES_UNAVAILABLE_MESSAGE, validArrivalAt } from "../api/estimateAvailability.mjs";
 import { useAuth } from "../auth/AuthContext";
 import { useLocale } from "../i18n";
 import { deferralExplanation } from "./deferralMessage.mjs";
@@ -13,7 +16,7 @@ type Tracking = {
   stage:string;
   order:Order;
   planning:{state:string;planRef?:string;stopSequence?:number;reasonCode?:string;reasonComment?:string;plannedArrivalAt?:string;plannedServiceStartAt?:string};
-  delivery?:{runStatus:string;outcome?:string;reason?:string;completedAt?:string;proofs:{type:string;mimeType:string;pending:boolean;receiverName?:string}[];loadingShortfallSummary?:unknown[]};
+  delivery?:{runStatus:string;depot?:string;location?:LiveLocation;outcome?:string;reason?:string;completedAt?:string;proofs:{type:string;mimeType:string;pending:boolean;receiverName?:string}[];loadingShortfallSummary?:unknown[]};
   receipt?:Receipt;
   receiptIssues:ReceiptIssue[];
   custody?:CustodyEvent[];
@@ -24,18 +27,25 @@ function idempotencyKey(){return typeof crypto!="undefined"&&"randomUUID" in cry
 
 export function TrackingPage({receiptsOnly=false}:{receiptsOnly?:boolean}){
   const {user}=useAuth();const {t}=useLocale();const token=user?.access_token||"";
+  const latestLoad=useRef(0);
   const [items,setItems]=useState<Tracking[]>([]);const [pending,setPending]=useState<Pending[]>([]);const [received,setReceived]=useState<Record<string,string>>({});const [issueType,setIssueType]=useState<Record<string,string>>({});const [note,setNote]=useState<Record<string,string>>({});const [issueUnits,setIssueUnits]=useState<Record<string,string>>({});const [reportFor,setReportFor]=useState("");const [error,setError]=useState("");const [message,setMessage]=useState("");const [techReceipt,setTechReceipt]=useState<Record<string,{sealId:string;serials:string;condition:string;receiver:string}>>({});const [custodyKeys,setCustodyKeys]=useState<Record<string,string>>({});
   const load=useCallback(async()=>{
-    if(!token)return;setError("");
+    if(!token)return;const request=++latestLoad.current;setError("");
     try{
       if(receiptsOnly){const body=await apiJSON<{items:Pending[]}>("/orders/receipts/pending",token);setPending(body.items||[]);return;}
       const body=await apiJSON<{items:Order[]}>("/orders",token);
       const rows=await Promise.all((body.items||[]).map(async order=>{
         const result=await apiJSON<{tracking:Tracking}>(`/orders/${order.id}/tracking`,token);return result.tracking;
-      }));setItems(rows);
-    }catch(e){setError(String(e));}
+      }));if(request===latestLoad.current)setItems(rows);
+    }catch(e){if(request===latestLoad.current){setError(String(e));setItems(current=>current.map(row=>({...row,delivery:row.delivery?{...row.delivery,location:undefined}:undefined})));}}
   },[token,receiptsOnly]);
   useEffect(()=>{void load();},[load]);
+  useEffect(()=>()=>{latestLoad.current+=1;},[]);
+  useEffect(()=>{
+    if(receiptsOnly||!items.some(row=>row.delivery?.runStatus==="in_progress"))return;
+    const timer=window.setInterval(()=>{void load();},15_000);
+    return()=>window.clearInterval(timer);
+  },[receiptsOnly,items,load]);
 
   async function confirm(e:FormEvent,order:Order,tracking:Tracking){
     e.preventDefault();setError("");setMessage("");const units=Number(received[order.id]??order.orderUnits);const issue=units<order.orderUnits;
@@ -75,7 +85,8 @@ export function TrackingPage({receiptsOnly=false}:{receiptsOnly?:boolean}){
       </form>
     </article>):items.map(row=><article className="card" key={row.order.id}>
       <h3>{row.order.orderRef} · {row.order.brand}</h3><p>{t("Requested")} {row.order.requestedDeliveryDate} · {row.order.orderUnits} {t("units")} · {t(row.stage.replace(/_/g," "))}</p>
-      {row.planning.plannedArrivalAt&&<p>{t("Planned arrival")}: {new Date(row.planning.plannedArrivalAt).toLocaleString()}</p>}
+      {row.delivery?.runStatus==="in_progress"&&<LiveLocationMap key={row.order.id} location={row.delivery.location||null} store={row.order.outletId} depot={row.delivery.depot||"Depot"} />}
+      {validArrivalAt(row.planning.plannedArrivalAt)?<p>{t("Planned arrival")}: {new Date(row.planning.plannedArrivalAt).toLocaleString()}</p>:["PLANNED","READY_FOR_DEPARTURE","OUT_FOR_DELIVERY"].includes(row.stage)&&<p role="status">{ESTIMATES_UNAVAILABLE_MESSAGE}</p>}
       {row.planning.reasonCode&&(()=>{const why=deferralExplanation(row.planning.reasonCode);return <div className="status-bad" role="status"><p><strong>{t("Deferred")}</strong>: {t(why.message)}{row.planning.reasonComment?` · ${row.planning.reasonComment}`:""}</p><p>{t("What happens next")}: {t(why.nextAction)}</p></div>;})()}
       {(row.custody||[]).length>0&&<section className="card"><h4>{t("Tech chain of custody")}</h4><ol>{row.custody!.map(event=><li key={event.id}>{t(event.stage)} · {t("Seal ID")} {event.sealId} · {event.serialNumbers.join(", ")} · {event.condition} · {event.recordedBy} · {new Date(event.recordedAt).toLocaleString()}{event.receiverName?` · ${event.receiverName}`:""}{event.evidenceRef?` · ${t("Evidence reference")} ${event.evidenceRef}`:""}</li>)}</ol></section>}
       {row.delivery&&<p>{t("Driver outcome")}: {t(row.delivery.outcome||row.delivery.runStatus)}{row.delivery.reason?` · ${t(row.delivery.reason)}`:""} · {row.delivery.proofs?.length||0} {t("proof item(s)")}{row.delivery.proofs?.find((p)=>p.receiverName)&&` · ${t("Received by")} ${row.delivery.proofs.find((p)=>p.receiverName)!.receiverName}`}</p>}

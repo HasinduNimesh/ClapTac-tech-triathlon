@@ -51,6 +51,37 @@ paths:
                   stops:
                     type: array
                     items: { $ref: "#/components/schemas/DeliveryStop" }
+  /delivery/trips/{tripId}/location:
+    get:
+      operationId: getActiveTripLocation
+      description: Dispatcher-only latest point for an active trip. Returns null after completion.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TripID"
+      responses:
+        "200": { description: Active location or null }
+        "403": { description: Dispatcher permission required }
+    post:
+      operationId: updateActiveTripLocation
+      description: Assigned driver only; rejected unless the run is in progress.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TripID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [latitude, longitude, timestamp]
+              properties:
+                latitude: { type: number, minimum: -90, maximum: 90 }
+                longitude: { type: number, minimum: -180, maximum: 180 }
+                timestamp: { type: string, format: date-time }
+      responses:
+        "200": { description: Latest accepted point }
+        "403": { description: Driver not assigned to vehicle }
+        "409": { description: Trip not active }
   /delivery/trips/{tripId}/prepare:
     post:
       operationId: prepareDeliveryRun

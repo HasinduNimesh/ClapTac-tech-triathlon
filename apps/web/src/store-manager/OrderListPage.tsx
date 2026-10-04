@@ -1,5 +1,7 @@
 import { Link, useSearchParams } from "react-router-dom";
 import { useLocale } from "../i18n";
+import { LiveLocationMap } from "../components/LiveLocationMap";
+import { ESTIMATES_UNAVAILABLE_MESSAGE, validArrivalAt } from "../api/estimateAvailability.mjs";
 import { deferralExplanation } from "./deferralMessage.mjs";
 import {
   colomboDate, colomboTime, formatDay, isDeferred, isReceiptConfirmed, needsReceipt, statusLabel, statusTone, timelineSteps,
@@ -42,10 +44,11 @@ export function OrderListPage() {
     );
   }
 
-  const { order, planning, stage, receipt } = selected;
+  const { order, planning, stage, receipt, delivery } = selected;
   const steps = timelineSteps(selected);
   const why = isDeferred(stage) ? deferralExplanation(planning.reasonCode) : null;
-  const eta = planning.plannedArrivalAt;
+  const eta = validArrivalAt(planning.plannedArrivalAt) ? planning.plannedArrivalAt : undefined;
+  const estimatesUnavailable = ["PLANNED", "READY_FOR_DEPARTURE", "OUT_FOR_DELIVERY"].includes(stage) && !eta;
 
   return (
     <>
@@ -91,12 +94,15 @@ export function OrderListPage() {
               <span className={`sm-badge sm-badge--${statusTone(stage)}`}>{t(statusLabel(stage))}</span>
             </div>
 
+            {estimatesUnavailable && <p role="status">{ESTIMATES_UNAVAILABLE_MESSAGE}</p>}
             {eta && (
               <p className="sm-eta-box">
                 <strong>{t("Expected arrival")}: {formatDay(colomboDate(eta))} · {colomboTime(eta)}</strong>
                 <span className="muted">{t("ETA reflects reported events; this is not continuous GPS tracking.")}</span>
               </p>
             )}
+
+            {delivery?.runStatus === "in_progress" && <LiveLocationMap key={order.id} location={delivery.location || null} store={order.outletId} depot={delivery.depot || "Depot"} />}
 
             {why && (
               <div className="sm-alert-card sm-deferral-note" role="status">

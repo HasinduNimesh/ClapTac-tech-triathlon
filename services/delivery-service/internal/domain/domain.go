@@ -171,6 +171,8 @@ type Proof struct {
 }
 
 type OrderTracking struct {
+	Depot                   string         `json:"depot,omitempty"`
+	Location                *Location      `json:"location,omitempty"`
 	RunID                   string         `json:"runId"`
 	TripID                  string         `json:"tripId"`
 	VehicleID               string         `json:"vehicleId,omitempty"`

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -24,6 +25,8 @@ type Driver interface {
 	Get(ctx context.Context, profile *authorization.Profile, tripID string) (map[string]any, error)
 	Prepare(ctx context.Context, profile *authorization.Profile, tripID string) (map[string]any, error)
 	Start(ctx context.Context, profile *authorization.Profile, tripID, opID string) (map[string]any, error)
+	UpdateLocation(ctx context.Context, profile *authorization.Profile, tripID string, latitude, longitude float64, timestamp time.Time) (domain.Location, error)
+	TripLocation(ctx context.Context, profile *authorization.Profile, tripID string) (*domain.Location, error)
 	Arrive(ctx context.Context, profile *authorization.Profile, tripID, stopID, opID, occurred string) (map[string]any, error)
 	Outcome(ctx context.Context, profile *authorization.Profile, tripID, stopID, opID, depends, code, reason, note, occurred string, deliveredUnits *int) (map[string]any, error)
 	UploadProof(ctx context.Context, profile *authorization.Profile, tripID, stopID, opID, proofType, mime string, body []byte, captured, receiverName string) (domain.Proof, error)
@@ -65,6 +68,8 @@ func (h Handler) Routes(r chi.Router) {
 		r.With(update).Post("/trips/{tripId}/messages/{messageId}/ack", h.ackTripMessage)
 		r.With(start).Post("/trips/{tripId}/prepare", h.prepare)
 		r.With(start).Post("/trips/{tripId}/start", h.start)
+		r.With(update).Post("/trips/{tripId}/location", h.updateLocation)
+		r.With(authorization.RequireWith(h.Authn, h.Profiles, authorization.PermDeliveryViewAll)).Get("/trips/{tripId}/location", h.tripLocation)
 		r.With(update).Post("/trips/{tripId}/stops/{stopId}/arrive", h.arrive)
 		r.With(proof).Post("/trips/{tripId}/stops/{stopId}/proofs", h.proof)
 		r.With(update).Post("/trips/{tripId}/stops/{stopId}/outcome", h.outcome)

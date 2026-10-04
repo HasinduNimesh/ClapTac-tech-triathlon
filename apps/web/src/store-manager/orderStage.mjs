@@ -1,10 +1,14 @@
+import { validArrivalAt } from "../api/estimateAvailability.mjs";
+
 const COLOMBO = "Asia/Colombo";
 
 export function colomboDate(value) {
+  if (!validArrivalAt(value) && !(typeof value === "number" && Number.isFinite(value))) return "";
   return new Intl.DateTimeFormat("en-CA", { timeZone: COLOMBO, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(value));
 }
 
 export function colomboTime(value) {
+  if (!validArrivalAt(value) && !(typeof value === "number" && Number.isFinite(value))) return "";
   return new Intl.DateTimeFormat("en-GB", { timeZone: COLOMBO, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(value));
 }
 
@@ -49,13 +53,13 @@ export function arrivesOn(tracking, date) {
   if (!tracking) return false;
   const { stage, planning, order } = tracking;
   if (!isActiveRun(stage) && stage !== "PLANNED") return false;
-  if (planning?.plannedArrivalAt) return colomboDate(planning.plannedArrivalAt) === date;
+  if (validArrivalAt(planning?.plannedArrivalAt)) return colomboDate(planning.plannedArrivalAt) === date;
   return order?.requestedDeliveryDate === date;
 }
 
 export function sortByArrival(a, b) {
-  const left = a.planning?.plannedArrivalAt || "9999";
-  const right = b.planning?.plannedArrivalAt || "9999";
+  const left = validArrivalAt(a.planning?.plannedArrivalAt) ? a.planning.plannedArrivalAt : "9999";
+  const right = validArrivalAt(b.planning?.plannedArrivalAt) ? b.planning.plannedArrivalAt : "9999";
   return left.localeCompare(right);
 }
 
