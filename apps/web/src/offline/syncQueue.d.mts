@@ -18,6 +18,7 @@ export function planVersionShown(detail: PlanDetail): number | undefined;
 export function stampPlanVersion<T extends { planVersion?: number }>(item: T, detail: PlanDetail): T;
 export function orderForSync<T extends SyncQueueItem>(items: T[]): T[];
 export function syncOperationBody(item: SyncQueueItem): Record<string, unknown>;
+export function classifySyncResult(result: unknown): { applied: boolean; retry: boolean; detail: string };
 export function readSyncConflict(result: unknown): SyncConflict | null;
 export function conflictMessage(conflict: { recordedPlanVersion: number; currentPlanVersion: number }, t?: (text: string) => string): string;
 export function conflictsForStop<T extends { tripId: string; stopId?: string }>(notices: T[], tripId: string, stopId?: string): T[];

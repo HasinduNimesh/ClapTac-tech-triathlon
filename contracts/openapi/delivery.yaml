@@ -278,7 +278,7 @@ paths:
                       planVersion: { type: integer, minimum: 1, description: "Plan version the driver app showed when the record was made offline. If older than the current version the record is still applied and a sync conflict is recorded; the result then carries conflict.{recordedPlanVersion,currentPlanVersion}." }
                       payload: { type: object, description: "STOP_OUTCOME: { code, reason, note, deliveredUnits? }; INCIDENT_REPORT: { category: VEHICLE|ROAD|OUTLET|GOODS|SAFETY|OTHER, description: string }" }
       responses:
-        "200": { description: Per-operation APPLIED, DUPLICATE, CONFLICT, or REJECTED }
+        "200": { description: "Per-operation APPLIED, DUPLICATE, CONFLICT, REJECTED, or RETRY. RETRY means the operation is applied on the server but its plan-version conflict for the dispatcher could not be stored; the result carries originalStatus APPLIED and a detail. The client must keep the item queued and send it again. The repeat is answered as DUPLICATE with originalStatus APPLIED, creates the missing conflict once, and carries conflict.{recordedPlanVersion,currentPlanVersion,detail}. A DUPLICATE of an APPLIED operation recorded on an older plan carries the same conflict info." }
   /delivery/sync-conflicts:
     get:
       operationId: listSyncConflicts

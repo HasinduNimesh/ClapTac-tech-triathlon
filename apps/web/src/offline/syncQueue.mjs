@@ -73,6 +73,24 @@ export function syncOperationBody(item) {
   return operation;
 }
 
+/**
+ * What a /delivery/sync result means for the queue item. Only an APPLIED
+ * operation, or a DUPLICATE of an APPLIED one, may leave the queue. RETRY means
+ * the server applied the record but could not list it for the dispatcher yet:
+ * keep the item and send it again. Anything else is kept for the driver to see.
+ */
+export function classifySyncResult(result) {
+  const status = result?.status;
+  if (status === "APPLIED" || (status === "DUPLICATE" && result.originalStatus === "APPLIED")) {
+    return { applied: true, retry: false, detail: "" };
+  }
+  const detail = typeof result?.detail === "string" && result.detail ? result.detail : "";
+  if (status === "RETRY") {
+    return { applied: false, retry: true, detail: detail || "The record was saved but could not be passed to the dispatcher yet. It will be sent again." };
+  }
+  return { applied: false, retry: false, detail: detail || `operation status: ${status || "missing result"}` };
+}
+
 /** Read the conflict the server attaches to a sync result; null when absent or malformed. */
 export function readSyncConflict(result) {
   const conflict = result?.conflict;
