@@ -374,8 +374,9 @@ jobs:
           done
           curl -fsS --retry 8 --retry-delay 3 https://waypoint.claptac.dev/health/live >/dev/null \
             || rollback_hint "https://waypoint.claptac.dev/health/live failed."
-          curl -fsS --retry 3 --retry-delay 3 -o /dev/null https://waypoint.claptac.dev/loader-app/ \
-            || rollback_hint "https://waypoint.claptac.dev/loader-app/ failed."
+          # The web app answers unknown paths with its own page (HTTP 200), so require the loader's own page.
+          curl -fsS --retry 3 --retry-delay 3 https://waypoint.claptac.dev/loader-app/ | grep -q flutter_bootstrap.js \
+            || rollback_hint "https://waypoint.claptac.dev/loader-app/ did not return the loader app."
           curl -fsS --retry 3 --retry-delay 3 https://id.waypoint.claptac.dev/.well-known/openid-configuration \
             | python3 -c 'import json,sys; assert json.load(sys.stdin)["issuer"] == "https://id.waypoint.claptac.dev"' \
             || rollback_hint "Identity discovery failed or names another issuer."

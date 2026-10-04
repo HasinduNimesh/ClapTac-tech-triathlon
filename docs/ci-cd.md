@@ -115,7 +115,7 @@ dump in the VM user's home directory, **runs the migrations** (`migrate`) before
 any updated service starts, writes `WAYPOINT_IMAGE_PREFIX` and `WAYPOINT_TAG`
 into the VM `.env` (only those two lines), and starts Compose without building.
 It then requires every service and nginx to report healthy, and checks
-`/health/live`, `/loader-app/` and the identity server's discovery document.
+`/health/live`, `/loader-app/` (it must be the loader's page, not the web app's 404) and the identity server's discovery document.
 Compose also has to show `OIDC_AUDIENCE` equal to the audience above. It does not remove
 orphan containers: `waypoint-thunderid-prod` is managed separately.
 
