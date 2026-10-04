@@ -1,19 +1,9 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:waypoint_loader/auth/auth.dart';
-import 'package:waypoint_loader/auth/sign_in_screen.dart';
 import 'package:waypoint_loader/api/api_client.dart';
 import 'package:waypoint_loader/shared/models.dart';
-import 'package:waypoint_loader/theme/tokens.dart';
 
 void main() {
-  testWidgets('sign-in screen explains the app is online-only', (tester) async {
-    await tester.pumpWidget(MaterialApp(theme: waypointTheme(), home: SignInScreen(auth: AuthService())));
-    expect(find.text('Sign in'), findsWidgets);
-    expect(find.textContaining('works online only'), findsOneWidget);
-  });
-
-  test('a shortfall only allows departure after a partial-load or move decision', () {
+  test('a shortfall only allows departure after a partial-load decision', () {
     LoadingOrder order(String? decision) => LoadingOrder({
           'orderId': 'o1',
           'status': 'shortfall',
@@ -24,7 +14,9 @@ void main() {
     expect(order(null).unresolved, isTrue);
     expect(order('HOLD').unresolved, isTrue);
     expect(order('PARTIAL_LOAD').unresolved, isFalse);
-    expect(order('MOVE_TO_NEXT_RUN').unresolved, isFalse);
+    // Moving the line to the next run only releases the trip once the new plan is
+    // acknowledged and the line has left this trip, so until then it stays open.
+    expect(order('MOVE_TO_NEXT_RUN').unresolved, isTrue);
   });
 
   test('server problem types become loader-facing messages', () {

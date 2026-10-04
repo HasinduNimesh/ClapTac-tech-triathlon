@@ -9,7 +9,7 @@ import 'theme/tokens.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(WaypointLoaderApp(auth: AuthService()..restore()));
+  runApp(WaypointLoaderApp(auth: AuthService()..start()));
 }
 
 /// Waypoint loader workspace (Flutter web): dock tablet and phone layouts,
@@ -40,20 +40,26 @@ class _Home extends StatefulWidget {
 
 class _HomeState extends State<_Home> {
   LoaderController? _controller;
-  String? _token;
+  String? _userId;
 
   @override
   Widget build(BuildContext context) {
-    final s = widget.auth.session;
-    if (s == null || s.expired) {
+    final auth = widget.auth;
+    final s = auth.session;
+    if (auth.status == AuthStatus.starting) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    if (auth.status != AuthStatus.signedIn || s == null) {
       _controller = null;
-      _token = null;
-      return SignInScreen(auth: widget.auth);
+      _userId = null;
+      return SignInScreen(auth: auth);
     }
-    if (_token != s.accessToken) {
-      _token = s.accessToken;
-      _controller = LoaderController(api: ApiClient(tokenProvider: () => widget.auth.session?.accessToken ?? ''));
+    // The controller belongs to the person, not to the access token: the token is renewed
+    // every few minutes and the open trip, date and readings must survive that.
+    if (_userId != s.profile.userId || _controller == null) {
+      _userId = s.profile.userId;
+      _controller = LoaderController(api: ApiClient(tokenProvider: auth.validToken, onUnauthorized: auth.renewAfterRefusal));
     }
-    return LoaderHome(controller: _controller!, profile: s.profile, onSignOut: widget.auth.signOut);
+    return LoaderHome(controller: _controller!, profile: s.profile, onSignOut: auth.signOut);
   }
 }

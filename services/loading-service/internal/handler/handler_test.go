@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -84,7 +85,7 @@ func (s *stubLoader) SyncPlanVersion(context.Context, *authorization.Profile, st
 func (s *stubLoader) AttachIssuePhoto(context.Context, *authorization.Profile, string, string, string, string, []byte) (domain.Issue, error) {
 	return domain.Issue{}, nil
 }
-func (s *stubLoader) IssuePhoto(context.Context, *authorization.Profile, string, string, string) ([]byte, string, error) {
+func (s *stubLoader) IssuePhoto(context.Context, *authorization.Profile, string, string, string) (io.ReadCloser, string, error) {
 	return nil, "", fmt.Errorf("not found")
 }
 func (s *stubLoader) MarkIssueSeen(context.Context, *authorization.Profile, string, string, string) error {

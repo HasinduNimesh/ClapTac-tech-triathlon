@@ -29,7 +29,7 @@ All passwords are `waypoint`.
 |---|---|
 | `dispatcher` | <http://localhost/> → Dispatcher workspace |
 | `store-manager` | <http://localhost/> → Store Manager workspace (outlet OUT034) |
-| `loader` | <http://localhost/loader-app/> → Loader, Peliyagoda depot |
+| `loader` | <http://localhost/loader-app/> → Loader, Peliyagoda depot (*Sign in* opens the identity server's page on `localhost:8090`, then returns) |
 | `loader-kandy` | <http://localhost/loader-app/> → Loader, Kandy depot |
 
 Use a separate browser window (or a private window) for the loader so both stay signed in.

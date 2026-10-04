@@ -31,7 +31,7 @@ type Loader interface {
 	Ready(ctx context.Context, profile *authorization.Profile, tripID string, checks service.ReadyChecks) (map[string]any, error)
 	SyncPlanVersion(ctx context.Context, profile *authorization.Profile, tripID string, expectedPlanVersion int) (map[string]any, error)
 	AttachIssuePhoto(ctx context.Context, profile *authorization.Profile, tripID, orderID, issueID, mime string, body []byte) (domain.Issue, error)
-	IssuePhoto(ctx context.Context, profile *authorization.Profile, tripID, orderID, issueID string) ([]byte, string, error)
+	IssuePhoto(ctx context.Context, profile *authorization.Profile, tripID, orderID, issueID string) (io.ReadCloser, string, error)
 	MarkIssueSeen(ctx context.Context, profile *authorization.Profile, tripID, orderID, issueID string) error
 	RaiseDockAlert(ctx context.Context, profile *authorization.Profile, tripID, typ, orderRef, belongsVehicleID, note, key string) (domain.DockAlert, error)
 	ListDockAlerts(ctx context.Context, profile *authorization.Profile, date string) ([]domain.DockAlert, error)
@@ -221,31 +221,9 @@ func (h Handler) sync(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h Handler) issuePhotoUpload(w http.ResponseWriter, r *http.Request) {
-	const multipartOverhead = 256 << 10
-	r.Body = http.MaxBytesReader(w, r.Body, service.MaxPhotoBytes+multipartOverhead)
-	if err := r.ParseMultipartForm(1 << 20); err != nil {
-		var maxErr *http.MaxBytesError
-		if errors.As(err, &maxErr) {
-			apierrors.RequestEntityTooLarge(w, "photo exceeds the request size limit")
-			return
-		}
-		apierrors.BadRequest(w, "multipart photo required")
+	body, mime, ok := httpx.ReadImageUpload(w, r, service.MaxPhotoBytes)
+	if !ok {
 		return
-	}
-	file, hdr, err := r.FormFile("file")
-	if err != nil {
-		apierrors.BadRequest(w, "file is required")
-		return
-	}
-	defer file.Close()
-	body, err := io.ReadAll(io.LimitReader(file, service.MaxPhotoBytes+1))
-	if err != nil {
-		apierrors.BadRequest(w, "unable to read file")
-		return
-	}
-	mime := hdr.Header.Get("Content-Type")
-	if mime == "" || mime == "application/octet-stream" {
-		mime = r.FormValue("mimeType")
 	}
 	iss, err := h.Service.AttachIssuePhoto(r.Context(), h.profile(r), chi.URLParam(r, "tripId"), chi.URLParam(r, "orderId"), chi.URLParam(r, "issueId"), mime, body)
 	if writeErr(w, err) {
@@ -255,14 +233,16 @@ func (h Handler) issuePhotoUpload(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h Handler) issuePhoto(w http.ResponseWriter, r *http.Request) {
-	body, mime, err := h.Service.IssuePhoto(r.Context(), h.profile(r), chi.URLParam(r, "tripId"), chi.URLParam(r, "orderId"), chi.URLParam(r, "issueId"))
+	photo, mime, err := h.Service.IssuePhoto(r.Context(), h.profile(r), chi.URLParam(r, "tripId"), chi.URLParam(r, "orderId"), chi.URLParam(r, "issueId"))
 	if writeErr(w, err) {
 		return
 	}
+	defer photo.Close()
 	w.Header().Set("Content-Type", mime)
 	w.Header().Set("Cache-Control", "private, no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	_, _ = w.Write(body)
+	// Stream straight from object storage; the photo is never held in memory.
+	_, _ = io.Copy(w, photo)
 }
 
 func (h Handler) issueSeen(w http.ResponseWriter, r *http.Request) {

@@ -1,6 +1,5 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { ApiError, apiJSON } from "../api/client";
-import { TruckCheckout } from "../api/delivery";
 import { todayLocal } from "../api/date";
 import { depotLabel, isIncomplete, LoadingTripDetail, LoadingTripSummary, newIdempotencyKey } from "../api/loading";
 import { useAuth } from "../auth/AuthContext";
@@ -20,7 +19,8 @@ export function LoadingPage() {
   const [date, setDate] = useState(todayLocal);
   const [trips, setTrips] = useState<LoadingTripSummary[]>([]);
   const [detail, setDetail] = useState<LoadingTripDetail | null>(null);
-  const [checkoutAlert, setCheckoutAlert] = useState<TruckCheckout | null>(null);
+  const [readySeal, setReadySeal] = useState("");
+  const [readyTemp, setReadyTemp] = useState("");
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [issueType, setIssueType] = useState("MISSING");
@@ -53,22 +53,6 @@ export function LoadingPage() {
     }).catch(() => { if (active) setOwnerState("blocked"); });
     return () => { active = false; };
   }, [ownerId]);
-
-  useEffect(() => {
-    if (!detail?.tripId || !token || !online) { setCheckoutAlert(null); return; }
-    setCheckoutAlert(null);
-    let active = true;
-    const tripId = detail.tripId;
-    const loadAlert = async () => {
-      try {
-        const result = await apiJSON<{ checkout: TruckCheckout | null }>("/delivery/trips/" + encodeURIComponent(tripId) + "/checkout", token);
-        if (active) setCheckoutAlert(result.checkout?.status === "blocked" ? result.checkout : null);
-      } catch { if (active) setCheckoutAlert(null); }
-    };
-    void loadAlert();
-    const timer = window.setInterval(() => { void loadAlert(); }, 15_000);
-    return () => { active = false; window.clearInterval(timer); };
-  }, [detail?.tripId, token, online]);
 
   async function refreshFromServer(tripId: string) {
     if (!navigator.onLine) throw new TypeError("Connection lost while refreshing the loading manifest.");
@@ -284,8 +268,14 @@ export function LoadingPage() {
     if (!detail) return;
     await run("", async () => {
       if (!(detail.planVersion && detail.acknowledgedVersion === detail.planVersion)) throw new Error("Acknowledge the current plan while connected before marking the trip ready.");
-      const item: LoadingQueueOperation = { operationId: await operationId(), type: "READY", tripId: detail.tripId, createdAt: new Date().toISOString() };
-      const queued = await performOrQueue(item, () => apiJSON(`/loading/trips/${detail.tripId}/ready`, token, { method: "POST", headers: { "Idempotency-Key": item.operationId } }));
+      // A refrigerated trip cannot leave without the chilled-zone reading and the door seal;
+      // the loading service refuses it otherwise, so ask for both here.
+      const seal = readySeal.trim();
+      const temperature = readyTemp.trim() === "" ? undefined : Number(readyTemp);
+      if (refrigerated && (temperature === undefined || Number.isNaN(temperature) || !seal)) throw new Error(t("Enter the chilled-zone temperature and the door seal number before marking a refrigerated trip ready."));
+      const payload = { chilledTemperatureC: refrigerated ? temperature : undefined, sealNumber: seal || undefined };
+      const item: LoadingQueueOperation = { operationId: await operationId(), type: "READY", tripId: detail.tripId, payload, createdAt: new Date().toISOString() };
+      const queued = await performOrQueue(item, () => apiJSON(`/loading/trips/${detail.tripId}/ready`, token, { method: "POST", headers: { "Idempotency-Key": item.operationId }, body: JSON.stringify(payload) }));
       setInfo(t(queued ? "Ready status saved on this device" : "Ready for departure"));
     });
   }
@@ -302,6 +292,7 @@ export function LoadingPage() {
   const blocked = orders.some(isIncomplete);
   const inProgress = detail?.status === "in_progress" || detail?.loadingStatus === "in_progress";
   const isReady = detail?.status === "ready" || detail?.loadingStatus === "ready";
+  const refrigerated = /chill|refriger|frozen|multi|reefer/i.test(detail?.vehicleTemperatureCapability || "");
   const currentPlanAcknowledged = Boolean(detail?.planVersion && detail.acknowledgedVersion === detail.planVersion);
 
   if (ownerState === "loading") return <section className="card loader-shell"><h2>{t("Loader")}</h2><p role="status">{t("Checking this device's saved loader account…")}</p></section>;
@@ -360,27 +351,12 @@ export function LoadingPage() {
           <h3>
             {detail.planRef} · {detail.vehicleId}
           </h3>
-          {!currentPlanAcknowledged && Boolean(detail.planVersion) && (
-            <div className="status-bad plan-changed-banner" role="alert" style={{ margin: "1rem 0", padding: "0.85rem 1rem", borderRadius: "6px" }}>
-              <strong>⚠️ {t("Plan changed")}</strong>
-              <p>{t("Plan changed · Review updated load list before departure")}</p>
-              <button type="button" className="tap primary" onClick={acknowledgePlan} disabled={!online}>
-                {t("Acknowledge current plan")}
-              </button>
-            </div>
-          )}
           <p className="muted">{t("Plan version")} {detail.planVersion || t("unavailable")} · {currentPlanAcknowledged ? t("Acknowledged") : t("Acknowledgement required before departure")}</p>
-          <p className="muted">{t("Load list saved for offline use")}</p>
-          {!currentPlanAcknowledged && !detail.planVersion && (
-            <button type="button" className="tap" onClick={acknowledgePlan} disabled={!online || !detail.planVersion}>
-              {t("Acknowledge current plan")}
-            </button>
-          )}
+          {!currentPlanAcknowledged && <button type="button" className="tap" onClick={acknowledgePlan} disabled={!online || !detail.planVersion}>{t("Acknowledge current plan")}</button>}
           <p>
             {depotLabel(detail.depot)} · {t(detail.status || detail.loadingStatus || "pending")} · {detail.loadedCount ?? 0} {t("loaded")} ·{" "}
             {detail.shortfallCount ?? 0} {t("short")} · {detail.pendingCount ?? 0} {t("pending")}
           </p>
-          {checkoutAlert && <p className="status-bad" role="alert">{t("Driver reported missing goods at check-out")}: {checkoutAlert.missingOrderIds.map(id => detail.orders?.find(order => order.orderId === id)?.orderRef || id).join(", ")}. {t("Check-out blocked. Review this load with dispatch.")}</p>}
           {detail.status === "pending" && (
             <button type="button" className="tap primary" onClick={start}>
               {t("Start loading")}
@@ -476,6 +452,13 @@ export function LoadingPage() {
             </form>
           )}
 
+          {inProgress && (
+            <div className="issue-form">
+              <h3>{t("Departure checks")}</h3>
+              {refrigerated && <input type="number" step="0.1" min={-30} max={30} aria-label={t("Chilled-zone temperature (°C)")} placeholder={t("Chilled-zone temperature (°C)")} value={readyTemp} onChange={(e) => setReadyTemp(e.target.value)} />}
+              <input aria-label={t("Door seal number")} placeholder={t("Door seal number")} maxLength={40} value={readySeal} onChange={(e) => setReadySeal(e.target.value)} />
+            </div>
+          )}
           {inProgress && (
             <button type="button" className="tap primary" onClick={ready} disabled={blocked || !currentPlanAcknowledged}>
               {t("Ready for departure")}

@@ -107,7 +107,7 @@ func TestLoadingWorkflow(t *testing.T) {
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0011_loading_delivery_snapshot.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0021_loading_plan_version.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0042_loading_issue_decisions.sql"))
-	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0042_loader_dock_checks.sql"))
+	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0044_loader_dock_checks.sql"))
 
 	peers := httptest.NewServer(peerStub())
 	t.Cleanup(peers.Close)
@@ -175,7 +175,7 @@ func TestLoadingWorkflow(t *testing.T) {
 		t.Fatalf("idempotent start %d %s", again.status, again.body)
 	}
 
-	if code := do(t, srv, http.MethodPost, "/api/v1/loading/trips/trip-north/ready", "usr-loader", nil, "").status; code != http.StatusConflict {
+	if code := do(t, srv, http.MethodPost, "/api/v1/loading/trips/trip-north/ready", "usr-loader", readyOK, "").status; code != http.StatusConflict {
 		t.Fatalf("ready while pending %d", code)
 	}
 
@@ -198,7 +198,7 @@ func TestLoadingWorkflow(t *testing.T) {
 		t.Fatalf("loaded with issue %d %s", blocked.status, blocked.body)
 	}
 
-	undecided := do(t, srv, http.MethodPost, "/api/v1/loading/trips/trip-north/ready", "usr-loader", nil, "")
+	undecided := do(t, srv, http.MethodPost, "/api/v1/loading/trips/trip-north/ready", "usr-loader", readyOK, "")
 	if undecided.status != http.StatusConflict || !strings.Contains(undecided.body, "dispatcher_decision_required") {
 		t.Fatalf("ready with undecided shortfall %d %s", undecided.status, undecided.body)
 	}
@@ -219,7 +219,7 @@ func TestLoadingWorkflow(t *testing.T) {
 	if hold.status != http.StatusOK || !strings.Contains(hold.body, `"decision":"HOLD"`) {
 		t.Fatalf("hold decision %d %s", hold.status, hold.body)
 	}
-	if code := do(t, srv, http.MethodPost, "/api/v1/loading/trips/trip-north/ready", "usr-loader", nil, "").status; code != http.StatusConflict {
+	if code := do(t, srv, http.MethodPost, "/api/v1/loading/trips/trip-north/ready", "usr-loader", readyOK, "").status; code != http.StatusConflict {
 		t.Fatalf("ready while on hold %d", code)
 	}
 	partial := do(t, srv, http.MethodPost, decisionPath, "usr-dispatcher", []byte(`{"decision":"PARTIAL_LOAD","note":"leave on time"}`), "")
@@ -230,7 +230,7 @@ func TestLoadingWorkflow(t *testing.T) {
 		t.Fatalf("decision not visible to loader %s", detail.body)
 	}
 
-	readyWithShort := do(t, srv, http.MethodPost, "/api/v1/loading/trips/trip-north/ready", "usr-loader", nil, "")
+	readyWithShort := do(t, srv, http.MethodPost, "/api/v1/loading/trips/trip-north/ready", "usr-loader", readyOK, "")
 	if readyWithShort.status != http.StatusOK {
 		t.Fatalf("ready with shortfall %d %s", readyWithShort.status, readyWithShort.body)
 	}
@@ -250,7 +250,7 @@ func TestLoadingWorkflow(t *testing.T) {
 		t.Fatalf("mutate after ready %d %s", after.status, after.body)
 	}
 
-	secondReady := do(t, srv, http.MethodPost, "/api/v1/loading/trips/trip-north/ready", "usr-loader", nil, "")
+	secondReady := do(t, srv, http.MethodPost, "/api/v1/loading/trips/trip-north/ready", "usr-loader", readyOK, "")
 	if secondReady.status != http.StatusOK {
 		t.Fatalf("idempotent ready %d %s", secondReady.status, secondReady.body)
 	}
@@ -279,14 +279,95 @@ func TestLoadingWorkflow(t *testing.T) {
 	if !strings.Contains(got.body, `"status":"pending"`) {
 		t.Fatalf("withdrawing the last report should put the order back to pending: %s", got.body)
 	}
-	if code := do(t, srv, http.MethodPost, "/api/v1/loading/trips/trip-clear/ready", "usr-loader", nil, "").status; code != http.StatusConflict {
+	if code := do(t, srv, http.MethodPost, "/api/v1/loading/trips/trip-clear/ready", "usr-loader", readyOK, "").status; code != http.StatusConflict {
 		t.Fatalf("ready after cleared issue should stay incomplete %d", code)
 	}
 	if code := do(t, srv, http.MethodPut, "/api/v1/loading/trips/trip-clear/orders/ord-4/loaded", "usr-loader", nil, "").status; code != http.StatusOK {
 		t.Fatalf("explicit loaded after clear %d", code)
 	}
-	if code := do(t, srv, http.MethodPost, "/api/v1/loading/trips/trip-clear/ready", "usr-loader", nil, "").status; code != http.StatusOK {
+	// A refrigerated trip cannot be released without its departure checks, whatever
+	// the client sends: no body, an empty object, a missing or blank seal, or no reading.
+	refusals := map[string][]byte{
+		"no body":      nil,
+		"empty object": []byte(`{}`),
+		"no seal":      []byte(`{"chilledTemperatureC":3}`),
+		"blank seal":   []byte(`{"chilledTemperatureC":3,"sealNumber":"   "}`),
+		"no reading":   []byte(`{"sealNumber":"WP-22817"}`),
+	}
+	for label, body := range refusals {
+		if r := do(t, srv, http.MethodPost, "/api/v1/loading/trips/trip-clear/ready", "usr-loader", body, ""); r.status != http.StatusBadRequest {
+			t.Fatalf("ready on a refrigerated trip with %s: want 400, got %d %s", label, r.status, r.body)
+		}
+	}
+	if r := do(t, srv, http.MethodPost, "/api/v1/loading/trips/trip-clear/ready", "usr-loader", []byte(`{"chilledTemperatureC":9,"sealNumber":"WP-22817"}`), ""); r.status != http.StatusConflict {
+		t.Fatalf("a warm chilled zone must be refused, got %d %s", r.status, r.body)
+	}
+	var clearStatus string
+	if err := pool.QueryRow(ctx, `SELECT status FROM loading.sessions WHERE trip_id='trip-clear'`).Scan(&clearStatus); err != nil || clearStatus != "in_progress" {
+		t.Fatalf("refused checks must leave the session in progress, got %q %v", clearStatus, err)
+	}
+	if code := do(t, srv, http.MethodPost, "/api/v1/loading/trips/trip-clear/ready", "usr-loader", readyOK, "").status; code != http.StatusOK {
 		t.Fatalf("ready after explicit loaded %d", code)
+	}
+
+	// "Move to the next run" is recorded before planning has published a plan
+	// without the line. Whatever happens to the planning calls that follow, the
+	// trip must not be released with the short line still on it.
+	if code := do(t, srv, http.MethodPost, "/api/v1/loading/trips/trip-move/start", "usr-loader", nil, "").status; code != http.StatusOK {
+		t.Fatalf("move trip start %d", code)
+	}
+	if code := do(t, srv, http.MethodPut, "/api/v1/loading/trips/trip-move/orders/ord-9/loaded", "usr-loader", nil, "").status; code != http.StatusOK {
+		t.Fatalf("move trip load ord-9 %d", code)
+	}
+	moveIssue := do(t, srv, http.MethodPost, "/api/v1/loading/trips/trip-move/orders/ord-8/issues", "usr-loader", []byte(`{"type":"MISSING","affectedUnits":3}`), "iss-move")
+	if moveIssue.status != http.StatusCreated {
+		t.Fatalf("move trip issue %d %s", moveIssue.status, moveIssue.body)
+	}
+	var moveCreated struct {
+		Issue struct{ ID string } `json:"issue"`
+	}
+	if err := json.Unmarshal([]byte(moveIssue.body), &moveCreated); err != nil || moveCreated.Issue.ID == "" {
+		t.Fatalf("move issue id %v %s", err, moveIssue.body)
+	}
+	moveDecision := "/api/v1/loading/trips/trip-move/orders/ord-8/issues/" + moveCreated.Issue.ID + "/decision"
+	if code := do(t, srv, http.MethodPost, moveDecision, "usr-dispatcher", []byte(`{"decision":"MOVE_TO_NEXT_RUN"}`), "").status; code != http.StatusOK {
+		t.Fatalf("move decision %d", code)
+	}
+	readyMove := func(label string) resp {
+		t.Helper()
+		r := do(t, srv, http.MethodPost, "/api/v1/loading/trips/trip-move/ready", "usr-loader", readyOK, "")
+		if r.status != http.StatusConflict {
+			t.Fatalf("%s: ready must be refused, got %d %s", label, r.status, r.body)
+		}
+		return r
+	}
+	// 1. The planning calls after the decision failed: the old plan is still
+	// confirmed and still carries ord-8.
+	if r := readyMove("move decided, plan unchanged"); !strings.Contains(r.body, "dispatcher_decision_required") || !strings.Contains(r.body, `"moveUnpublishedOrderIds":["ord-8"]`) {
+		t.Fatalf("expected the unpublished move to be named: %s", r.body)
+	}
+	// 2. The plan is reopened for revision (not confirmed) while the loader presses Ready.
+	moveState.Store(1)
+	readyMove("plan being revised")
+	// 3. A new plan without ord-8 is confirmed, but this session has not moved onto it.
+	moveState.Store(2)
+	readyMove("new plan confirmed, session not synced")
+	// 4. Planning is rolled back to the original confirmed plan: still refused.
+	moveState.Store(0)
+	readyMove("planning rolled back")
+	var moveStatus string
+	if err := pool.QueryRow(ctx, `SELECT status FROM loading.sessions WHERE trip_id='trip-move'`).Scan(&moveStatus); err != nil || moveStatus != "in_progress" {
+		t.Fatalf("the session must still be in progress, got %q %v", moveStatus, err)
+	}
+	// 5. Planning confirms a new plan without ord-8 and the loader's session syncs
+	// onto it: the line leaves the trip, so the earlier decision no longer blocks it.
+	moveState.Store(2)
+	moveSynced := doWithPlanVersion(t, srv, "/api/v1/loading/trips/trip-move/sync", "usr-loader", 2)
+	if moveSynced.status != http.StatusOK || strings.Contains(moveSynced.body, "ord-8") {
+		t.Fatalf("sync onto the plan without the moved line %d %s", moveSynced.status, moveSynced.body)
+	}
+	if r := do(t, srv, http.MethodPost, "/api/v1/loading/trips/trip-move/ready", "usr-loader", readyOK, ""); r.status != http.StatusOK || !strings.Contains(r.body, `"status":"ready"`) {
+		t.Fatalf("ready after the moved line left the trip %d %s", r.status, r.body)
 	}
 
 	// A revised plan: the loader acknowledges v2 and the session moves onto it.
@@ -389,68 +470,6 @@ func TestLoadingWorkflow(t *testing.T) {
 	if res := do(t, srv, http.MethodPost, "/api/v1/loading/alerts/"+raised.Alert.ID+"/resolve", "usr-dispatcher", nil, ""); res.status != http.StatusOK || !strings.Contains(res.body, `"resolvedBy":"USR002"`) {
 		t.Fatalf("resolve alert %d %s", res.status, res.body)
 	}
-
-	// "Move to the next run" is recorded before planning has published a plan
-	// without the line. Whatever happens to the planning calls that follow, the
-	// trip must not be released with the short line still on it.
-	if code := do(t, srv, http.MethodPost, "/api/v1/loading/trips/trip-move/start", "usr-loader", nil, "").status; code != http.StatusOK {
-		t.Fatalf("move trip start %d", code)
-	}
-	if code := do(t, srv, http.MethodPut, "/api/v1/loading/trips/trip-move/orders/ord-9/loaded", "usr-loader", nil, "").status; code != http.StatusOK {
-		t.Fatalf("move trip load ord-9 %d", code)
-	}
-	moveIssue := do(t, srv, http.MethodPost, "/api/v1/loading/trips/trip-move/orders/ord-8/issues", "usr-loader", []byte(`{"type":"MISSING","affectedUnits":3}`), "iss-move")
-	if moveIssue.status != http.StatusCreated {
-		t.Fatalf("move trip issue %d %s", moveIssue.status, moveIssue.body)
-	}
-	var moveCreated struct {
-		Issue struct{ ID string } `json:"issue"`
-	}
-	if err := json.Unmarshal([]byte(moveIssue.body), &moveCreated); err != nil || moveCreated.Issue.ID == "" {
-		t.Fatalf("move issue id %v %s", err, moveIssue.body)
-	}
-	moveDecision := "/api/v1/loading/trips/trip-move/orders/ord-8/issues/" + moveCreated.Issue.ID + "/decision"
-	if code := do(t, srv, http.MethodPost, moveDecision, "usr-dispatcher", []byte(`{"decision":"MOVE_TO_NEXT_RUN"}`), "").status; code != http.StatusOK {
-		t.Fatalf("move decision %d", code)
-	}
-	readyMove := func(label string) resp {
-		t.Helper()
-		r := do(t, srv, http.MethodPost, "/api/v1/loading/trips/trip-move/ready", "usr-loader", nil, "")
-		if r.status != http.StatusConflict {
-			t.Fatalf("%s: ready must be refused, got %d %s", label, r.status, r.body)
-		}
-		return r
-	}
-	// 1. The planning calls after the decision failed: the old plan is still
-	// confirmed and still carries ord-8.
-	if r := readyMove("move decided, plan unchanged"); !strings.Contains(r.body, "dispatcher_decision_required") || !strings.Contains(r.body, `"moveUnpublishedOrderIds":["ord-8"]`) {
-		t.Fatalf("expected the unpublished move to be named: %s", r.body)
-	}
-	// 2. The plan is reopened for revision (not confirmed) while the loader presses Ready.
-	moveState.Store(1)
-	readyMove("plan being revised")
-	// 3. A new plan without ord-8 is confirmed, but this session has not moved onto it.
-	moveState.Store(2)
-	readyMove("new plan confirmed, session not synced")
-	// 4. Planning is rolled back to the original confirmed plan: still refused.
-	moveState.Store(0)
-	readyMove("planning rolled back")
-	var moveStatus string
-	if err := pool.QueryRow(ctx, `SELECT status FROM loading.sessions WHERE trip_id='trip-move'`).Scan(&moveStatus); err != nil || moveStatus != "in_progress" {
-		t.Fatalf("the session must still be in progress, got %q %v", moveStatus, err)
-	}
-	// Holding or leaving the shortfall undecided is refused for the same reason.
-	if code := do(t, srv, http.MethodPost, moveDecision, "usr-dispatcher", []byte(`{"decision":"HOLD"}`), "").status; code != http.StatusOK {
-		t.Fatalf("hold decision %d", code)
-	}
-	readyMove("on hold")
-	// A partial load is the decision that releases the trip.
-	if code := do(t, srv, http.MethodPost, moveDecision, "usr-dispatcher", []byte(`{"decision":"PARTIAL_LOAD"}`), "").status; code != http.StatusOK {
-		t.Fatalf("partial decision %d", code)
-	}
-	if code := do(t, srv, http.MethodPost, "/api/v1/loading/trips/trip-move/ready", "usr-loader", nil, "").status; code != http.StatusOK {
-		t.Fatalf("ready after partial load %d", code)
-	}
 }
 
 var (
@@ -521,6 +540,9 @@ func uploadPhoto(t *testing.T, srv *httptest.Server, path, subject, mime string,
 // moveState drives the planning stub for trip-move: 0 confirmed v1 with both
 // orders, 1 reopened for revision (no confirmed plan), 2 confirmed v2 without ord-8.
 var moveState atomic.Int32
+
+// readyOK is a request body with valid departure checks for a refrigerated trip.
+var readyOK = []byte(`{"chilledTemperatureC":3,"sealNumber":"WP-22817"}`)
 
 func moveTrip() (map[string]any, bool) {
 	state := moveState.Load()

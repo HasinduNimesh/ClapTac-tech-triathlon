@@ -37,6 +37,17 @@ class LoaderNotice {
   final String tone;
 }
 
+/// One open "report an issue" form. The idempotency key is made once; [issueId] is set as soon
+/// as the report has been filed, so a retry after a failed photo upload only uploads.
+class ReportAttempt {
+  final String key = newOperationId();
+  String? issueId;
+  bool photoSent = false;
+
+  /// The report exists on the server; only the photo is outstanding.
+  bool get filed => issueId != null;
+}
+
 /// Departure checks entered on the Ready card before confirming.
 class ReadyCheck {
   double? temperatureC;
@@ -228,12 +239,23 @@ class LoaderController extends ChangeNotifier {
 
   /// Missing/damaged/wrong-item report, with an optional photo. The order is
   /// never reduced here: the dispatcher decides.
-  Future<String?> reportIssue(LoadingTrip trip, LoadingOrder order, {required String type, required int units, String note = '', List<int>? photo, String photoMime = 'image/jpeg'}) => _act(trip.tripId, () async {
-        await _ensureStarted(trip);
-        final created = await api.post('/loading/trips/${trip.tripId}/orders/${order.orderId}/issues', headers: {'Idempotency-Key': newOperationId()}, body: {'type': type, 'affectedUnits': units, if (note.isNotEmpty) 'note': note});
-        final id = ((created as Map<String, dynamic>)['issue'] as Map<String, dynamic>?)?['id'];
-        if (photo != null && id is String) {
-          await api.upload('/loading/trips/${trip.tripId}/orders/${order.orderId}/issues/$id/photo', bytes: photo, mime: photoMime);
+  ///
+  /// [attempt] belongs to one open report form. It keeps the idempotency key and, once the
+  /// report exists, its ID, so a failed photo upload is retried on its own: pressing Send
+  /// again never files the same report twice.
+  Future<String?> reportIssue(LoadingTrip trip, LoadingOrder order, {required ReportAttempt attempt, required String type, required int units, String note = '', List<int>? photo, String photoMime = 'image/jpeg'}) => _act(trip.tripId, () async {
+        if (attempt.issueId == null) {
+          await _ensureStarted(trip);
+          // The same key every time this form is sent: if the first answer was lost on the
+          // way back, the server returns the report it already filed instead of a second one.
+          final created = await api.post('/loading/trips/${trip.tripId}/orders/${order.orderId}/issues', headers: {'Idempotency-Key': attempt.key}, body: {'type': type, 'affectedUnits': units, if (note.isNotEmpty) 'note': note});
+          final id = ((created as Map<String, dynamic>)['issue'] as Map<String, dynamic>?)?['id'];
+          if (id is! String) throw ApiException(502, '{"detail":"The report was filed but its ID was not returned."}');
+          attempt.issueId = id;
+        }
+        if (photo != null && !attempt.photoSent) {
+          await api.upload('/loading/trips/${trip.tripId}/orders/${order.orderId}/issues/${attempt.issueId}/photo', bytes: photo, mime: photoMime);
+          attempt.photoSent = true;
         }
       });
 

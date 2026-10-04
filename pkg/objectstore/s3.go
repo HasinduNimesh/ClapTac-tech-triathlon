@@ -185,27 +185,25 @@ func hmacSHA256(key []byte, data string) []byte {
 	return m.Sum(nil)
 }
 
-// Get reads an object back. It is not part of Store so existing Store
-// implementations keep compiling; callers that need reads ask for a Reader.
-func (m *Memory) Get(_ context.Context, key string) ([]byte, error) {
+// Reader is a Store that can also read objects back. Open returns the object as
+// a stream the caller must close, so a large object is never held in memory just
+// to be copied on to an HTTP response.
+type Reader interface {
+	Store
+	Open(ctx context.Context, key string) (io.ReadCloser, error)
+}
+
+func (m *Memory) Open(_ context.Context, key string) (io.ReadCloser, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	b, ok := m.Objects[key]
 	if !ok {
 		return nil, fmt.Errorf("object not found")
 	}
-	cp := make([]byte, len(b))
-	copy(cp, b)
-	return cp, nil
+	return io.NopCloser(bytes.NewReader(append([]byte(nil), b...))), nil
 }
 
-// Reader is a Store that can also read objects back.
-type Reader interface {
-	Store
-	Get(ctx context.Context, key string) ([]byte, error)
-}
-
-func (s S3) Get(ctx context.Context, key string) ([]byte, error) {
+func (s S3) Open(ctx context.Context, key string) (io.ReadCloser, error) {
 	if s.Endpoint == "" || s.Bucket == "" {
 		return nil, fmt.Errorf("object store not configured")
 	}
@@ -225,13 +223,10 @@ func (s S3) Get(ctx context.Context, key string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 32<<20))
-	if err != nil {
-		return nil, err
-	}
 	if resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("s3 GET %s: %d %s", key, resp.StatusCode, strings.TrimSpace(string(body)))
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<10))
+		return nil, fmt.Errorf("s3 GET %s: %d %s", key, resp.StatusCode, strings.TrimSpace(string(b)))
 	}
-	return body, nil
+	return resp.Body, nil
 }

@@ -67,8 +67,10 @@ class LoadingIssue {
   String get decisionNote => _s(raw, 'decisionNote') ?? '';
   String? get decidedBy => _s(raw, 'decidedBy');
   DateTime? get decidedAt => _t(raw, 'decidedAt');
-  bool get allowsDeparture => decision == 'PARTIAL_LOAD' || decision == 'MOVE_TO_NEXT_RUN';
-  String get decisionLabel => switch (decision) { 'PARTIAL_LOAD' => 'Partial load accepted', 'HOLD' => 'On hold until stock arrives', 'MOVE_TO_NEXT_RUN' => 'Moved to the next run', _ => 'Waiting for dispatcher' };
+  /// Only a partial load releases the trip by itself. A line moved to the next run still counts
+  /// as open until the dispatcher's new plan is acknowledged and the line leaves this trip.
+  bool get allowsDeparture => decision == 'PARTIAL_LOAD';
+  String get decisionLabel => switch (decision) { 'PARTIAL_LOAD' => 'Partial load accepted', 'HOLD' => 'On hold until stock arrives', 'MOVE_TO_NEXT_RUN' => 'Moving to the next run · acknowledge the new plan', _ => 'Waiting for dispatcher' };
 }
 
 class LoadingOrder {

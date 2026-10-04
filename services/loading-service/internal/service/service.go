@@ -1,25 +1,28 @@
 package service
 
 import (
-	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"math"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/HasinduNimesh/ClapTac-tech-triathlon/pkg/audit"
 	"github.com/HasinduNimesh/ClapTac-tech-triathlon/pkg/authorization"
+	depotnames "github.com/HasinduNimesh/ClapTac-tech-triathlon/pkg/depot"
 	"github.com/HasinduNimesh/ClapTac-tech-triathlon/pkg/objectstore"
 	"github.com/HasinduNimesh/ClapTac-tech-triathlon/pkg/telemetry"
+	"github.com/HasinduNimesh/ClapTac-tech-triathlon/pkg/validation"
 	"github.com/HasinduNimesh/ClapTac-tech-triathlon/services/loading-service/internal/client"
 	"github.com/HasinduNimesh/ClapTac-tech-triathlon/services/loading-service/internal/domain"
 	"github.com/HasinduNimesh/ClapTac-tech-triathlon/services/loading-service/internal/sequence"
 	"github.com/HasinduNimesh/ClapTac-tech-triathlon/services/loading-service/internal/store"
 )
 
-// MaxPhotoBytes caps a shortfall photo, the same limit as a delivery proof photo.
-const MaxPhotoBytes = 5 << 20
+// MaxPhotoBytes caps a shortfall photo at the same size as a delivery proof photo (4 MiB).
+const MaxPhotoBytes = 4 << 20
 
 type Service struct {
 	Repo     store.Postgres
@@ -52,7 +55,7 @@ func (s Service) List(ctx context.Context, profile *authorization.Profile, date 
 	}
 	var out []map[string]any
 	for _, t := range trips {
-		if depot != "" && !sameDepot(t.VehicleDepot, depot) {
+		if depot != "" && !depotnames.Same(t.VehicleDepot, depot) {
 			continue
 		}
 		item := tripSummary(t)
@@ -125,13 +128,13 @@ func (s Service) Start(ctx context.Context, profile *authorization.Profile, trip
 		return nil, err
 	}
 	sugBy := s.suggestions(trip.Allocations)
-	var loads []domain.OrderLoad
+	details, err := s.orderDetails(ctx, orderIDs(trip.Allocations))
+	if err != nil {
+		return nil, fmt.Errorf("order details unavailable")
+	}
+	loads := make([]domain.OrderLoad, 0, len(trip.Allocations))
 	for _, a := range trip.Allocations {
-		l, err := s.newLoad(ctx, a, sugBy[a.OrderID])
-		if err != nil {
-			return nil, err
-		}
-		loads = append(loads, l)
+		loads = append(loads, newLoad(a, details[a.OrderID], sugBy[a.OrderID]))
 	}
 	sess, err := s.Repo.StartTx(ctx, domain.Session{
 		TripID: trip.TripID, PlanID: trip.PlanID, PlanRef: trip.PlanRef, DeliveryDate: trip.DeliveryDate,
@@ -162,17 +165,64 @@ func (s Service) suggestions(allocs []domain.PlanningAlloc) map[string]int {
 	return sugBy
 }
 
-func (s Service) newLoad(ctx context.Context, a domain.PlanningAlloc, suggested int) (domain.OrderLoad, error) {
-	ord, err := s.Peers.Order(ctx, a.OrderID)
-	if err != nil {
-		return domain.OrderLoad{}, fmt.Errorf("order details unavailable")
-	}
+func newLoad(a domain.PlanningAlloc, ord domain.OrderDetail, suggested int) domain.OrderLoad {
 	return domain.OrderLoad{
 		AllocationID: a.AllocationID, OrderID: a.OrderID, OrderRef: first(ord.OrderRef, a.OrderRef),
 		OutletID: first(ord.OutletID, a.OutletID), Brand: ord.Brand, TemperatureRequirement: ord.TemperatureRequirement,
 		StopSequence: a.StopSequence, SuggestedLoadSequence: suggested,
 		ExpectedUnits: ord.OrderUnits,
-	}, nil
+	}
+}
+
+// orderFetchConcurrency bounds how many orders are read from order-service at once.
+const orderFetchConcurrency = 8
+
+func orderIDs(allocs []domain.PlanningAlloc) []string {
+	ids := make([]string, 0, len(allocs))
+	for _, a := range allocs {
+		ids = append(ids, a.OrderID)
+	}
+	return ids
+}
+
+// orderDetails reads the distinct orders from order-service a few at a time rather
+// than one after another, so a trip with many stops costs a handful of round trips'
+// time, not one per stop. It returns what it could read and the first error:
+// callers that need every order (starting or syncing a session) refuse on the
+// error, callers that only decorate a response carry on with what came back.
+func (s Service) orderDetails(ctx context.Context, ids []string) (map[string]domain.OrderDetail, error) {
+	out := make(map[string]domain.OrderDetail, len(ids))
+	var (
+		mu       sync.Mutex
+		wg       sync.WaitGroup
+		firstErr error
+	)
+	slots := make(chan struct{}, orderFetchConcurrency)
+	seen := map[string]bool{}
+	for _, id := range ids {
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		wg.Add(1)
+		slots <- struct{}{}
+		go func(id string) {
+			defer wg.Done()
+			defer func() { <-slots }()
+			ord, err := s.Peers.Order(ctx, id)
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				if firstErr == nil {
+					firstErr = err
+				}
+				return
+			}
+			out[id] = ord
+		}(id)
+	}
+	wg.Wait()
+	return out, firstErr
 }
 
 // SyncPlanVersion moves a started loading session onto the dispatcher's newer
@@ -206,43 +256,18 @@ func (s Service) SyncPlanVersion(ctx context.Context, profile *authorization.Pro
 		return nil, err
 	}
 	sugBy := s.suggestions(trip.Allocations)
-	byOrder := map[string]domain.PlanningAlloc{}
-	for _, a := range trip.Allocations {
-		byOrder[a.OrderID] = a
+	diff := diffPlan(loads, trip.Allocations, sugBy)
+	details, err := s.orderDetails(ctx, orderIDs(diff.Added))
+	if err != nil {
+		return nil, fmt.Errorf("order details unavailable")
 	}
-	have := map[string]bool{}
-	var remove []string
-	var change []store.LoadChange
-	for _, l := range loads {
-		have[l.OrderID] = true
-		a, ok := byOrder[l.OrderID]
-		if !ok {
-			remove = append(remove, l.ID)
-			continue
-		}
-		if a.StopSequence != l.StopSequence || sugBy[l.OrderID] != l.SuggestedLoadSequence {
-			note := l.ChangeNote
-			if a.StopSequence != l.StopSequence {
-				note = fmt.Sprintf("Moved from Stop %d", l.StopSequence)
-			}
-			change = append(change, store.LoadChange{
-				LoadID: l.ID, StopSequence: a.StopSequence, SuggestedLoadSequence: sugBy[l.OrderID], Note: note,
-				ResetToPending: l.Status == domain.LoadLoaded && a.StopSequence != l.StopSequence,
-			})
-		}
-	}
-	var add []domain.OrderLoad
-	for _, a := range trip.Allocations {
-		if have[a.OrderID] {
-			continue
-		}
-		l, err := s.newLoad(ctx, a, sugBy[a.OrderID])
-		if err != nil {
-			return nil, err
-		}
+	add := make([]domain.OrderLoad, 0, len(diff.Added))
+	for _, a := range diff.Added {
+		l := newLoad(a, details[a.OrderID], sugBy[a.OrderID])
 		l.ChangeNote = fmt.Sprintf("Added in v%d", trip.PlanVersion)
 		add = append(add, l)
 	}
+	remove, change := diff.removals(), diff.loadChanges()
 	if err := s.Repo.SyncPlanVersion(ctx, sess.ID, trip.PlanVersion, actor(profile), add, remove, change); err != nil {
 		return nil, err
 	}
@@ -337,7 +362,7 @@ func (s Service) AttachIssuePhoto(ctx context.Context, profile *authorization.Pr
 	if len(body) == 0 || len(body) > MaxPhotoBytes {
 		return domain.Issue{}, fmt.Errorf("invalid: photo size")
 	}
-	if !hasImageMagic(mime, body) {
+	if !validation.HasImageMagic(mime, body) {
 		return domain.Issue{}, fmt.Errorf("invalid: file content does not match PNG or JPEG")
 	}
 	ext := ".jpg"
@@ -356,7 +381,7 @@ func (s Service) AttachIssuePhoto(ctx context.Context, profile *authorization.Pr
 }
 
 // IssuePhoto returns a report's photo to a loader at that depot or a dispatcher.
-func (s Service) IssuePhoto(ctx context.Context, profile *authorization.Profile, tripID, orderID, issueID string) ([]byte, string, error) {
+func (s Service) IssuePhoto(ctx context.Context, profile *authorization.Profile, tripID, orderID, issueID string) (io.ReadCloser, string, error) {
 	sess, err := s.Repo.GetByTrip(ctx, tripID)
 	if err != nil {
 		return nil, "", fmt.Errorf("not found")
@@ -372,11 +397,11 @@ func (s Service) IssuePhoto(ctx context.Context, profile *authorization.Profile,
 	if err != nil || iss.OrderLoadID != load.ID || iss.PhotoKey == "" || s.Objects == nil {
 		return nil, "", fmt.Errorf("not found")
 	}
-	body, err := s.Objects.Get(ctx, iss.PhotoKey)
+	photo, err := s.Objects.Open(ctx, iss.PhotoKey)
 	if err != nil {
 		return nil, "", fmt.Errorf("not found: photo")
 	}
-	return body, iss.PhotoMime, nil
+	return photo, iss.PhotoMime, nil
 }
 
 // MarkIssueSeen records that a dispatcher opened a report, so the loader can
@@ -398,13 +423,6 @@ func (s Service) MarkIssueSeen(ctx context.Context, profile *authorization.Profi
 		return fmt.Errorf("not found")
 	}
 	return s.Repo.MarkIssueSeen(ctx, issueID, actor(profile))
-}
-
-func hasImageMagic(mime string, b []byte) bool {
-	if mime == "image/png" {
-		return bytes.HasPrefix(b, []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'})
-	}
-	return bytes.HasPrefix(b, []byte{0xff, 0xd8, 0xff})
 }
 
 func (s Service) UpdateIssue(ctx context.Context, profile *authorization.Profile, tripID, orderID, issueID, typ, note string, units int) error {
@@ -455,13 +473,6 @@ func (s Service) DeleteIssue(ctx context.Context, profile *authorization.Profile
 	return nil
 }
 
-// ReadyChecks are the loader's departure checks: the chilled-zone reading for
-// a refrigerated vehicle and the door seal number.
-type ReadyChecks struct {
-	ChilledTemperatureC *float64
-	SealNumber          string
-}
-
 func (s Service) Ready(ctx context.Context, profile *authorization.Profile, tripID string, checks ReadyChecks) (map[string]any, error) {
 	sess, err := s.Repo.GetByTrip(ctx, tripID)
 	if err != nil {
@@ -469,18 +480,6 @@ func (s Service) Ready(ctx context.Context, profile *authorization.Profile, trip
 	}
 	if err := s.guardDepot(profile, sess.Depot); err != nil {
 		return nil, err
-	}
-	checks.SealNumber = strings.TrimSpace(checks.SealNumber)
-	if len(checks.SealNumber) > 40 {
-		return nil, fmt.Errorf("invalid: sealNumber too long")
-	}
-	if t := checks.ChilledTemperatureC; t != nil {
-		if math.IsNaN(*t) || *t < -30 || *t > 30 {
-			return nil, fmt.Errorf("invalid: chilledTemperatureC")
-		}
-		if refrigerated(sess.VehicleTemperatureCapability) && (*t < domain.ChilledZoneMinC || *t > domain.ChilledZoneMaxC) {
-			return nil, fmt.Errorf("conflict: chilled zone reads %.1f °C; it must be %.0f–%.0f °C before departure", *t, domain.ChilledZoneMinC, domain.ChilledZoneMaxC)
-		}
 	}
 	trip, err := s.Peers.ConfirmedTrip(ctx, tripID)
 	if err != nil || trip.PlanVersion != sess.PlanVersion {
@@ -514,6 +513,12 @@ func (s Service) Ready(ctx context.Context, profile *authorization.Profile, trip
 	}
 	if len(undecided) > 0 || len(moveUnpublished) > 0 {
 		return nil, DecisionRequiredError{OrderIDs: append(undecided, moveUnpublished...), MoveUnpublished: moveUnpublished}
+	}
+	// The departure checks are not optional for a refrigerated vehicle: a request
+	// without them must not release the trip, whatever the app in front of it does.
+	checks, err = validateReadyChecks(sess.VehicleTemperatureCapability, checks)
+	if err != nil {
+		return nil, err
 	}
 	ready, err := s.Repo.MarkReady(ctx, sess.ID, actor(profile), checks.ChilledTemperatureC, checks.SealNumber)
 	if err != nil {
@@ -682,25 +687,12 @@ func (s Service) ListDockAlerts(ctx context.Context, profile *authorization.Prof
 	}
 	out := []domain.DockAlert{}
 	for _, a := range all {
-		if sameDepot(a.Depot, depot) {
+		if depotnames.Same(a.Depot, depot) {
 			out = append(out, a)
 		}
 	}
 	return out, nil
 }
-
-// depotAliases maps the dataset's depot names and the profile codes to one key.
-var depotAliases = map[string]string{"DEPOT_NORTH": "DEPOT_NORTH", "PELIYAGODA": "DEPOT_NORTH", "DEPOT_SOUTH": "DEPOT_SOUTH", "KANDY": "DEPOT_SOUTH"}
-
-func depotKey(d string) string {
-	k := strings.ToUpper(strings.TrimSpace(d))
-	if v, ok := depotAliases[k]; ok {
-		return v
-	}
-	return k
-}
-
-func sameDepot(a, b string) bool { return depotKey(a) == depotKey(b) }
 
 func (s Service) ResolveDockAlert(ctx context.Context, profile *authorization.Profile, id string) (domain.DockAlert, error) {
 	a, err := s.Repo.GetAlert(ctx, id)
@@ -742,7 +734,7 @@ func (s Service) guardDepot(profile *authorization.Profile, depot string) error 
 	if profile != nil && authorization.HasPermission(profile.Roles, authorization.PermLoadingViewAll) {
 		return nil
 	}
-	if profile == nil || profile.Depot == "" || !sameDepot(profile.Depot, depot) {
+	if profile == nil || profile.Depot == "" || !depotnames.Same(profile.Depot, depot) {
 		return fmt.Errorf("forbidden: depot")
 	}
 	return nil
@@ -757,10 +749,15 @@ func (s Service) detailFromSession(ctx context.Context, profile *authorization.P
 			allocBy[a.OrderID] = a
 		}
 	}
+	loadIDs := make([]string, 0, len(loads))
+	for _, l := range loads {
+		loadIDs = append(loadIDs, l.OrderID)
+	}
+	details, _ := s.orderDetails(ctx, loadIDs) // decoration only: carry on with what came back
 	var orders []map[string]any
 	for _, l := range loads {
 		iss, _ := s.Repo.ListIssues(ctx, l.ID)
-		ord, _ := s.Peers.Order(ctx, l.OrderID)
+		ord := details[l.OrderID]
 		row := map[string]any{
 			"orderId": l.OrderID, "orderRef": first(l.OrderRef, ord.OrderRef), "outletId": first(l.OutletID, ord.OutletID),
 			"brand": first(l.Brand, ord.Brand), "temperatureRequirement": first(l.TemperatureRequirement, ord.TemperatureRequirement),
@@ -804,30 +801,10 @@ func (s Service) detailFromSession(ctx context.Context, profile *authorization.P
 }
 
 // planChanges lists how the current plan version differs from the lines the
-// loader is working from: orders added, taken off the trip, or moved stop.
+// loader is working from: orders added, taken off the trip, or moved stop. It
+// describes the same comparison syncing applies (see diffPlan).
 func planChanges(loads []domain.OrderLoad, trip domain.PlanningTrip) []map[string]any {
-	byOrder := map[string]domain.PlanningAlloc{}
-	for _, a := range trip.Allocations {
-		byOrder[a.OrderID] = a
-	}
-	have := map[string]bool{}
-	out := []map[string]any{}
-	for _, l := range loads {
-		have[l.OrderID] = true
-		a, ok := byOrder[l.OrderID]
-		switch {
-		case !ok:
-			out = append(out, map[string]any{"kind": "REMOVED", "orderId": l.OrderID, "orderRef": l.OrderRef, "outletId": l.OutletID, "fromStop": l.StopSequence, "loaded": l.Status == domain.LoadLoaded})
-		case a.StopSequence != l.StopSequence:
-			out = append(out, map[string]any{"kind": "MOVED", "orderId": l.OrderID, "orderRef": l.OrderRef, "outletId": l.OutletID, "fromStop": l.StopSequence, "toStop": a.StopSequence, "loaded": l.Status == domain.LoadLoaded})
-		}
-	}
-	for _, a := range trip.Allocations {
-		if !have[a.OrderID] {
-			out = append(out, map[string]any{"kind": "ADDED", "orderId": a.OrderID, "orderRef": a.OrderRef, "outletId": a.OutletID, "toStop": a.StopSequence})
-		}
-	}
-	return out
+	return diffPlan(loads, trip.Allocations, nil).describe()
 }
 
 func addAccess(row map[string]any, a domain.PlanningAlloc) {
@@ -1006,6 +983,7 @@ func plannedArrivalByAllocation(allocations []domain.PlanningAlloc) map[string]*
 
 func (s Service) pendingDetail(ctx context.Context, trip domain.PlanningTrip, profile *authorization.Profile) map[string]any {
 	sugBy := s.suggestions(trip.Allocations)
+	details, _ := s.orderDetails(ctx, orderIDs(trip.Allocations)) // decoration only
 	var orders []map[string]any
 	for _, a := range trip.Allocations {
 		row := map[string]any{
@@ -1014,7 +992,7 @@ func (s Service) pendingDetail(ctx context.Context, trip domain.PlanningTrip, pr
 			"status": domain.LoadPending, "issues": []domain.Issue{},
 			"brand": a.Brand, "temperatureRequirement": a.Temperature, "weightKg": a.WeightKg, "volumeM3": a.VolumeM3,
 		}
-		if ord, err := s.Peers.Order(ctx, a.OrderID); err == nil {
+		if ord, ok := details[a.OrderID]; ok {
 			row["expectedUnits"] = ord.OrderUnits
 			row["brand"] = first(a.Brand, ord.Brand)
 			row["temperatureRequirement"] = first(a.Temperature, ord.TemperatureRequirement)

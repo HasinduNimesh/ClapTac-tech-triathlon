@@ -322,31 +322,9 @@ func (h Handler) outcome(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h Handler) proof(w http.ResponseWriter, r *http.Request) {
-	const multipartOverheadLimit = 256 << 10
-	r.Body = http.MaxBytesReader(w, r.Body, domain.MaxPhotoBytes+multipartOverheadLimit)
-	if err := r.ParseMultipartForm(1 << 20); err != nil {
-		var maxErr *http.MaxBytesError
-		if errors.As(err, &maxErr) {
-			apierrors.RequestEntityTooLarge(w, "proof upload exceeds the request size limit")
-			return
-		}
-		apierrors.BadRequest(w, "multipart proof required")
+	body, mime, ok := httpx.ReadImageUpload(w, r, domain.MaxPhotoBytes)
+	if !ok {
 		return
-	}
-	file, hdr, err := r.FormFile("file")
-	if err != nil {
-		apierrors.BadRequest(w, "file is required")
-		return
-	}
-	defer file.Close()
-	body, err := io.ReadAll(io.LimitReader(file, domain.MaxPhotoBytes+1))
-	if err != nil {
-		apierrors.BadRequest(w, "unable to read file")
-		return
-	}
-	mime := hdr.Header.Get("Content-Type")
-	if mime == "" || mime == "application/octet-stream" {
-		mime = r.FormValue("mimeType")
 	}
 	opID := first(r.Header.Get("Idempotency-Key"), r.FormValue("operationId"))
 	pr, err := h.Service.UploadProof(r.Context(), h.profile(r), chi.URLParam(r, "tripId"), chi.URLParam(r, "stopId"), opID, r.FormValue("type"), mime, body, r.FormValue("capturedAt"), r.FormValue("receiverName"))

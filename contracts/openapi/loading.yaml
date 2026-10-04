@@ -141,7 +141,7 @@ paths:
   /loading/trips/{tripId}/orders/{orderId}/issues/{issueId}/photo:
     post:
       operationId: attachLoadingIssuePhoto
-      description: Attach a PNG or JPEG photo (max 5 MB) of the missing, damaged or wrong goods. A newer photo replaces the earlier one.
+      description: Attach a PNG or JPEG photo (max 4 MB) of the missing, damaged or wrong goods. A newer photo replaces the earlier one.
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: "#/components/parameters/TripID"
@@ -260,8 +260,10 @@ paths:
         Atomic and immutable. Pending orders block (409 loading_incomplete). A shortfall blocks
         until the dispatcher accepts a partial load, or moves the line and the confirmed plan no
         longer carries it (409 dispatcher_decision_required).
-        The loader app sends the departure checks; on a refrigerated vehicle the chilled zone must
-        read 2-4 °C.
+        On a refrigerated vehicle the departure checks are required: a chilled-zone reading
+        (chilledTemperatureC, which must be 2-4 °C) and the door seal (sealNumber). A request
+        without them is refused with 400, and a reading outside the range with 409. For any other
+        vehicle they are optional but still validated when sent.
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: "#/components/parameters/TripID"
@@ -272,10 +274,11 @@ paths:
             schema:
               type: object
               properties:
-                chilledTemperatureC: { type: number, minimum: -30, maximum: 30 }
+                chilledTemperatureC: { type: number, minimum: -30, maximum: 30, description: Required for a refrigerated vehicle; must be 2-4 °C there. }
                 sealNumber: { type: string, maxLength: 40 }
       responses:
         "200": { description: Ready for departure }
+        "400": { description: A refrigerated vehicle without chilledTemperatureC or sealNumber, or an impossible value }
         "409": { description: loading_incomplete, dispatcher_decision_required, plan not acknowledged, or chilled zone out of range }
   /loading/internal/trips:
     get:

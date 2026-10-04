@@ -679,6 +679,7 @@ class _ReportForm extends StatefulWidget {
 
 class _ReportFormState extends State<_ReportForm> {
   late LoadingOrder order = widget.initial;
+  final attempt = ReportAttempt();
   String type = 'MISSING';
   int units = 1;
   String error = '';
@@ -713,7 +714,10 @@ class _ReportFormState extends State<_ReportForm> {
 
   @override
   Widget build(BuildContext context) {
-    final candidates = widget.trip.orders.where((o) => !o.loaded && !o.short).toList();
+    // Once the report has been filed the form can only finish it (the photo), not change it:
+    // the server already holds these details, and a changed report would look like a new one.
+    final locked = attempt.filed;
+    final candidates = widget.trip.orders.where((o) => !o.loaded && (!o.short || o.orderId == order.orderId && locked)).toList();
     final selectedId = candidates.any((o) => o.orderId == order.orderId) ? order.orderId : (candidates.isEmpty ? null : candidates.first.orderId);
     final form = Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       if (!widget.compact) ...[
@@ -728,7 +732,7 @@ class _ReportFormState extends State<_ReportForm> {
         initialValue: selectedId,
         decoration: const InputDecoration(labelText: 'Item'),
         items: [for (final o in candidates) DropdownMenuItem(value: o.orderId, child: Text('${o.orderRef} · Stop ${o.stopSequence}${o.chilled ? ' · Chilled' : ''}'))],
-        onChanged: (v) => setState(() { order = widget.trip.orders.firstWhere((o) => o.orderId == v); units = 1; }),
+        onChanged: locked ? null : (v) => setState(() { order = widget.trip.orders.firstWhere((o) => o.orderId == v); units = 1; }),
       ),
       Padding(padding: const EdgeInsets.only(top: 4, bottom: 12), child: Text('Ordered ${order.expectedUnits} for this stop in plan v${widget.trip.planVersion}${order.temperature.isNotEmpty ? ' · ${order.temperature}' : ''}', style: const TextStyle(fontSize: 12, color: Wp.muted))),
       const Text('What happened?', style: TextStyle(fontWeight: FontWeight.w600)),
@@ -736,19 +740,19 @@ class _ReportFormState extends State<_ReportForm> {
       SegmentedButton<String>(
         segments: const [ButtonSegment(value: 'MISSING', label: Text('Missing')), ButtonSegment(value: 'DAMAGED', label: Text('Damaged')), ButtonSegment(value: 'WRONG_ITEM', label: Text('Wrong item'))],
         selected: {type},
-        onSelectionChanged: (s) => setState(() => type = s.first),
+        onSelectionChanged: locked ? null : (s) => setState(() => type = s.first),
       ),
       const SizedBox(height: 14),
       const Text('Quantity affected', style: TextStyle(fontWeight: FontWeight.w600)),
       Row(children: [
-        IconButton.outlined(onPressed: units > 1 ? () => setState(() => units--) : null, icon: const Icon(Icons.remove), tooltip: 'Fewer'),
+        IconButton.outlined(onPressed: !locked && units > 1 ? () => setState(() => units--) : null, icon: const Icon(Icons.remove), tooltip: 'Fewer'),
         SizedBox(width: 56, child: Text('$units', textAlign: TextAlign.center, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600))),
-        IconButton.outlined(onPressed: order.expectedUnits == 0 || units < order.expectedUnits ? () => setState(() => units++) : null, icon: const Icon(Icons.add), tooltip: 'More'),
+        IconButton.outlined(onPressed: !locked && (order.expectedUnits == 0 || units < order.expectedUnits) ? () => setState(() => units++) : null, icon: const Icon(Icons.add), tooltip: 'More'),
         const SizedBox(width: 12),
         Flexible(child: Text('of ${order.expectedUnits} ordered · ${order.expectedUnits - units} on hand', style: const TextStyle(color: Wp.muted))),
       ]),
       const SizedBox(height: 12),
-      TextField(controller: note, maxLines: 3, maxLength: 500, decoration: const InputDecoration(labelText: 'Note', hintText: 'e.g. only 4 crates in chiller B')),
+      TextField(controller: note, enabled: !locked, maxLines: 3, maxLength: 500, decoration: const InputDecoration(labelText: 'Note', hintText: 'e.g. only 4 crates in chiller B')),
       const Text('Evidence', style: TextStyle(fontWeight: FontWeight.w600)),
       const SizedBox(height: 6),
       InkWell(
@@ -770,10 +774,11 @@ class _ReportFormState extends State<_ReportForm> {
       ),
       const SizedBox(height: 10),
       const StatusNote(icon: Icons.info, text: 'The order is not reduced automatically. The dispatcher approves a partial load, holds the trip or moves the line to the next run — you will see the decision here, and the trip stays "not ready" until then.'),
+      if (locked) const Padding(padding: EdgeInsets.only(top: 8), child: StatusNote(tone: Tone.amber, icon: Icons.cloud_done_outlined, title: 'Report sent', text: 'The dispatcher has the report. The photo did not upload yet — try again; the report will not be sent twice.')),
       if (error.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 8), child: StatusNote(tone: Tone.red, text: error)),
       const SizedBox(height: 16),
       Row(children: [
-        Expanded(child: OutlinedButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel'))),
+        Expanded(child: OutlinedButton(onPressed: () => Navigator.pop(context, locked), child: Text(locked ? 'Close without photo' : 'Cancel'))),
         const SizedBox(width: 12),
         Expanded(child: FilledButton(
           style: FilledButton.styleFrom(backgroundColor: Wp.red),
@@ -782,7 +787,7 @@ class _ReportFormState extends State<_ReportForm> {
               : () async {
                   setState(() { sending = true; error = ''; });
                   final target = widget.trip.orders.firstWhere((o) => o.orderId == selectedId);
-                  final err = await widget.controller.reportIssue(widget.trip, target, type: type, units: units, note: note.text.trim(), photo: photo, photoMime: photoMime);
+                  final err = await widget.controller.reportIssue(widget.trip, target, attempt: attempt, type: type, units: units, note: note.text.trim(), photo: photo, photoMime: photoMime);
                   if (!context.mounted) return;
                   if (err == null) {
                     Navigator.pop(context, true);
@@ -790,7 +795,7 @@ class _ReportFormState extends State<_ReportForm> {
                     setState(() { sending = false; error = err; });
                   }
                 },
-          child: Text(sending ? 'Sending…' : 'Send to dispatcher'),
+          child: Text(sending ? 'Sending…' : locked ? 'Retry photo upload' : 'Send to dispatcher'),
         )),
       ]),
     ]);

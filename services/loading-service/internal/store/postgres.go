@@ -17,9 +17,7 @@ type Postgres struct {
 
 func (p Postgres) GetByTrip(ctx context.Context, tripID string) (domain.Session, error) {
 	row := p.Pool.QueryRow(ctx, `
-		SELECT id::text, trip_id, plan_id, plan_ref, delivery_date::text, vehicle_id, depot, status,
-			started_by, started_at, COALESCE(ready_by,''), ready_at,
-			COALESCE(trip_number,0), COALESCE(vehicle_type,''), COALESCE(vehicle_temperature_capability,''),plan_version, ready_temperature_c::float8, COALESCE(ready_seal,'')
+		SELECT ` + sessionCols + `
 		FROM sessions WHERE trip_id = $1`, tripID)
 	return scanSession(row)
 }
@@ -33,9 +31,7 @@ func (p Postgres) StartTx(ctx context.Context, sess domain.Session, loads []doma
 	row := tx.QueryRow(ctx, `
 		INSERT INTO sessions (trip_id, plan_id, plan_ref, delivery_date, vehicle_id, depot, status, started_by, started_at, trip_number, vehicle_type, vehicle_temperature_capability,plan_version)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,now(),$9,$10,$11,$12)
-		RETURNING id::text, trip_id, plan_id, plan_ref, delivery_date::text, vehicle_id, depot, status,
-			started_by, started_at, COALESCE(ready_by,''), ready_at,
-			COALESCE(trip_number,0), COALESCE(vehicle_type,''), COALESCE(vehicle_temperature_capability,''),plan_version, ready_temperature_c::float8, COALESCE(ready_seal,'')
+		RETURNING ` + sessionCols + `
 	`, sess.TripID, sess.PlanID, sess.PlanRef, sess.DeliveryDate, sess.VehicleID, sess.Depot, domain.SessionInProgress, sess.StartedBy, sess.TripNumber, sess.VehicleType, sess.VehicleTemperatureCapability, sess.PlanVersion)
 	created, err := scanSession(row)
 	if err != nil {
@@ -188,18 +184,14 @@ func (p Postgres) MarkReady(ctx context.Context, sessionID, actor string, temper
 		UPDATE sessions SET status = 'ready', ready_by = $2, ready_at = now(), updated_at = now(),
 			ready_temperature_c = $3, ready_seal = NULLIF($4, '')
 		WHERE id::text = $1 AND status = 'in_progress'
-		RETURNING id::text, trip_id, plan_id, plan_ref, delivery_date::text, vehicle_id, depot, status,
-			started_by, started_at, COALESCE(ready_by,''), ready_at,
-			COALESCE(trip_number,0), COALESCE(vehicle_type,''), COALESCE(vehicle_temperature_capability,''),plan_version, ready_temperature_c::float8, COALESCE(ready_seal,'')
+		RETURNING ` + sessionCols + `
 	`, sessionID, actor, temperatureC, seal)
 	return scanSession(row)
 }
 
 func (p Postgres) ListReady(ctx context.Context, date, vehicleID string) ([]domain.Session, error) {
 	q := `
-		SELECT id::text, trip_id, plan_id, plan_ref, delivery_date::text, vehicle_id, depot, status,
-			started_by, started_at, COALESCE(ready_by,''), ready_at,
-			COALESCE(trip_number,0), COALESCE(vehicle_type,''), COALESCE(vehicle_temperature_capability,''),plan_version, ready_temperature_c::float8, COALESCE(ready_seal,'')
+		SELECT ` + sessionCols + `
 		FROM sessions WHERE status = 'ready' AND delivery_date::text = $1`
 	args := []any{date}
 	if vehicleID != "" {
@@ -379,3 +371,10 @@ func (p Postgres) ResolveAlert(ctx context.Context, id, actor string) error {
 	_, err := p.Pool.Exec(ctx, `UPDATE dock_alerts SET resolved_by = $2, resolved_at = now() WHERE id::text = $1 AND resolved_at IS NULL`, id, actor)
 	return err
 }
+
+// sessionCols is the column list scanSession reads, shared by every query that
+// returns a session so adding a column is a single edit.
+const sessionCols = `id::text, trip_id, plan_id, plan_ref, delivery_date::text, vehicle_id, depot, status,
+	started_by, started_at, COALESCE(ready_by,''), ready_at,
+	COALESCE(trip_number,0), COALESCE(vehicle_type,''), COALESCE(vehicle_temperature_capability,''), plan_version,
+	ready_temperature_c::float8, COALESCE(ready_seal,'')`
