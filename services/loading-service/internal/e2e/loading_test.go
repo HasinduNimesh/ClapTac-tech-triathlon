@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -102,7 +103,7 @@ func TestLoadingWorkflow(t *testing.T) {
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0009_loading.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0011_loading_delivery_snapshot.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0021_loading_plan_version.sql"))
-	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0040_loading_issue_decisions.sql"))
+	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0042_loading_issue_decisions.sql"))
 
 	peers := httptest.NewServer(peerStub())
 	t.Cleanup(peers.Close)
@@ -282,6 +283,95 @@ func TestLoadingWorkflow(t *testing.T) {
 	if code := do(t, srv, http.MethodPost, "/api/v1/loading/trips/trip-clear/ready", "usr-loader", nil, "").status; code != http.StatusOK {
 		t.Fatalf("ready after explicit loaded %d", code)
 	}
+
+	// "Move to the next run" is recorded before planning has published a plan
+	// without the line. Whatever happens to the planning calls that follow, the
+	// trip must not be released with the short line still on it.
+	if code := do(t, srv, http.MethodPost, "/api/v1/loading/trips/trip-move/start", "usr-loader", nil, "").status; code != http.StatusOK {
+		t.Fatalf("move trip start %d", code)
+	}
+	if code := do(t, srv, http.MethodPut, "/api/v1/loading/trips/trip-move/orders/ord-9/loaded", "usr-loader", nil, "").status; code != http.StatusOK {
+		t.Fatalf("move trip load ord-9 %d", code)
+	}
+	moveIssue := do(t, srv, http.MethodPost, "/api/v1/loading/trips/trip-move/orders/ord-8/issues", "usr-loader", []byte(`{"type":"MISSING","affectedUnits":3}`), "iss-move")
+	if moveIssue.status != http.StatusCreated {
+		t.Fatalf("move trip issue %d %s", moveIssue.status, moveIssue.body)
+	}
+	var moveCreated struct {
+		Issue struct{ ID string } `json:"issue"`
+	}
+	if err := json.Unmarshal([]byte(moveIssue.body), &moveCreated); err != nil || moveCreated.Issue.ID == "" {
+		t.Fatalf("move issue id %v %s", err, moveIssue.body)
+	}
+	moveDecision := "/api/v1/loading/trips/trip-move/orders/ord-8/issues/" + moveCreated.Issue.ID + "/decision"
+	if code := do(t, srv, http.MethodPost, moveDecision, "usr-dispatcher", []byte(`{"decision":"MOVE_TO_NEXT_RUN"}`), "").status; code != http.StatusOK {
+		t.Fatalf("move decision %d", code)
+	}
+	readyMove := func(label string) resp {
+		t.Helper()
+		r := do(t, srv, http.MethodPost, "/api/v1/loading/trips/trip-move/ready", "usr-loader", nil, "")
+		if r.status != http.StatusConflict {
+			t.Fatalf("%s: ready must be refused, got %d %s", label, r.status, r.body)
+		}
+		return r
+	}
+	// 1. The planning calls after the decision failed: the old plan is still
+	// confirmed and still carries ord-8.
+	if r := readyMove("move decided, plan unchanged"); !strings.Contains(r.body, "dispatcher_decision_required") || !strings.Contains(r.body, `"moveUnpublishedOrderIds":["ord-8"]`) {
+		t.Fatalf("expected the unpublished move to be named: %s", r.body)
+	}
+	// 2. The plan is reopened for revision (not confirmed) while the loader presses Ready.
+	moveState.Store(1)
+	readyMove("plan being revised")
+	// 3. A new plan without ord-8 is confirmed, but this session has not moved onto it.
+	moveState.Store(2)
+	readyMove("new plan confirmed, session not synced")
+	// 4. Planning is rolled back to the original confirmed plan: still refused.
+	moveState.Store(0)
+	readyMove("planning rolled back")
+	var moveStatus string
+	if err := pool.QueryRow(ctx, `SELECT status FROM loading.sessions WHERE trip_id='trip-move'`).Scan(&moveStatus); err != nil || moveStatus != "in_progress" {
+		t.Fatalf("the session must still be in progress, got %q %v", moveStatus, err)
+	}
+	// Holding or leaving the shortfall undecided is refused for the same reason.
+	if code := do(t, srv, http.MethodPost, moveDecision, "usr-dispatcher", []byte(`{"decision":"HOLD"}`), "").status; code != http.StatusOK {
+		t.Fatalf("hold decision %d", code)
+	}
+	readyMove("on hold")
+	// A partial load is the decision that releases the trip.
+	if code := do(t, srv, http.MethodPost, moveDecision, "usr-dispatcher", []byte(`{"decision":"PARTIAL_LOAD"}`), "").status; code != http.StatusOK {
+		t.Fatalf("partial decision %d", code)
+	}
+	if code := do(t, srv, http.MethodPost, "/api/v1/loading/trips/trip-move/ready", "usr-loader", nil, "").status; code != http.StatusOK {
+		t.Fatalf("ready after partial load %d", code)
+	}
+}
+
+// moveState drives the planning stub for trip-move: 0 confirmed v1 with both
+// orders, 1 reopened for revision (no confirmed plan), 2 confirmed v2 without ord-8.
+var moveState atomic.Int32
+
+func moveTrip() (map[string]any, bool) {
+	state := moveState.Load()
+	if state == 1 {
+		return nil, false
+	}
+	version := 1
+	allocs := []map[string]any{
+		{"allocationId": "a8", "orderId": "ord-8", "orderRef": "ORD000008", "outletId": "OUT034", "stopSequence": 1},
+		{"allocationId": "a9", "orderId": "ord-9", "orderRef": "ORD000009", "outletId": "OUT021", "stopSequence": 2},
+	}
+	if state == 2 {
+		version = 2
+		allocs = allocs[1:]
+	}
+	return map[string]any{
+		"planId": "plan-1", "planRef": "PLAN000001", "deliveryDate": "2026-09-29", "planStatus": "confirmed",
+		"planVersion": version, "planAcknowledgements": []map[string]any{{"actorId": "USR004", "actorRole": "LOADER"}},
+		"tripId": "trip-move", "tripNumber": 4, "vehicleId": "VEH004", "vehicleType": "truck",
+		"vehicleTemperatureCapability": "reefer", "vehicleDepot": "DEPOT_NORTH",
+		"allocations": allocs,
+	}, true
 }
 
 func peerStub() http.Handler {
@@ -331,6 +421,13 @@ func peerStub() http.Handler {
 		id := chi.URLParam(req, "tripId")
 		trip := north
 		switch id {
+		case "trip-move":
+			moved, ok := moveTrip()
+			if !ok {
+				http.NotFound(w, req)
+				return
+			}
+			trip = moved
 		case "trip-south":
 			trip = south
 		case "trip-clear":
