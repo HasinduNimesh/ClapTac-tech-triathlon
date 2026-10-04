@@ -280,6 +280,9 @@ services:
         # the client below (see apps/loader-web/README.md).
         OIDC_ISSUER: ${VITE_OIDC_ISSUER:-http://localhost:8090}
         OIDC_CLIENT_ID: ${LOADER_OIDC_CLIENT_ID:-waypoint-loader}
+        # The API the token is for: the same value the web app sends and the services validate
+        # as OIDC_AUDIENCE (production: https://waypoint.claptac.dev/api/v1).
+        OIDC_RESOURCE: ${VITE_OIDC_AUDIENCE:-waypoint-api}
     expose:
       - "80"
     healthcheck:

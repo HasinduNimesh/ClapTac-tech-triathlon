@@ -4,12 +4,13 @@
 FROM ghcr.io/cirruslabs/flutter:3.41.2 AS build
 ARG OIDC_ISSUER=http://localhost:8090
 ARG OIDC_CLIENT_ID=waypoint-loader
+ARG OIDC_RESOURCE=
 WORKDIR /app
 COPY pubspec.yaml pubspec.lock ./
 RUN flutter pub get
 COPY . .
 RUN flutter build web --release --base-href /loader-app/ --no-web-resources-cdn \
-    --dart-define=OIDC_ISSUER=${OIDC_ISSUER} --dart-define=OIDC_CLIENT_ID=${OIDC_CLIENT_ID}
+    --dart-define=OIDC_ISSUER=${OIDC_ISSUER} --dart-define=OIDC_CLIENT_ID=${OIDC_CLIENT_ID} --dart-define=OIDC_RESOURCE=${OIDC_RESOURCE}
 
 FROM nginx:1.27-alpine
 COPY nginx.default.conf /etc/nginx/conf.d/default.conf

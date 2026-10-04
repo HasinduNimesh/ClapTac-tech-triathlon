@@ -15,20 +15,30 @@ const loaderCallbackPath = '/loader-app/auth/callback';
 ///  * `OIDC_ISSUER` — the identity server's origin (for example `https://id.waypoint.claptac.dev`;
 ///    `http://localhost:8090` for local Compose, which runs the dev identity server there).
 ///  * `OIDC_CLIENT_ID` — the public client registered for the loader (default `waypoint-loader`).
+///  * `OIDC_RESOURCE` — the API the access token is for (RFC 8707 `resource`), an absolute URI such as
+///    `https://waypoint.claptac.dev/api/v1`. It must be the value the Waypoint services validate as the
+///    token audience (`OIDC_AUDIENCE`); the same setting the web app takes as `VITE_OIDC_AUDIENCE`. Without
+///    it a production identity server can sign the loader in with a token the API then refuses (401).
+///    It is sent on the authorization request, the code exchange and every renewal, and the access
+///    token's `aud` is checked against it before the session is accepted.
 ///  * `OIDC_SCOPES` — requested scopes; `offline_access` is what lets the session renew itself
 ///    instead of sending the loader back to sign in every time the access token expires.
 class OidcConfig {
-  const OidcConfig({required this.issuer, this.clientId = 'waypoint-loader', this.scopes = 'openid profile offline_access'});
+  const OidcConfig({required this.issuer, this.clientId = 'waypoint-loader', this.scopes = 'openid profile offline_access', this.resource = ''});
 
   factory OidcConfig.fromEnvironment() => const OidcConfig(
         issuer: String.fromEnvironment('OIDC_ISSUER'),
         clientId: String.fromEnvironment('OIDC_CLIENT_ID', defaultValue: 'waypoint-loader'),
         scopes: String.fromEnvironment('OIDC_SCOPES', defaultValue: 'openid profile offline_access'),
+        resource: String.fromEnvironment('OIDC_RESOURCE'),
       );
 
   final String issuer;
   final String clientId;
   final String scopes;
+
+  /// The API the token is for; empty sends no `resource` and skips the audience check.
+  final String resource;
 
   bool get configured => issuer.trim().isNotEmpty;
 

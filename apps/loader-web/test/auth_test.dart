@@ -12,6 +12,8 @@ import 'package:waypoint_loader/theme/tokens.dart';
 
 const issuer = 'https://id.example.test';
 const config = OidcConfig(issuer: issuer);
+const apiResource = 'https://app.example.test/api/v1';
+const resourceConfig = OidcConfig(issuer: issuer, resource: apiResource);
 const api = 'https://app.example.test/api/v1';
 
 /// A stand-in identity server and API that records what the app sent it.
@@ -23,6 +25,16 @@ class FakeServer {
   bool offline = false;
   int refreshes = 0;
   Map<String, String> lastTokenForm = {};
+
+  /// When set, access tokens are JWTs with this `aud` (a string or a list), as a real identity server issues.
+  Object? audience;
+  Object? renewedAudience;
+
+  String accessToken(String name, Object? aud) {
+    if (aud == null) return name;
+    String part(Object o) => base64Url.encode(utf8.encode(jsonEncode(o))).replaceAll('=', '');
+    return '${part({'alg': 'none'})}.${part({'aud': aud, 'jti': name})}.sig';
+  }
 
   Map<String, dynamic> discovery = {
     'authorization_endpoint': '$issuer/oauth2/authorize',
@@ -40,9 +52,9 @@ class FakeServer {
       if (tokenStatus != 200) return http.Response('{"error":"invalid_grant"}', tokenStatus);
       if (lastTokenForm['grant_type'] == 'refresh_token') {
         refreshes++;
-        return http.Response(jsonEncode({'access_token': 'access-renewed-$refreshes', 'refresh_token': 'refresh-rotated-$refreshes', 'expires_in': 300}), 200);
+        return http.Response(jsonEncode({'access_token': accessToken('access-renewed-$refreshes', renewedAudience ?? audience), 'refresh_token': 'refresh-rotated-$refreshes', 'expires_in': 300}), 200);
       }
-      return http.Response(jsonEncode({'access_token': 'access-1', 'refresh_token': 'refresh-1', 'id_token': 'id-1', 'expires_in': 300}), 200);
+      return http.Response(jsonEncode({'access_token': accessToken('access-1', audience), 'refresh_token': 'refresh-1', 'id_token': 'id-1', 'expires_in': 300}), 200);
     }
     if (path == '/api/v1/shared/profiles/me') {
       if (profileStatus != 200) return http.Response('{}', profileStatus);
@@ -54,16 +66,16 @@ class FakeServer {
   List<http.Request> tokenRequests() => requests.where((r) => r.url.path == '/oauth2/token').toList();
 }
 
-AuthService serviceFor(FakeServer server, MemoryBrowser browser, {DateTime Function()? now}) =>
-    AuthService(config: config, client: server.client, browser: browser, apiBase: api, now: now, autoRenew: false);
+AuthService serviceFor(FakeServer server, MemoryBrowser browser, {DateTime Function()? now, OidcConfig? with_}) =>
+    AuthService(config: with_ ?? config, client: server.client, browser: browser, apiBase: api, now: now, autoRenew: false);
 
 MemoryBrowser browserAt(String url) => MemoryBrowser(location: Uri.parse(url), origin: 'https://app.example.test');
 
 /// Starts a sign-in, then returns the callback URL the identity server would redirect back to.
-Future<(AuthService, MemoryBrowser, FakeServer, Uri)> signedInto({String? returnedState, DateTime Function()? now}) async {
-  final server = FakeServer();
+Future<(AuthService, MemoryBrowser, FakeServer, Uri)> signedInto({String? returnedState, DateTime Function()? now, OidcConfig? with_, FakeServer? on}) async {
+  final server = on ?? FakeServer();
   final browser = browserAt('https://app.example.test/loader-app/');
-  final auth = serviceFor(server, browser, now: now);
+  final auth = serviceFor(server, browser, now: now, with_: with_);
   await auth.start();
   await auth.signIn();
   final sent = Uri.parse(browser.navigations.single);
@@ -270,6 +282,99 @@ void main() {
       await later.start();
       expect(later.status, AuthStatus.signedIn);
       expect(later.session!.accessToken, startsWith('access-renewed'));
+    });
+  });
+
+  group('asking for a token for the Waypoint API (RFC 8707 resource)', () {
+    test('sends the resource on the authorize request, the code exchange and every renewal', () async {
+      final server = FakeServer()..audience = apiResource;
+      final (_, browser, _, callback) = await signedInto(with_: resourceConfig, on: server);
+      expect(Uri.parse(browser.navigations.single).queryParameters['resource'], apiResource);
+
+      browser.location = callback;
+      final clock = <DateTime>[DateTime(2026, 10, 4, 9)];
+      final auth = AuthService(config: resourceConfig, client: server.client, browser: browser, apiBase: api, now: () => clock.single, autoRenew: false);
+      await auth.start();
+      expect(auth.status, AuthStatus.signedIn);
+      expect(server.lastTokenForm['resource'], apiResource, reason: 'the code exchange asks for the same API');
+
+      clock[0] = DateTime(2026, 10, 4, 9, 4, 50);
+      await auth.validToken();
+      expect(server.lastTokenForm['grant_type'], 'refresh_token');
+      expect(server.lastTokenForm['resource'], apiResource, reason: 'so does a renewal');
+    });
+
+    test('sends nothing when no resource is configured (the local identity server)', () async {
+      final (_, browser, server, callback) = await signedInto();
+      expect(Uri.parse(browser.navigations.single).queryParameters.containsKey('resource'), isFalse);
+      browser.location = callback;
+      await serviceFor(server, browser).start();
+      expect(server.lastTokenForm.containsKey('resource'), isFalse);
+    });
+
+    test('accepts a token whose audience is the API, alone or among others', () async {
+      for (final aud in [apiResource, [apiResource, 'something-else']]) {
+        final server = FakeServer()..audience = aud;
+        final (_, browser, _, callback) = await signedInto(with_: resourceConfig, on: server);
+        browser.location = callback;
+        final auth = serviceFor(server, browser, with_: resourceConfig);
+        await auth.start();
+        expect(auth.status, AuthStatus.signedIn, reason: 'aud $aud');
+      }
+    });
+
+    test('refuses a token for another API with the reason, instead of a 401 on every call later', () async {
+      final server = FakeServer()..audience = 'waypoint-api';
+      final (_, browser, _, callback) = await signedInto(with_: resourceConfig, on: server);
+      browser.location = callback;
+      final auth = serviceFor(server, browser, with_: resourceConfig);
+      await auth.start();
+      expect(auth.status, AuthStatus.signedOut);
+      expect(auth.error?.kind, SignInError.wrongAudience);
+      expect(auth.error?.detail, 'waypoint-api');
+      expect(auth.session, isNull);
+      expect(browser.storage.containsKey('waypoint.loader.session'), isFalse);
+      expect(server.requests.where((r) => r.url.path == '/api/v1/shared/profiles/me'), isEmpty, reason: 'the API is never called with it');
+    });
+
+    test('a token with no audience at all is refused too', () async {
+      final server = FakeServer()..audience = <String>[];
+      final (_, browser, _, callback) = await signedInto(with_: resourceConfig, on: server);
+      browser.location = callback;
+      final auth = serviceFor(server, browser, with_: resourceConfig);
+      await auth.start();
+      expect(auth.error?.kind, SignInError.wrongAudience);
+    });
+
+    test('a renewal that returns a token for the wrong API signs the person out and says so', () async {
+      final server = FakeServer()..audience = apiResource;
+      final clock = <DateTime>[DateTime(2026, 10, 4, 9)];
+      final (_, browser, _, callback) = await signedInto(with_: resourceConfig, on: server, now: () => clock.single);
+      browser.location = callback;
+      final auth = AuthService(config: resourceConfig, client: server.client, browser: browser, apiBase: api, now: () => clock.single, autoRenew: false);
+      await auth.start();
+      server.renewedAudience = 'waypoint-api';
+      clock[0] = DateTime(2026, 10, 4, 9, 4, 50);
+      await expectLater(auth.validToken(), throwsA(isA<Object>()));
+      expect(auth.status, AuthStatus.signedOut);
+      expect(auth.error?.kind, SignInError.wrongAudience);
+    });
+
+    test('a token that is not a readable JWT is left for the API to judge', () async {
+      final server = FakeServer(); // opaque tokens
+      final (_, browser, _, callback) = await signedInto(with_: resourceConfig, on: server);
+      browser.location = callback;
+      final auth = serviceFor(server, browser, with_: resourceConfig);
+      await auth.start();
+      expect(auth.status, AuthStatus.signedIn);
+    });
+
+    test('reads the audience of a JWT', () {
+      String jwt(Object payload) => 'x.${base64Url.encode(utf8.encode(jsonEncode(payload))).replaceAll('=', '')}.y';
+      expect(audiencesOf(jwt({'aud': 'a'})), ['a']);
+      expect(audiencesOf(jwt({'aud': ['a', 'b']})), ['a', 'b']);
+      expect(audiencesOf(jwt({'sub': 'x'})), isEmpty);
+      expect(audiencesOf('not-a-jwt'), isNull);
     });
   });
 

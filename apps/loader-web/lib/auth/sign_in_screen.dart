@@ -33,6 +33,7 @@ class _SignInScreenState extends State<SignInScreen> {
         SignInError.noConnection => ('No connection to Waypoint', 'The loader app needs a network connection. Check the dock Wi-Fi and try again.'),
         SignInError.wrongRole => ('This app is for loaders', 'Dispatchers and store managers use the Waypoint web app; drivers use the driver app.'),
         SignInError.noProfile => ('Your access profile could not be loaded', 'Your account is not set up for Waypoint yet. Ask your supervisor.'),
+        SignInError.wrongAudience => ('Signed in, but not for the Waypoint API', 'The identity server issued a token for "${e!.detail}", which the Waypoint services will not accept. Ask IT to check the loader client\'s API resource setting.'),
         SignInError.sessionExpired => ('Your session ended', 'Sign in again to continue. Loads and reports are saved on the server as you make them.'),
         null => null,
       };

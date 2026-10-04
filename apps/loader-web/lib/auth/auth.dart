@@ -47,7 +47,7 @@ class AuthSession {
       );
 }
 
-enum SignInError { notConfigured, denied, notVerified, exchangeFailed, noConnection, noProfile, wrongRole, sessionExpired }
+enum SignInError { notConfigured, denied, notVerified, exchangeFailed, noConnection, noProfile, wrongRole, wrongAudience, sessionExpired }
 
 class SignInException implements Exception {
   SignInException(this.kind, [this.detail = '']);
@@ -163,6 +163,8 @@ class AuthService extends ChangeNotifier {
         'client_id': config.clientId,
         'redirect_uri': config.redirectUri(browser.origin),
         'scope': config.scopes,
+        // RFC 8707: asks for an access token for the Waypoint API (see OidcConfig.resource).
+        if (config.resource.isNotEmpty) 'resource': config.resource,
         'state': state,
         'nonce': nonce,
         'code_challenge': challengeFor(verifier),
@@ -196,9 +198,12 @@ class AuthService extends ChangeNotifier {
       'redirect_uri': config.redirectUri(browser.origin),
       'client_id': config.clientId,
       'code_verifier': verifier,
+      if (config.resource.isNotEmpty) 'resource': config.resource,
     }, failure: SignInError.exchangeFailed);
     final access = tokens['access_token'] as String?;
     if (access == null) throw SignInException(SignInError.exchangeFailed);
+    // Fail here, with the reason, rather than later as a 401 from every API call.
+    _checkAudience(access);
 
     // The access token alone decides what the person may do, so the profile is read with it and
     // only a loader gets in; nothing is stored until that has been checked.
@@ -261,15 +266,21 @@ class AuthService extends ChangeNotifier {
         'grant_type': 'refresh_token',
         'refresh_token': refresh,
         'client_id': config.clientId,
+        if (config.resource.isNotEmpty) 'resource': config.resource,
       }, failure: SignInError.sessionExpired);
       final access = tokens['access_token'] as String?;
       if (access == null) throw SignInException(SignInError.sessionExpired);
+      _checkAudience(access);
       // Identity servers may rotate the refresh token; keep the newest one.
       _store(s.renewed(accessToken: access, refreshToken: tokens['refresh_token'] as String?, idToken: tokens['id_token'] as String?, expiresAt: _expiry(tokens)), notify: true);
       return true;
     } on SignInException catch (e) {
       if (e.kind == SignInError.noConnection) return false; // keep the session; the next request retries
-      _expired();
+      if (e.kind == SignInError.wrongAudience) {
+        _fail(e);
+      } else {
+        _expired();
+      }
       return false;
     }
   }
@@ -341,6 +352,19 @@ class AuthService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// When an API resource is configured, the access token must be for it: the services accept only
+  /// that audience, so a token for anything else would sign the loader in and then be refused by
+  /// every call. The token is read, not verified (the API verifies it); one that cannot be read
+  /// as a JWT is left to the API to judge.
+  void _checkAudience(String accessToken) {
+    if (config.resource.isEmpty) return;
+    final audiences = audiencesOf(accessToken);
+    if (audiences == null) return;
+    if (!audiences.contains(config.resource)) {
+      throw SignInException(SignInError.wrongAudience, audiences.isEmpty ? 'none' : audiences.join(', '));
+    }
+  }
+
   DateTime _expiry(Map<String, dynamic> tokens) => _now().add(Duration(seconds: (tokens['expires_in'] as num?)?.toInt() ?? 3600));
 
   Future<Map<String, dynamic>> _tokenRequest(String endpoint, Map<String, String> form, {required SignInError failure}) async {
@@ -398,6 +422,21 @@ class _Endpoints {
   final String authorization;
   final String token;
   final String? endSession;
+}
+
+/// The `aud` claim of a JWT as a list, or null when [token] is not a readable JWT.
+List<String>? audiencesOf(String token) {
+  final parts = token.split('.');
+  if (parts.length != 3) return null;
+  try {
+    final claims = jsonDecode(utf8.decode(base64Url.decode(base64Url.normalize(parts[1])))) as Map<String, dynamic>;
+    final aud = claims['aud'];
+    if (aud is String) return [aud];
+    if (aud is List) return aud.map((e) => '$e').toList();
+    return <String>[];
+  } catch (_) {
+    return null;
+  }
 }
 
 /// The PKCE challenge for a verifier: base64url(SHA-256(verifier)) without padding.
