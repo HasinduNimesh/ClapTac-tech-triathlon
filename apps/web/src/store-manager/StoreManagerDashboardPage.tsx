@@ -4,6 +4,8 @@ import { DashboardGrid } from "./DashboardCards";
 import { DashboardMenu } from "./DashboardMenu";
 import { loadDashboards } from "./dashboards";
 import { useLocale } from "../i18n";
+import { formatCutoff, withTime } from "./cutoff.mjs";
+import { useOrderCutoff } from "./useOrderCutoff";
 import iconHistory from "../assets/store-manager/icon-history.svg";
 import iconTruck from "../assets/store-manager/icon-truck.svg";
 import iconCheck from "../assets/store-manager/icon-check.svg";
@@ -32,7 +34,8 @@ function nextStep(row: Tracking, t: (key: string) => string) {
 }
 
 export function StoreManagerDashboardPage() {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
+  const cutoffTime = formatCutoff(useOrderCutoff(), locale);
   const { profile } = useAuth();
   const [params, setParams] = useSearchParams();
   const { rows, loading, loadFailed, unavailable, reload } = useOrderTrackings();
@@ -183,7 +186,7 @@ export function StoreManagerDashboardPage() {
           ))}
           <div className="sm-ordering-window">
             <h3 className="sm-ordering-title">{t("Ordering window")}</h3>
-            <p className="sm-ordering-body muted">{t("Place your next order by 4:00 PM today. Orders after the cutoff move to the next eligible run.")}</p>
+            <p className="sm-ordering-body muted">{cutoffTime ? withTime(t("Place your next order by {time} today. Orders after the cutoff move to the next eligible run."), cutoffTime) : t("Orders after the daily cutoff move to the next eligible run.")}</p>
             <Link to="/store-manager/orders/new" className="sm-create-order-link">{t("Create Order")}<Chevron /></Link>
           </div>
         </section>
