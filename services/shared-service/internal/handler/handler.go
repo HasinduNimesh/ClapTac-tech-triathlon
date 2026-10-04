@@ -1,8 +1,8 @@
 package handler
 
 import (
-	"encoding/csv"
 	"bytes"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -40,6 +40,7 @@ func (h Handler) Routes(r chi.Router) {
 		r.With(authorization.RequireWith(h.Authn, h.Store, authorization.PermOrderViewOwn)).Post("/outlets/{id}/access-instructions/confirm", h.confirmOutletAccessInstructions)
 		r.With(authorization.RequireWith(h.Authn, h.Store, authorization.PermMasterDataUpdate)).Get("/outlets/{id}/notification-preferences", h.notificationPreferences)
 		r.With(authorization.RequireWith(h.Authn, h.Store, authorization.PermMasterDataUpdate)).Put("/outlets/{id}/notification-preferences", h.updateNotificationPreferences)
+		r.With(authorization.RequireAnyWith(h.Authn, h.Store, authorization.PermOrderViewOwn, authorization.PermOrderViewAll)).Get("/outlets/{id}/notifications", h.outletNotifications)
 		r.With(authorization.RequireAnyWith(h.Authn, h.Store, authorization.PermMasterDataUpdate, authorization.PermOutletsReadInternal)).Get("/calendar", h.calendar)
 		r.With(authorization.RequireWith(h.Authn, h.Store, authorization.PermMasterDataUpdate)).Put("/calendar/{date}", h.updateCalendar)
 		r.With(authorization.RequireAnyWith(h.Authn, h.Store, authorization.PermMasterDataUpdate, authorization.PermPolicyReadInternal)).Get("/policies/current", h.currentPolicy)
@@ -126,21 +127,30 @@ func (h Handler) enqueueNotification(w http.ResponseWriter, r *http.Request) {
 			apierrors.BadRequest(w, "major delay must be between 30 minutes and 24 hours")
 			return
 		}
-    } else if e.Type == "DELIVERY_REJECTED" {
-        if len(strings.TrimSpace(e.Goods)) == 0 || utf8.RuneCountInString(e.Goods) > 200 || e.Units < 1 ||
-            e.Reason == "" || len(e.Reason) > 80 || (e.Resolution != "NEXT_RUN" && e.Resolution != "REQUEST_DEFERRAL") {
-            apierrors.BadRequest(w, "rejected goods, units, reason and resolution required")
-            return
-        }
-        if _, err := time.Parse(time.DateOnly, e.FollowupDate); err != nil {
-            apierrors.BadRequest(w, "valid follow-up date required")
-            return
-        }
+
+	} else if e.Type == "LOAD_SHORTFALL" {
+		if e.Units < 1 || e.Units > 100000 || (e.Reason != "PARTIAL_LOAD" && e.Reason != "HOLD" && e.Reason != "MOVE_TO_NEXT_RUN") {
+			apierrors.BadRequest(w, "load shortfall needs units and a dispatcher decision")
+
+			return
+		}
+
+	} else if e.Type == "DELIVERY_REJECTED" {
+		if len(strings.TrimSpace(e.Goods)) == 0 || utf8.RuneCountInString(e.Goods) > 200 || e.Units < 1 ||
+			e.Reason == "" || len(e.Reason) > 80 || (e.Resolution != "NEXT_RUN" && e.Resolution != "REQUEST_DEFERRAL") {
+			apierrors.BadRequest(w, "rejected goods, units, reason and resolution required")
+			return
+		}
+		if _, err := time.Parse(time.DateOnly, e.FollowupDate); err != nil {
+			apierrors.BadRequest(w, "valid follow-up date required")
+			return
+		}
 	} else if e.Type == "ARRIVAL_CHANGE" {
 		oldETA, oldErr := time.Parse(time.RFC3339Nano, e.OldArrivalAt)
 		newETA, newErr := time.Parse(time.RFC3339Nano, e.NewArrivalAt)
 		if oldErr != nil || newErr != nil || !arrivalChangeAtLeastThirty(oldETA, newETA) {
 			apierrors.BadRequest(w, "arrival change must be at least 30 minutes")
+
 			return
 		}
 	} else {
@@ -149,19 +159,16 @@ func (h Handler) enqueueNotification(w http.ResponseWriter, r *http.Request) {
 	}
 	result, err := h.Store.EnqueueNotification(r.Context(), e)
 	if err != nil {
-		if strings.Contains(err.Error(), "no rows") {
-			apierrors.NotFound(w, "outlet notification preferences not found")
+		if strings.Contains(err.Error(), "not found") {
+			apierrors.NotFound(w, "outlet not found")
 		} else {
 			apierrors.Internal(w, "notification enqueue failed")
 		}
 		return
 	}
 	telemetry.NotificationEvents.WithLabelValues(e.Type, result.Status).Inc()
-	status := http.StatusAccepted
-	if result.Status == "suppressed" {
-		status = http.StatusOK
-	}
-	httpx.WriteJSON(w, status, map[string]any{"notification": result})
+	// Stored either way: "enqueued" (also eligible for SMS), "in_app_only" or "duplicate".
+	httpx.WriteJSON(w, http.StatusAccepted, map[string]any{"notification": result})
 }
 
 var notificationPhone = regexp.MustCompile(`^\+[1-9][0-9]{7,14}$`)
@@ -173,6 +180,27 @@ func (h Handler) notificationPreferences(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"preferences": p})
+}
+
+// outletNotifications lists the messages queued for one outlet, newest first. A store manager may
+// read only their own outlet; anyone with order:view-all (dispatchers) may read any.
+func (h Handler) outletNotifications(w http.ResponseWriter, r *http.Request) {
+	outletID := chi.URLParam(r, "id")
+	profile, _ := authorization.ProfileFrom(r.Context())
+	if err := (authorization.OutletScoped{}).Authorize(r.Context(), nil, profile, authorization.ResourceRef{OutletID: outletID}); err != nil {
+		apierrors.Forbidden(w, "store manager may only read their authorized outlet")
+		return
+	}
+	items, err := h.Store.OutletNotifications(r.Context(), outletID, 50)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			apierrors.NotFound(w, "outlet not found")
+		} else {
+			apierrors.Internal(w, "outlet notifications could not be loaded")
+		}
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
 func (h Handler) updateNotificationPreferences(w http.ResponseWriter, r *http.Request) {
@@ -534,7 +562,7 @@ const AuditExportRowCap = 5000
 
 // csvSafe neutralises spreadsheet formula injection: cells starting with = + - @ tab or CR get a leading apostrophe.
 func csvSafe(v string) string {
-	if v != "" && strings.ContainsRune("=+-@	", rune(v[0])) {
+	if v != "" && strings.ContainsRune("=+-@\t\r", rune(v[0])) {
 		return "'" + v
 	}
 	return v

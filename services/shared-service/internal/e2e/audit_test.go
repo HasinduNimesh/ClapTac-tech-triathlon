@@ -3,6 +3,7 @@ package e2e
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -92,12 +93,39 @@ func TestAuditSearchKPIsAndAppendOnly(t *testing.T) {
 	if _, err = pool.Exec(ctx, string(migration)); err != nil {
 		t.Fatalf("apply notification migration: %v", err)
 	}
+
+	shortfallMigration, err := os.ReadFile("../../../../database/migrations/0070_notification_load_shortfall.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, string(shortfallMigration)); err != nil {
+		t.Fatalf("apply shortfall notification migration: %v", err)
+	}
+	inAppMigration, err := os.ReadFile("../../../../database/migrations/0072_notification_in_app_only.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, string(inAppMigration)); err != nil {
+		t.Fatalf("apply in-app notification migration: %v", err)
+	}
+	if _, err = pool.Exec(ctx, string(inAppMigration)); err != nil {
+		t.Fatalf("in-app notification migration must be safe to run twice: %v", err)
+	}
+
 	migration, err = os.ReadFile("../../../../database/migrations/0056_shared_arrival_notifications.sql")
-	if err != nil { t.Fatal(err) }
-	if _, err = pool.Exec(ctx, string(migration)); err != nil { t.Fatalf("apply arrival notification migration: %v", err) }
-    migration, err = os.ReadFile("../../../../database/migrations/0059_shared_rejected_delivery.sql")
-    if err != nil { t.Fatal(err) }
-    if _, err = pool.Exec(ctx, string(migration)); err != nil { t.Fatalf("apply rejected delivery migration: %v", err) }
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, string(migration)); err != nil {
+		t.Fatalf("apply arrival notification migration: %v", err)
+	}
+	migration, err = os.ReadFile("../../../../database/migrations/0059_shared_rejected_delivery.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, string(migration)); err != nil {
+		t.Fatalf("apply rejected delivery migration: %v", err)
+	}
 
 	now := time.Now().UTC().Truncate(time.Second)
 	_, err = pool.Exec(ctx, `INSERT INTO audit.events(event_id,actor_id,action,resource_type,resource_id,new_state,timestamp,source) VALUES
@@ -153,22 +181,28 @@ func TestAuditSearchKPIsAndAppendOnly(t *testing.T) {
 	}
 	arrival := store.NotificationEvent{EventKey: "arrival:stop-1:old:new", OutletID: "OUT001", Type: "ARRIVAL_CHANGE", OrderRef: "ORD-01", OldArrivalAt: "2026-10-03T08:00:00Z", NewArrivalAt: "2026-10-03T08:30:00Z"}
 	arrivalFirst, err := s.EnqueueNotification(ctx, arrival)
-	if err != nil || arrivalFirst.Status != "enqueued" { t.Fatalf("arrival notification=%+v err=%v", arrivalFirst, err) }
+	if err != nil || arrivalFirst.Status != "enqueued" {
+		t.Fatalf("arrival notification=%+v err=%v", arrivalFirst, err)
+	}
 	arrivalAgain, err := s.EnqueueNotification(ctx, arrival)
-	if err != nil || arrivalAgain.Status != "duplicate" || arrivalAgain.ID != arrivalFirst.ID { t.Fatalf("duplicate arrival notification=%+v err=%v", arrivalAgain, err) }
+	if err != nil || arrivalAgain.Status != "duplicate" || arrivalAgain.ID != arrivalFirst.ID {
+		t.Fatalf("duplicate arrival notification=%+v err=%v", arrivalAgain, err)
+	}
 	var arrivalBody string
 	if err := pool.QueryRow(ctx, `SELECT body FROM shared.notification_outbox WHERE id=$1`, arrivalFirst.ID).Scan(&arrivalBody); err != nil || !strings.Contains(arrivalBody, "from 03 Oct 13:30 to 03 Oct 14:00") {
 		t.Fatalf("arrival body=%q err=%v", arrivalBody, err)
 	}
-    returned := store.NotificationEvent{EventKey:"returned-goods:stop-1",OutletID:"OUT001",Type:"DELIVERY_REJECTED",
-        OrderRef:"ORD-01",Goods:"Rejected cartons",Units:2,Reason:"GOODS_REJECTED",
-        Resolution:"NEXT_RUN",FollowupDate:"2026-10-05"}
-    returnedFirst, err := s.EnqueueNotification(ctx, returned)
-    if err != nil || returnedFirst.Status != "enqueued" { t.Fatalf("return notice=%+v err=%v",returnedFirst,err) }
-    returnedReplay, err := s.EnqueueNotification(ctx, returned)
-    if err != nil || returnedReplay.Status != "duplicate" || returnedReplay.ID != returnedFirst.ID {
-        t.Fatalf("duplicate return notice=%+v err=%v",returnedReplay,err)
-    }
+	returned := store.NotificationEvent{EventKey: "returned-goods:stop-1", OutletID: "OUT001", Type: "DELIVERY_REJECTED",
+		OrderRef: "ORD-01", Goods: "Rejected cartons", Units: 2, Reason: "GOODS_REJECTED",
+		Resolution: "NEXT_RUN", FollowupDate: "2026-10-05"}
+	returnedFirst, err := s.EnqueueNotification(ctx, returned)
+	if err != nil || returnedFirst.Status != "enqueued" {
+		t.Fatalf("return notice=%+v err=%v", returnedFirst, err)
+	}
+	returnedReplay, err := s.EnqueueNotification(ctx, returned)
+	if err != nil || returnedReplay.Status != "duplicate" || returnedReplay.ID != returnedFirst.ID {
+		t.Fatalf("duplicate return notice=%+v err=%v", returnedReplay, err)
+	}
 	preferences.ConsentEnabled = false
 	preferences, err = s.SaveNotificationPreferences(ctx, preferences, 1, "u-dispatcher", audit.Event{Action: "OUTLET_NOTIFICATION_PREFERENCES_UPDATED"})
 	if err != nil || preferences.Version != 2 || preferences.ConsentedAt != nil {
@@ -178,8 +212,11 @@ func TestAuditSearchKPIsAndAppendOnly(t *testing.T) {
 		t.Fatal("stale preferences version should conflict")
 	}
 	suppressed, err := s.EnqueueNotification(ctx, store.NotificationEvent{EventKey: "deferral:PLAN-02:ORD-02", OutletID: "OUT001", Type: "DEFERRAL", OrderRef: "ORD-02", Reason: "WINDOW"})
-	if err != nil || suppressed.Status != "suppressed" {
-		t.Fatalf("opt-out should suppress notification: %+v err=%v", suppressed, err)
+	if err != nil || suppressed.Status != "in_app_only" || suppressed.ID == 0 {
+		t.Fatalf("opt-out must keep the in-app notice but not send it by SMS: %+v err=%v", suppressed, err)
+	}
+	if next, err := s.ClaimNotification(ctx); err != nil || next != nil {
+		t.Fatalf("an in-app-only notice must never be claimed for SMS: %+v err=%v", next, err)
 	}
 	items, total, err := s.SearchAudit(ctx, store.AuditFilter{Query: "USR001", Limit: 10})
 	if err != nil || total != 2 || len(items) != 2 {
@@ -353,6 +390,66 @@ func TestAuditSearchKPIsAndAppendOnly(t *testing.T) {
 	}
 	if res := post("/api/v1/shared/policies/preview", `{"cutoffLocalTime":"27:80","deferralWeightPoints":20,"maxDeferralCount":10,"maxUnservedDays":400,"maxTripsPerVehicle":1}`); res.Code != http.StatusBadRequest {
 		t.Fatalf("invalid policy preview: %d %s", res.Code, res.Body.String())
+	}
+
+	// The outlet can read back the messages queued for it. A queued-but-unsent shortfall notice shows
+	// its text, the newest comes first, another outlet's messages and rows with no text are left out.
+	_, err = pool.Exec(ctx, `INSERT INTO shared.notification_outbox(event_key,outlet_id,event_type,phone_e164,body,status,created_at) VALUES
+	('shortfall:PLAN-03:ORD-03','OUT001','LOAD_SHORTFALL','+94771112222','Waypoint: order ORD-03 is 2 units short; the rest will arrive on the next delivery.','PENDING',now()+interval '1 minute'),
+	('shortfall:PLAN-03:ORD-04','OUT002','LOAD_SHORTFALL','+94773334444','Waypoint: order ORD-04 is 5 units short.','PENDING',now()+interval '2 minutes'),
+	('shortfall:PLAN-03:ORD-05','OUT001','LOAD_SHORTFALL','+94771112222','','SUPPRESSED',now()+interval '3 minutes')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	type outletNotifications struct {
+		Items []struct {
+			ID        int64  `json:"id"`
+			EventType string `json:"eventType"`
+			Body      string `json:"body"`
+			Status    string `json:"status"`
+			CreatedAt string `json:"createdAt"`
+			Phone     string `json:"phoneE164"`
+		} `json:"items"`
+	}
+	feed := func(subject, outletID string) (outletNotifications, int, string) {
+		res := request(subject, "/api/v1/shared/outlets/"+outletID+"/notifications")
+		var out outletNotifications
+		if res.Code == http.StatusOK {
+			if err := json.Unmarshal(res.Body.Bytes(), &out); err != nil {
+				t.Fatalf("decode notifications: %v %s", err, res.Body.String())
+			}
+		}
+		return out, res.Code, res.Body.String()
+	}
+	mine, code, raw := feed("store-test", "OUT001")
+	if code != http.StatusOK || len(mine.Items) < 3 {
+		t.Fatalf("store manager reads their outlet's messages: %d %s", code, raw)
+	}
+	if mine.Items[0].EventType != "LOAD_SHORTFALL" || mine.Items[0].Status != "PENDING" || !strings.Contains(mine.Items[0].Body, "ORD-03 is 2 units short") || mine.Items[0].CreatedAt == "" || mine.Items[0].ID == 0 {
+		t.Fatalf("newest message must be the shortfall notice with its text: %+v", mine.Items[0])
+	}
+	if last := len(mine.Items); mine.Items[last-2].EventType != "MAJOR_DELAY" || mine.Items[last-1].EventType != "DEFERRAL" || strings.Contains(raw, "ORD-04") || strings.Contains(raw, "+9477") {
+		t.Fatalf("older messages follow, nothing from another outlet, no phone numbers: %s", raw)
+	}
+	if _, code, _ = feed("store-test", "OUT002"); code != http.StatusForbidden {
+		t.Fatalf("store manager must not read another outlet's messages: %d", code)
+	}
+	if all, code, _ := feed("dispatcher-test", "OUT002"); code != http.StatusOK || len(all.Items) != 1 || all.Items[0].EventType != "LOAD_SHORTFALL" {
+		t.Fatalf("dispatcher reads any outlet's messages: %d %+v", code, all)
+	}
+	if _, code, _ = feed("dispatcher-test", "OUT404"); code != http.StatusNotFound {
+		t.Fatalf("unknown outlet must be 404: %d", code)
+	}
+	if _, code, _ = feed("driver-test", "OUT001"); code != http.StatusForbidden {
+		t.Fatalf("a driver cannot read outlet messages: %d", code)
+	}
+	for i := 0; i < 60; i++ {
+		if _, err = pool.Exec(ctx, `INSERT INTO shared.notification_outbox(event_key,outlet_id,event_type,phone_e164,body,status,created_at) VALUES($1,'OUT002','DEFERRAL','+94773334444','bulk','PENDING',now()-interval '1 day')`, fmt.Sprintf("bulk:%d", i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if capped, code, _ := feed("dispatcher-test", "OUT002"); code != http.StatusOK || len(capped.Items) != 50 || capped.Items[0].EventType != "LOAD_SHORTFALL" {
+		t.Fatalf("the feed is capped at 50, newest first: %d %d", code, len(capped.Items))
 	}
 }
 

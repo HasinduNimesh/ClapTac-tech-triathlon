@@ -7,6 +7,7 @@ import { PlanDetail } from "../api/planning";
 import { useLocale } from "../i18n";
 import { AuditEvent, Availability, Incident, ReceiptIssue } from "./types";
 import { DpHero, Drawer, Note, Panel, Tag, Toast } from "./ui";
+import { failedSourceCount } from "./sourceFailures.mjs";
 import { dateTime, errorText, useApi, useToken } from "./useApi";
 
 type Alert = { key: string; tone: "red" | "amber" | "cool" | "primary"; tag: string; title: string; text: string; action: string; onOpen?: () => void; to?: string };
@@ -20,6 +21,7 @@ export function DispatcherNotificationsPage() {
   const [exceptionTrip, setExceptionTrip] = useState<LoadingTripSummary | null>(null);
   const [conflictsOpen, setConflictsOpen] = useState(false);
   const [toast, setToast] = useState("");
+  // 404 here only means no plan has been built for the day yet, which is an empty state, not an error.
   const plan = useApi<PlanDetail>(`/planning/plans?date=${date}`);
   const incidents = useApi<{ items: Incident[] }>("/fleet/incidents?openOnly=true");
   const availability = useApi<{ items: Availability[] }>(`/fleet/availability?date=${date}`);
@@ -50,7 +52,9 @@ export function DispatcherNotificationsPage() {
   const alerts: Alert[] = [];
   for (const incident of incidents.data?.items || []) alerts.push({ key: incident.id, tone: "red", tag: t("Critical · chilled risk"), title: `${incident.vehicleId}${incident.tripId ? ` · ${incident.tripId}` : ""} · ${t(incident.type)}`, text: `${incident.description} · ${dateTime(incident.reportedAt)}`, action: t("Reassign stops or defer with a reason"), to: "/dispatcher/live" });
   for (const ev of temperature.data?.items || []) alerts.push({ key: ev.event_id, tone: "red", tag: t("Critical · temperature"), title: `${ev.resource_type} ${ev.resource_id}`, text: `${ev.reason || t("Out-of-range temperature recorded")} · ${dateTime(ev.timestamp)}`, action: t("Open live operations"), to: "/dispatcher/live" });
-  for (const trip of (loading.data?.items || []).filter((x) => (x.shortfallCount || 0) > 0)) alerts.push({ key: `short-${trip.tripId}`, tone: "amber", tag: t("High · loader shortfall"), title: `${trip.vehicleId} · ${t("Trip")} ${trip.tripNumber ?? 1} · ${trip.shortfallCount} ${t("order(s) short")}`, text: t("Shortfall needs dispatcher acceptance or a new plan before departure"), action: t("Review the load exception"), onOpen: () => setExceptionTrip(trip) });
+  const isChilled = (x: LoadingTripSummary) => x.vehicleTemperatureCapability === "reefer";
+  const shortTrips = (loading.data?.items || []).filter((x) => (x.shortfallCount || 0) > 0).sort((x, y) => Number(isChilled(y)) - Number(isChilled(x)) || (y.shortfallCount || 0) - (x.shortfallCount || 0));
+  for (const trip of shortTrips) alerts.push({ key: `short-${trip.tripId}`, tone: isChilled(trip) ? "red" : "amber", tag: isChilled(trip) ? t("Critical · chilled load exception") : t("High · loader shortfall"), title: `${trip.vehicleId} · ${t("Trip")} ${trip.tripNumber ?? 1} · ${trip.shortfallCount} ${t("order(s) short")}`, text: t("Shortfall needs dispatcher acceptance or a new plan before departure"), action: t("Review the load exception"), onOpen: () => setExceptionTrip(trip) });
   for (const alert of (dockAlerts.data?.items || []).filter((a) => !a.resolvedAt)) {
     const at = (loading.data?.items || []).find((x) => x.tripId === alert.tripId);
     alerts.push({ key: `dock-${alert.id}`, tone: "amber", tag: t("High · wrong vehicle"), title: `${alert.orderRef} ${t("found at")} ${at?.vehicleId || alert.tripId}${alert.belongsVehicleId ? ` · ${t("belongs on")} ${alert.belongsVehicleId}` : ""}`, text: `${t("Reported by the loader")} ${alert.reportedBy} · ${dateTime(alert.createdAt)}${alert.note ? ` · ${alert.note}` : ""}`, action: t("Mark handled"), onOpen: () => void resolveAlert(alert) });
@@ -102,7 +106,7 @@ export function DispatcherNotificationsPage() {
             <Link to="/dispatcher/forecast" className="dp-link">{t("Open demand forecast")} →</Link>
           </Panel>
         </div>}
-        {[plan.error, loading.error, incidents.error].filter(Boolean).length > 0 && <p className="dp-note dp-note--amber" role="status">{t("Some notification sources could not be loaded. The list may be incomplete.")}</p>}
+        {failedSourceCount([{ ...plan, missingIsEmpty: true }, loading, incidents]) > 0 && <p className="dp-note dp-note--amber" role="status">{t("Some notification sources could not be loaded. The list may be incomplete.")}</p>}
       </div>
       <LoadExceptionDrawer trip={exceptionTrip} plan={plan.data} token={token} onClose={() => setExceptionTrip(null)} onDone={(m) => { setExceptionTrip(null); setToast(m); void plan.reload(); void loading.reload(); }} />
       <Drawer open={conflictsOpen} onClose={() => setConflictsOpen(false)} title={plan.data ? `${t("After plan")} v${plan.data.publication?.version || plan.data.plan.currentVersion || 1} · ${plan.data.plan.planRef}` : t("After plan change")} sub={t("Who has the new plan, what came back from the road, and what the store confirmed.")}

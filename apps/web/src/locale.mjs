@@ -1070,6 +1070,11 @@ export function translate(locale, source) {
 }
 
 
+// W4: chilled load exceptions rank first in dispatcher notifications.
+Object.assign(labels.si, { "Critical · chilled load exception": "විවේචනාත්මක · සිසිල් භාණ්ඩ බර ගැටලුව" });
+Object.assign(labels.ta, { "Critical · chilled load exception": "மிக முக்கியம் · குளிர் பொருள் ஏற்றுதல் சிக்கல்" });
+
+
 // W11: sync conflicts list with Settle on the dispatcher Notifications page.
 Object.assign(labels.si, { "Sync conflict settled": "සමමුහුර්ත ගැටුම විසඳා ඇත", "Recorded on plan": "සටහන් කළ සැලැස්ම", "current plan": "වත්මන් සැලැස්ම", "Settled by": "විසඳූයේ", "Settle": "විසඳන්න" });
 Object.assign(labels.ta, { "Sync conflict settled": "ஒத்திசைவு மோதல் தீர்க்கப்பட்டது", "Recorded on plan": "பதிவு செய்யப்பட்ட திட்டம்", "current plan": "தற்போதைய திட்டம்", "Settled by": "தீர்த்தவர்", "Settle": "தீர்க்கவும்" });
@@ -1178,6 +1183,7 @@ for (const locale of ["si", "ta"]) Object.assign(labels[locale], helperLabels[lo
 
 
 
+
 Object.assign(labels.si, {
   "Account name": "ගිණුමේ නම",
   "Your name": "ඔබේ නම",
@@ -1199,6 +1205,47 @@ Object.assign(labels.ta, {
   "Could not save your name. Try again.": "உங்கள் பெயரைச் சேமிக்க முடியவில்லை. மீண்டும் முயலவும்.",
   "Save name": "பெயரைச் சேமி",
   "Saving…": "சேமிக்கிறது…",
+});
+
+
+// W4: the store manager's Notifications page lists the messages queued for the outlet.
+Object.assign(labels.si, {
+  "Messages sent to your store": "ඔබේ වෙළඳසැලට යවන ලද පණිවුඩ",
+  "Text messages the system queued for your store appear here, newest first.": "පද්ධතිය ඔබේ වෙළඳසැල සඳහා පෝලිමට දැමූ කෙටි පණිවුඩ මෙහි අලුත්ම ඒවා මුලින් පෙන්වයි.",
+  "Loading messages…": "පණිවුඩ පූරණය වෙමින්…",
+  "Messages could not be loaded. The rest of this page is not affected.": "පණිවුඩ පූරණය කළ නොහැකි විය. මෙම පිටුවේ අනෙක් කොටස් බලපාන්නේ නැත.",
+  "No messages have been sent to your store yet.": "ඔබේ වෙළඳසැලට තවමත් පණිවුඩ යවා නැත.",
+  "SHORT LOAD": "බර අඩුවීම",
+  "DELAY": "ප්‍රමාදය",
+  "DELIVERY REFUSED": "බෙදාහැරීම ප්‍රතික්ෂේප කළා",
+  "NOTICE": "දැනුම්දීම",
+  "Queued": "පෝලිමේ ඇත",
+  "Not sent": "යවා නැත",
+});
+Object.assign(labels.ta, {
+  "Messages sent to your store": "உங்கள் கடைக்கு அனுப்பப்பட்ட செய்திகள்",
+  "Text messages the system queued for your store appear here, newest first.": "உங்கள் கடைக்காக அமைப்பு வரிசைப்படுத்திய குறுஞ்செய்திகள் இங்கே, புதியவை முதலில், காட்டப்படும்.",
+  "Loading messages…": "செய்திகள் ஏற்றப்படுகின்றன…",
+  "Messages could not be loaded. The rest of this page is not affected.": "செய்திகளை ஏற்ற முடியவில்லை. இந்தப் பக்கத்தின் மற்ற பகுதிகள் பாதிக்கப்படவில்லை.",
+  "No messages have been sent to your store yet.": "உங்கள் கடைக்கு இன்னும் செய்திகள் அனுப்பப்படவில்லை.",
+  "SHORT LOAD": "ஏற்றுதல் குறைவு",
+  "DELAY": "தாமதம்",
+  "DELIVERY REFUSED": "விநியோகம் மறுக்கப்பட்டது",
+  "NOTICE": "அறிவிப்பு",
+  "Queued": "வரிசையில் உள்ளது",
+  "Not sent": "அனுப்பப்படவில்லை",
+});
+
+// W4: a store with no text-message consent or alert still sees its notices in-app.
+Object.assign(labels.si, {
+  "In your Notifications only": "ඔබේ දැනුම්දීම් තුළ පමණි",
+  "Notices the system recorded for your store appear here, newest first. Some are also sent as text messages.": "පද්ධතිය ඔබේ වෙළඳසැල සඳහා සටහන් කළ දැනුම්දීම් මෙහි අලුත්ම ඒවා මුලින් පෙන්වයි. ඒවායින් සමහරක් කෙටි පණිවුඩ ලෙසද යැවේ.",
+  "No notices have been recorded for your store yet.": "ඔබේ වෙළඳසැල සඳහා තවමත් දැනුම්දීම් සටහන් වී නැත.",
+});
+Object.assign(labels.ta, {
+  "In your Notifications only": "உங்கள் அறிவிப்புகளில் மட்டும்",
+  "Notices the system recorded for your store appear here, newest first. Some are also sent as text messages.": "உங்கள் கடைக்காக அமைப்பு பதிவு செய்த அறிவிப்புகள் புதியவை முதலில் இங்கே தோன்றும். அவற்றில் சில குறுஞ்செய்தியாகவும் அனுப்பப்படும்.",
+  "No notices have been recorded for your store yet.": "உங்கள் கடைக்கு இன்னும் அறிவிப்புகள் பதிவாகவில்லை.",
 });
 
 
@@ -1264,4 +1311,5 @@ Object.assign(labels.ta, {
   "Confirm receipt & report difference": "பெறுதலை உறுதிப்படுத்தி வேறுபாட்டைப் புகாரளிக்கவும்",
   "The helper isn't available right now — you can fill this in by hand.": "உதவியாளர் இப்போது கிடைக்கவில்லை — இதை நீங்களே கைமுறையாக நிரப்பலாம்.",
   "Pick the cards by hand": "அட்டைகளை கைமுறையாகத் தேர்ந்தெடுக்கவும்",
+
 });

@@ -191,6 +191,7 @@ type NotificationEvent struct {
 	OrderRef     string `json:"orderRef"`
 	Reason       string `json:"reason,omitempty"`
 	DelayMinutes int    `json:"delayMinutes,omitempty"`
+
 	NextRun      string `json:"nextRun,omitempty"`
 	OldArrivalAt string `json:"oldArrivalAt,omitempty"`
 	Goods        string `json:"goods,omitempty"`
@@ -212,23 +213,34 @@ func nextRunText(date string) string {
 	return date
 }
 
+// EnqueueNotification records the notice for the outlet and decides, separately, whether it may also be sent
+// by SMS. The in-app message is always stored: an outlet with no preference row, with consent withdrawn or with
+// this alert switched off still reads what will arrive on its Notifications page. Only the outlet's SMS consent
+// and alert choices decide the status: PENDING (eligible for the SMS worker) or IN_APP_ONLY (never claimed).
+//
+// Merge note: branch #35 made this return "suppressed" with no row when there is no preference row; that quick
+// fix is superseded by this behaviour (the status for such an outlet is "in_app_only", with a row).
 func (s Store) EnqueueNotification(ctx context.Context, e NotificationEvent) (EnqueueResult, error) {
-	var phone, locale string
-	var enabled bool
-	err := s.Pool.QueryRow(ctx, `SELECT phone_e164,locale,consent_enabled AND CASE $2 WHEN 'DEFERRAL' THEN deferrals_enabled WHEN 'MAJOR_DELAY' THEN major_delays_enabled WHEN 'ARRIVAL_CHANGE' THEN major_delays_enabled WHEN 'DELIVERY_REJECTED' THEN deferrals_enabled ELSE false END FROM shared.outlet_notification_preferences WHERE outlet_id=$1`, e.OutletID, e.Type).Scan(&phone, &locale, &enabled)
+	phone, locale, smsEligible := "", "en", false
+	err := s.Pool.QueryRow(ctx, `SELECT phone_e164,locale,consent_enabled AND CASE $2 WHEN 'DEFERRAL' THEN deferrals_enabled WHEN 'LOAD_SHORTFALL' THEN deferrals_enabled WHEN 'MAJOR_DELAY' THEN major_delays_enabled WHEN 'ARRIVAL_CHANGE' THEN major_delays_enabled WHEN 'DELIVERY_REJECTED' THEN deferrals_enabled ELSE false END FROM shared.outlet_notification_preferences WHERE outlet_id=$1`, e.OutletID, e.Type).Scan(&phone, &locale, &smsEligible)
 	if err == pgx.ErrNoRows {
-		// An outlet that has never saved notification preferences has given no
-		// consent, so nothing is sent. That is not an error for the caller.
-		return EnqueueResult{Status: "suppressed"}, nil
-	}
-	if err != nil {
+		// No SMS contact on file: the in-app notice is still stored, in English, with no phone number.
+		var known bool
+		if err = s.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM shared.outlets WHERE id=$1)`, e.OutletID).Scan(&known); err != nil {
+			return EnqueueResult{}, err
+		}
+		if !known {
+			return EnqueueResult{}, fmt.Errorf("outlet not found")
+		}
+		phone, locale, smsEligible = "", "en", false
+	} else if err != nil {
+
 		return EnqueueResult{}, err
 	}
-	if !enabled {
-		return EnqueueResult{Status: "suppressed"}, nil
-	}
 	var body string
-	if e.Type == "DELIVERY_REJECTED" {
+	if e.Type == "LOAD_SHORTFALL" {
+		body = ShortfallBody(locale, e)
+	} else if e.Type == "DELIVERY_REJECTED" {
 		action := "re-attempt requested for the next run"
 		if e.Resolution == "REQUEST_DEFERRAL" {
 			action = "dispatcher deferral requested"
@@ -273,10 +285,16 @@ func (s Store) EnqueueNotification(ctx context.Context, e NotificationEvent) (En
 			} else {
 				body = fmt.Sprintf("Waypoint: order %s is expected to arrive %d minutes later than planned.", e.OrderRef, e.DelayMinutes)
 			}
+
 		}
 	}
+	status, errorCode, result := "PENDING", "", "enqueued"
+	if !smsEligible {
+		// The SMS number is not kept on a row that will never be sent.
+		status, errorCode, result, phone = "IN_APP_ONLY", "CONSENT_OR_ALERT_DISABLED", "in_app_only", ""
+	}
 	var id int64
-	err = s.Pool.QueryRow(ctx, `INSERT INTO shared.notification_outbox(event_key,outlet_id,event_type,phone_e164,body) VALUES($1,$2,$3,$4,$5) ON CONFLICT(event_key) DO NOTHING RETURNING id`, e.EventKey, e.OutletID, e.Type, phone, body).Scan(&id)
+	err = s.Pool.QueryRow(ctx, `INSERT INTO shared.notification_outbox(event_key,outlet_id,event_type,phone_e164,body,status,error_code) VALUES($1,$2,$3,$4,$5,$6,NULLIF($7,'')) ON CONFLICT(event_key) DO NOTHING RETURNING id`, e.EventKey, e.OutletID, e.Type, phone, body, status, errorCode).Scan(&id)
 	if err == pgx.ErrNoRows {
 		err = s.Pool.QueryRow(ctx, `SELECT id FROM shared.notification_outbox WHERE event_key=$1`, e.EventKey).Scan(&id)
 		return EnqueueResult{Status: "duplicate", ID: id}, err
@@ -284,7 +302,7 @@ func (s Store) EnqueueNotification(ctx context.Context, e NotificationEvent) (En
 	if err != nil {
 		return EnqueueResult{}, err
 	}
-	return EnqueueResult{Status: "enqueued", ID: id}, nil
+	return EnqueueResult{Status: result, ID: id}, nil
 }
 
 func notificationReason(locale, code string) string {
@@ -346,7 +364,9 @@ func (s Store) ClaimNotification(ctx context.Context) (*PendingNotification, err
 	defer tx.Rollback(ctx)
 	var n PendingNotification
 	var consent, enabled bool
-	err = tx.QueryRow(ctx, `SELECT n.id,COALESCE(p.phone_e164,n.phone_e164),n.body,n.event_type,COALESCE(p.consent_enabled,false),COALESCE(CASE n.event_type WHEN 'DEFERRAL' THEN p.deferrals_enabled WHEN 'MAJOR_DELAY' THEN p.major_delays_enabled WHEN 'ARRIVAL_CHANGE' THEN p.major_delays_enabled WHEN 'DELIVERY_REJECTED' THEN p.deferrals_enabled END,false)
+
+	err = tx.QueryRow(ctx, `SELECT n.id,COALESCE(p.phone_e164,n.phone_e164),n.body,n.event_type,COALESCE(p.consent_enabled,false),COALESCE(CASE n.event_type WHEN 'DEFERRAL' THEN p.deferrals_enabled WHEN 'LOAD_SHORTFALL' THEN p.deferrals_enabled WHEN 'MAJOR_DELAY' THEN p.major_delays_enabled WHEN 'ARRIVAL_CHANGE' THEN p.major_delays_enabled WHEN 'DELIVERY_REJECTED' THEN p.deferrals_enabled END,false)
+
 	FROM shared.notification_outbox n LEFT JOIN shared.outlet_notification_preferences p USING(outlet_id)
 	WHERE n.status='PENDING' ORDER BY n.created_at,n.id LIMIT 1 FOR UPDATE OF n SKIP LOCKED`).Scan(&n.ID, &n.Phone, &n.Body, &n.EventType, &consent, &enabled)
 	if err == pgx.ErrNoRows {
@@ -356,7 +376,7 @@ func (s Store) ClaimNotification(ctx context.Context) (*PendingNotification, err
 		return nil, err
 	}
 	if !consent || !enabled {
-		if _, err = tx.Exec(ctx, `UPDATE shared.notification_outbox SET status='SUPPRESSED',phone_e164='',body='',error_code='CONSENT_OR_ALERT_DISABLED',updated_at=now(),payload_expires_at=now()+interval '7 days' WHERE id=$1`, n.ID); err != nil {
+		if _, err = tx.Exec(ctx, `UPDATE shared.notification_outbox SET status='IN_APP_ONLY',phone_e164='',error_code='CONSENT_OR_ALERT_DISABLED',updated_at=now(),payload_expires_at=now()+interval '7 days' WHERE id=$1`, n.ID); err != nil {
 			return nil, err
 		}
 		if err = tx.Commit(ctx); err != nil {
@@ -387,7 +407,7 @@ func (s Store) RecoverSendingNotifications(ctx context.Context) error {
 }
 
 func (s Store) PurgeExpiredNotificationPayloads(ctx context.Context) error {
-	_, err := s.Pool.Exec(ctx, `UPDATE shared.notification_outbox SET phone_e164='',body='' WHERE status IN ('DELIVERED','FAILED','UNKNOWN','SUPPRESSED') AND payload_expires_at<now() AND (phone_e164<>'' OR body<>'')`)
+	_, err := s.Pool.Exec(ctx, `UPDATE shared.notification_outbox SET phone_e164='',body='' WHERE status IN ('DELIVERED','FAILED','UNKNOWN','SUPPRESSED','IN_APP_ONLY') AND payload_expires_at<now() AND (phone_e164<>'' OR body<>'')`)
 	return err
 }
 
@@ -424,6 +444,42 @@ func (s Store) UpdateNotificationStatus(ctx context.Context, messageSID, provide
 		return nil
 	}
 	return fmt.Errorf("notification status transition conflict")
+}
+
+// OutletNotification is one message the system queued for an outlet, as the outlet itself may read
+// it back. It never carries the phone number.
+type OutletNotification struct {
+	ID        int64     `json:"id"`
+	EventType string    `json:"eventType"`
+	Body      string    `json:"body"`
+	Status    string    `json:"status"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+// OutletNotifications returns the newest messages stored for an outlet, whether they are waiting for SMS or
+// kept in-app only (IN_APP_ONLY, never sent). Rows whose text has been purged have nothing to show and are left out.
+func (s Store) OutletNotifications(ctx context.Context, outletID string, limit int) ([]OutletNotification, error) {
+	var known bool
+	if err := s.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM shared.outlets WHERE id=$1)`, outletID).Scan(&known); err != nil {
+		return nil, err
+	}
+	if !known {
+		return nil, fmt.Errorf("outlet not found")
+	}
+	rows, err := s.Pool.Query(ctx, `SELECT id,event_type,body,status,created_at FROM shared.notification_outbox WHERE outlet_id=$1 AND body<>'' ORDER BY created_at DESC,id DESC LIMIT $2`, outletID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []OutletNotification{}
+	for rows.Next() {
+		var n OutletNotification
+		if err := rows.Scan(&n.ID, &n.EventType, &n.Body, &n.Status, &n.CreatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, n)
+	}
+	return items, rows.Err()
 }
 
 func (s Store) NotificationPreferences(ctx context.Context, outletID string) (NotificationPreferences, error) {
@@ -867,4 +923,26 @@ func (s Store) insertAuditTx(ctx context.Context, tx pgx.Tx, ev audit.Event) err
 	_, err := tx.Exec(ctx, `INSERT INTO audit.events(event_id,correlation_id,actor_id,actor_type,action,resource_type,resource_id,previous_state,new_state,reason,timestamp,source)
 	VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`, ev.EventID, ev.CorrelationID, ev.ActorID, ev.ActorType, ev.Action, ev.ResourceType, ev.ResourceID, prev, next, ev.Reason, ev.Timestamp, ev.Source)
 	return err
+}
+
+// ShortfallBody is the plain-language store notice for a loader shortfall
+// after the dispatcher has decided what will arrive.
+func ShortfallBody(locale string, e NotificationEvent) string {
+	type phrase struct{ en, si, ta string }
+	outcomes := map[string]phrase{
+		"PARTIAL_LOAD":     {"the rest will arrive on the next delivery", "ඉතිරිය ඊළඟ බෙදාහැරීමේදී පැමිණේ", "மீதமுள்ளவை அடுத்த விநியோகத்தில் வரும்"},
+		"HOLD":             {"delivery is on hold until the goods are ready", "භාණ්ඩ සූදානම් වන තුරු බෙදාහැරීම රඳවා ඇත", "பொருட்கள் தயாராகும் வரை விநியோகம் நிறுத்தப்பட்டுள்ளது"},
+		"MOVE_TO_NEXT_RUN": {"this order moves to the next delivery run", "මෙම ඇණවුම ඊළඟ බෙදාහැරීමට මාරු කර ඇත", "இந்த ஆர்டர் அடுத்த விநியோகத்துக்கு மாற்றப்பட்டது"},
+	}
+	o, ok := outcomes[e.Reason]
+	if !ok {
+		o = outcomes["PARTIAL_LOAD"]
+	}
+	switch locale {
+	case "si":
+		return fmt.Sprintf("Waypoint: ඇණවුම %s සඳහා ඒකක %d ක් අඩුය; %s.", e.OrderRef, e.Units, o.si)
+	case "ta":
+		return fmt.Sprintf("Waypoint: ஆர்டர் %s இல் %d அலகுகள் குறைவு; %s.", e.OrderRef, e.Units, o.ta)
+	}
+	return fmt.Sprintf("Waypoint: order %s is %d units short; %s.", e.OrderRef, e.Units, o.en)
 }

@@ -211,3 +211,31 @@ func (p Peers) publishOnce(ctx context.Context, action, actor, resource, resourc
 	}
 	_ = resp.Body.Close()
 }
+
+// QueueShortfallNotice asks shared-service to enqueue the store notice for a
+// dispatcher shortfall decision. eventKey makes it idempotent per issue+decision.
+func (p Peers) QueueShortfallNotice(ctx context.Context, eventKey, outletID, orderRef, decision string, unitsShort int) error {
+	tok, err := p.m2m(ctx)
+	if err != nil {
+		return err
+	}
+	body, _ := json.Marshal(map[string]any{"eventKey": eventKey, "outletId": outletID, "type": "LOAD_SHORTFALL", "orderRef": orderRef, "reason": decision, "units": unitsShort})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.SharedURL+"/api/v1/shared/internal/notifications/enqueue", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if tok != "" {
+		req.Header.Set("Authorization", "Bearer "+tok)
+	}
+	resp, err := p.http().Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return fmt.Errorf("shared notification enqueue returned HTTP %d: %s", resp.StatusCode, string(b))
+	}
+	return nil
+}

@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { ApiError, apiJSON } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 
-export type ApiState<T> = { data: T | null; error: string; loading: boolean; reload: () => Promise<void> };
+// status is the HTTP status of the last failed request (0 when none failed or it never reached the server).
+export type ApiState<T> = { data: T | null; error: string; status: number; loading: boolean; reload: () => Promise<void> };
 
 export function errorText(err: unknown) {
   return err instanceof ApiError ? `${err.status}: ${err.message}` : err instanceof Error ? err.message : String(err);
@@ -15,6 +16,7 @@ export function useApi<T>(path: string | null): ApiState<T> {
   const token = user?.access_token || "";
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState("");
+  const [status, setStatus] = useState(0);
   const [loading, setLoading] = useState(Boolean(path));
   const reload = useCallback(async () => {
     if (!token || !path) { setLoading(false); return; }
@@ -22,14 +24,16 @@ export function useApi<T>(path: string | null): ApiState<T> {
     try {
       setData(await apiJSON<T>(path, token));
       setError("");
+      setStatus(0);
     } catch (err) {
       setError(errorText(err));
+      setStatus(err instanceof ApiError ? err.status : 0);
     } finally {
       setLoading(false);
     }
   }, [token, path]);
   useEffect(() => { void reload(); }, [reload]);
-  return { data, error, loading, reload };
+  return { data, error, status, loading, reload };
 }
 
 export function useToken() {
