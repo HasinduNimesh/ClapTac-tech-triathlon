@@ -23,7 +23,7 @@ type Loader interface {
 	List(ctx context.Context, profile *authorization.Profile, date string) ([]map[string]any, error)
 	Get(ctx context.Context, profile *authorization.Profile, tripID string) (map[string]any, error)
 	Start(ctx context.Context, profile *authorization.Profile, tripID string, expectedPlanVersion int) (map[string]any, error)
-	MarkLoaded(ctx context.Context, profile *authorization.Profile, tripID, orderID string) error
+	MarkLoaded(ctx context.Context, profile *authorization.Profile, tripID, orderID string, entry domain.LoadEntry) error
 	CreateIssue(ctx context.Context, profile *authorization.Profile, tripID, orderID, typ, note, key string, units int) (domain.Issue, error)
 	UpdateIssue(ctx context.Context, profile *authorization.Profile, tripID, orderID, issueID, typ, note string, units int) error
 	DeleteIssue(ctx context.Context, profile *authorization.Profile, tripID, orderID, issueID string) error
@@ -122,10 +122,31 @@ func (h Handler) start(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h Handler) loaded(w http.ResponseWriter, r *http.Request) {
-	if writeErr(w, h.Service.MarkLoaded(r.Context(), h.profile(r), chi.URLParam(r, "tripId"), chi.URLParam(r, "orderId"))) {
+	// The body is optional: a client that sends none is recorded as "unknown". A loader who
+	// typed the order ID because the label could not be scanned sends MANUAL and a reason.
+	var body struct {
+		EntryMethod string `json:"entryMethod"`
+		ReasonCode  string `json:"reasonCode"`
+		Note        string `json:"note"`
+	}
+	if r.ContentLength != 0 {
+		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+			apierrors.BadRequest(w, "invalid JSON")
+			return
+		}
+	}
+	entry, err := domain.NormalizeEntry(body.EntryMethod, body.ReasonCode, body.Note)
+	if writeErr(w, err) {
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{"status": "loaded"})
+	if writeErr(w, h.Service.MarkLoaded(r.Context(), h.profile(r), chi.URLParam(r, "tripId"), chi.URLParam(r, "orderId"), entry)) {
+		return
+	}
+	resp := map[string]any{"status": "loaded"}
+	if entry.Method != "" {
+		resp["entryMethod"] = entry.Method
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
 }
 
 func (h Handler) createIssue(w http.ResponseWriter, r *http.Request) {

@@ -55,7 +55,7 @@ func (p Postgres) StartTx(ctx context.Context, sess domain.Session, loads []doma
 func (p Postgres) ListLoads(ctx context.Context, sessionID string) ([]domain.OrderLoad, error) {
 	rows, err := p.Pool.Query(ctx, `
 		SELECT id::text, session_id::text, allocation_id, order_id, stop_sequence, suggested_load_sequence, expected_units, status, updated_by,
-			COALESCE(order_ref,''), COALESCE(outlet_id,''), COALESCE(brand,''), COALESCE(temperature_requirement,''), COALESCE(changed_in_version,0), COALESCE(change_note,'')
+			COALESCE(order_ref,''), COALESCE(outlet_id,''), COALESCE(brand,''), COALESCE(temperature_requirement,''), COALESCE(changed_in_version,0), COALESCE(change_note,''), COALESCE(entry_method,''), COALESCE(manual_reason,''), COALESCE(manual_note,'')
 		FROM order_loads WHERE session_id::text = $1 ORDER BY suggested_load_sequence
 	`, sessionID)
 	if err != nil {
@@ -65,7 +65,7 @@ func (p Postgres) ListLoads(ctx context.Context, sessionID string) ([]domain.Ord
 	var out []domain.OrderLoad
 	for rows.Next() {
 		var l domain.OrderLoad
-		if err := rows.Scan(&l.ID, &l.SessionID, &l.AllocationID, &l.OrderID, &l.StopSequence, &l.SuggestedLoadSequence, &l.ExpectedUnits, &l.Status, &l.UpdatedBy, &l.OrderRef, &l.OutletID, &l.Brand, &l.TemperatureRequirement, &l.ChangedInVersion, &l.ChangeNote); err != nil {
+		if err := rows.Scan(&l.ID, &l.SessionID, &l.AllocationID, &l.OrderID, &l.StopSequence, &l.SuggestedLoadSequence, &l.ExpectedUnits, &l.Status, &l.UpdatedBy, &l.OrderRef, &l.OutletID, &l.Brand, &l.TemperatureRequirement, &l.ChangedInVersion, &l.ChangeNote, &l.EntryMethod, &l.ManualReason, &l.ManualNote); err != nil {
 			return nil, err
 		}
 		out = append(out, l)
@@ -79,19 +79,31 @@ func (p Postgres) ListLoads(ctx context.Context, sessionID string) ([]domain.Ord
 func (p Postgres) GetLoad(ctx context.Context, sessionID, orderID string) (domain.OrderLoad, error) {
 	row := p.Pool.QueryRow(ctx, `
 		SELECT id::text, session_id::text, allocation_id, order_id, stop_sequence, suggested_load_sequence, expected_units, status, updated_by,
-			COALESCE(order_ref,''), COALESCE(outlet_id,''), COALESCE(brand,''), COALESCE(temperature_requirement,''), COALESCE(changed_in_version,0), COALESCE(change_note,'')
+			COALESCE(order_ref,''), COALESCE(outlet_id,''), COALESCE(brand,''), COALESCE(temperature_requirement,''), COALESCE(changed_in_version,0), COALESCE(change_note,''), COALESCE(entry_method,''), COALESCE(manual_reason,''), COALESCE(manual_note,'')
 		FROM order_loads WHERE session_id::text = $1 AND order_id = $2
 	`, sessionID, orderID)
 	var l domain.OrderLoad
-	err := row.Scan(&l.ID, &l.SessionID, &l.AllocationID, &l.OrderID, &l.StopSequence, &l.SuggestedLoadSequence, &l.ExpectedUnits, &l.Status, &l.UpdatedBy, &l.OrderRef, &l.OutletID, &l.Brand, &l.TemperatureRequirement, &l.ChangedInVersion, &l.ChangeNote)
+	err := row.Scan(&l.ID, &l.SessionID, &l.AllocationID, &l.OrderID, &l.StopSequence, &l.SuggestedLoadSequence, &l.ExpectedUnits, &l.Status, &l.UpdatedBy, &l.OrderRef, &l.OutletID, &l.Brand, &l.TemperatureRequirement, &l.ChangedInVersion, &l.ChangeNote, &l.EntryMethod, &l.ManualReason, &l.ManualNote)
 	if err == pgx.ErrNoRows {
 		return l, fmt.Errorf("not found")
 	}
 	return l, err
 }
 
+// SetLoadStatus moves a line to another status. The entry method belongs to the
+// loaded confirmation, so it is cleared; loading the line again records a new one.
 func (p Postgres) SetLoadStatus(ctx context.Context, loadID, status, actor string) error {
-	_, err := p.Pool.Exec(ctx, `UPDATE order_loads SET status = $2, updated_by = $3, updated_at = now() WHERE id::text = $1`, loadID, status, actor)
+	_, err := p.Pool.Exec(ctx, `UPDATE order_loads SET status = $2, updated_by = $3, updated_at = now(),
+		entry_method = NULL, manual_reason = NULL, manual_note = NULL WHERE id::text = $1`, loadID, status, actor)
+	return err
+}
+
+// SetLoaded confirms a line loaded and records how: the method (NULL when the
+// client sent none) and, for a typed ID, the reason and note.
+func (p Postgres) SetLoaded(ctx context.Context, loadID, actor string, e domain.LoadEntry) error {
+	_, err := p.Pool.Exec(ctx, `UPDATE order_loads SET status = $2, updated_by = $3, updated_at = now(),
+		entry_method = NULLIF($4,''), manual_reason = NULLIF($5,''), manual_note = NULLIF($6,'') WHERE id::text = $1`,
+		loadID, domain.LoadLoaded, actor, e.Method, e.ReasonCode, e.Note)
 	return err
 }
 
