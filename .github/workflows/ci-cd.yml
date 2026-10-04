@@ -360,6 +360,10 @@ jobs:
             echo "To roll back images: set WAYPOINT_TAG to it in .env and run: sudo docker compose up -d --no-build" >&2
             exit 1
           }
+          # nginx.conf is a single-file bind mount. Recreate nginx to pick up the
+          # current file after the checkout changes; this briefly interrupts traffic.
+          dc up -d --no-build --no-deps --force-recreate nginx \
+            || rollback_hint "nginx could not be recreated with the updated routing configuration."
           # Every service must report healthy, not just nginx.
           for service in $services nginx; do
             container="$(dc ps -q "$service")"
