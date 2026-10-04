@@ -375,6 +375,8 @@ func writeServiceError(w http.ResponseWriter, err error) bool {
 		apierrors.Forbidden(w, err.Error())
 	case errors.Is(err, service.ErrNotFound):
 		apierrors.NotFound(w, err.Error())
+	case errors.Is(err, service.ErrUnavailable):
+		apierrors.Write(w, http.StatusServiceUnavailable, "Service Unavailable", err.Error())
 	case strings.HasPrefix(err.Error(), "conflict:"):
 		apierrors.Conflict(w, err.Error())
 	default:

@@ -36,3 +36,20 @@ func TestDeliveryFollowupUsesNextOperatingDayAndOneOrderPerStop(t *testing.T) {
         t.Fatal("quantity above original order must fail")
     }
 }
+
+func TestDeliveryFollowupWithoutCalendarRowsUsesNextDay(t *testing.T) {
+    repo := store.NewMemory()
+    original, err := repo.Create(domain.Order{OutletID:"OUT001", Brand:"Fresh",
+        RequestedDeliveryDate:"2026-10-03", OrderUnits:10, OrderWeightKg:20,
+        OrderVolumeM3:1, TemperatureRequirement:domain.TempAmbient, Status:domain.StatusConfirmed})
+    if err != nil { t.Fatal(err) }
+    service := Service{Repo:repo, Now:func() time.Time { return time.Date(2026,10,3,9,0,0,0,time.UTC) }, Calendar:testCalendar{}}
+    got, err := service.CreateDeliveryFollowup(original.ID, "stop-1", "2026-10-03", 2, "NEXT_RUN")
+    if err != nil || got.RequestedDeliveryDate != "2026-10-04" {
+        t.Fatalf("unmaintained calendar must fall back to the next day: %+v, %v", got, err)
+    }
+    closed := Service{Repo:repo, Now:service.Now, Calendar:testCalendar{{Date:"2026-10-04",IsOperating:false}}}
+    if _, err := closed.CreateDeliveryFollowup(original.ID, "stop-2", "2026-10-03", 1, "NEXT_RUN"); err == nil {
+        t.Fatal("a calendar whose rows are all closed must still block")
+    }
+}
