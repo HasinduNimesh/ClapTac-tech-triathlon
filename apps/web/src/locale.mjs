@@ -1239,3 +1239,7 @@ Object.assign(labels.ta, {
   "Required. The store is told this date in its deferral notice.": "கட்டாயம். ஒத்திவைப்பு அறிவிப்பில் இந்தத் தேதி கடைக்குத் தெரிவிக்கப்படும்.",
   "Priority for next plan": "அடுத்த திட்டத்திற்கு முன்னுரிமை",
 });
+
+// W4: chilled load exceptions rank first in dispatcher notifications.
+Object.assign(labels.si, { "Critical · chilled load exception": "විවේචනාත්මක · සිසිල් භාණ්ඩ බර ගැටලුව" });
+Object.assign(labels.ta, { "Critical · chilled load exception": "மிக முக்கியம் · குளிர் பொருள் ஏற்றுதல் சிக்கல்" });

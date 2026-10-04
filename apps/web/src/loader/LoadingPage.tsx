@@ -389,6 +389,7 @@ export function LoadingPage() {
             {depotLabel(detail.depot)} · {t(detail.status || detail.loadingStatus || "pending")} · {detail.loadedCount ?? 0} {t("loaded")} ·{" "}
             {detail.shortfallCount ?? 0} {t("short")} · {detail.pendingCount ?? 0} {t("pending")}
           </p>
+          {checkoutAlert && <p className="status-bad" role="alert">{t("Driver reported missing goods at check-out")}: {checkoutAlert.missingOrderIds.map(id => detail.orders?.find(order => order.orderId === id)?.orderRef || id).join(", ")}. {t("Check-out blocked. Review this load with dispatch.")}</p>}
           {detail.status === "pending" && (
             <button type="button" className="tap primary" onClick={start}>
               {t("Start loading")}
