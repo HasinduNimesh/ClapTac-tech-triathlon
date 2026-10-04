@@ -66,6 +66,36 @@ class StopInfo {
   final String goods;
   final String orderRef;
 
+  factory StopInfo.fromJson(Map<String, Object?> json) => StopInfo(
+        stopId: json['stopId'] as String? ?? '',
+        sequence: (json['sequence'] as num?)?.toInt() ?? 0,
+        outletCode: json['outletCode'] as String? ?? '',
+        name: json['name'] as String? ?? '',
+        windowStart: json['windowStart'] as String? ?? '',
+        windowEnd: json['windowEnd'] as String? ?? '',
+        units: (json['units'] as num?)?.toInt(),
+        unitLabel: json['unitLabel'] as String? ?? 'units',
+        accessNote: json['accessNote'] as String? ?? '',
+        contactNote: json['contactNote'] as String? ?? '',
+        goods: json['goods'] as String? ?? '',
+        orderRef: json['orderRef'] as String? ?? '',
+      );
+
+  Map<String, Object?> toJson() => {
+        'stopId': stopId,
+        'sequence': sequence,
+        'outletCode': outletCode,
+        'name': name,
+        'windowStart': windowStart,
+        'windowEnd': windowEnd,
+        if (units != null) 'units': units,
+        'unitLabel': unitLabel,
+        'accessNote': accessNote,
+        'contactNote': contactNote,
+        'goods': goods,
+        'orderRef': orderRef,
+      };
+
   String get window => windowStart.isEmpty && windowEnd.isEmpty ? 'No time window' : '$windowStart - $windowEnd';
 
   /// The outlet as shown to the driver, without a dangling separator when the server sent no
@@ -119,6 +149,44 @@ class TripInfo {
   final String runStatus;
 
   bool get started => runStatus == 'in_progress';
+
+  /// Reads a trip saved with [toJson]. Throws [FormatException] when what is stored is not a trip, so a
+  /// damaged saved route is ignored instead of crashing the app.
+  factory TripInfo.fromJson(Map<String, Object?> json) {
+    final stops = json['stops'];
+    if (stops is! List || (json['tripId'] as String? ?? '').isEmpty) throw const FormatException('saved trip');
+    return TripInfo(
+      tripId: json['tripId'] as String,
+      runId: json['runId'] as String? ?? '',
+      vehicleCode: json['vehicleCode'] as String? ?? '',
+      plate: json['plate'] as String? ?? '',
+      tripRef: json['tripRef'] as String? ?? '',
+      depot: json['depot'] as String? ?? '',
+      window: json['window'] as String? ?? '',
+      stops: [for (final stop in stops) if (stop is Map) StopInfo.fromJson(stop.cast<String, Object?>())],
+      completedStops: (json['completedStops'] as num?)?.toInt() ?? 0,
+      completedStopIds: {for (final id in (json['completedStopIds'] as List<Object?>? ?? const [])) id.toString()},
+      planId: json['planId'] as String? ?? '',
+      planVersion: (json['planVersion'] as num?)?.toInt() ?? 0,
+      runStatus: json['runStatus'] as String? ?? '',
+    );
+  }
+
+  Map<String, Object?> toJson() => {
+        'tripId': tripId,
+        'runId': runId,
+        'vehicleCode': vehicleCode,
+        'plate': plate,
+        'tripRef': tripRef,
+        'depot': depot,
+        'window': window,
+        'stops': [for (final stop in stops) stop.toJson()],
+        'completedStops': completedStops,
+        'completedStopIds': completedStopIds.toList()..sort(),
+        'planId': planId,
+        'planVersion': planVersion,
+        'runStatus': runStatus,
+      };
 
   TripInfo withRunStatus(String status) => TripInfo(
         tripId: tripId,

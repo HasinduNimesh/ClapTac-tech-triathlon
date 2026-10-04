@@ -15,6 +15,7 @@ import '../sync/operations.dart';
 import '../sync/sync.dart';
 import '../sync/sqlite_sync_queue.dart';
 import '../sync/sync_worker.dart';
+import '../trips/route_store.dart';
 import '../trips/trip_source.dart';
 import '../trips/trip_start.dart';
 import '../widgets/driver_shell.dart';
@@ -55,6 +56,7 @@ class DriverSession extends ChangeNotifier {
     this.connectivity,
     this.messageSource,
     this.messagePollInterval = const Duration(seconds: 30),
+    this.routeStore,
   })  : _initialTrip = trip ?? ((demoRoute || (auth == null && demoAuth)) ? sampleTrip : null),
         _clock = clock ?? DateTime.now,
         _newId = newId ?? newOperationId {
@@ -63,6 +65,8 @@ class DriverSession extends ChangeNotifier {
       syncDetail = detail;
       // Each tick is a chance to start a trip that could not be started without a connection.
       if (tripStartState == TripStartState.waiting && !tripStarting && loadResolved) unawaited(startTrip());
+      // Showing the route saved on the phone: each tick is also a chance to get the live one.
+      if (showingSavedRoute && !tripsLoading && signedIn) unawaited(loadTrips());
       if (signedIn) _refreshPending();
       notifyListeners();
     };
@@ -79,6 +83,14 @@ class DriverSession extends ChangeNotifier {
   }
 
   static const planConflictId = 'plan-conflict';
+
+  /// Keeps the route on the phone so it can still be shown when Waypoint cannot be reached. Null in demo
+  /// and test sessions.
+  final RouteStore? routeStore;
+
+  /// True while the route on screen is the copy saved on the phone, because the live one could not be
+  /// loaded. It is replaced by the live route as soon as that can be loaded.
+  bool showingSavedRoute = false;
 
   /// Tells the session when the phone gains or loses its network. Null in demo and test sessions,
   /// which then always count as online.
@@ -110,7 +122,7 @@ class DriverSession extends ChangeNotifier {
   /// waiting for the next timer tick.
   Future<void> _onReconnected() async {
     if (!signedIn) return;
-    if (tripsError != null && !hasRoute) await loadTrips();
+    if ((tripsError != null && !hasRoute) || showingSavedRoute) await loadTrips();
     if (tripStartState == TripStartState.waiting && loadResolved) await startTrip();
     await worker?.syncNow();
     await _refreshPending();
@@ -408,7 +420,9 @@ class DriverSession extends ChangeNotifier {
         tripStartState = TripStartState.notStarted;
         tripStartMessage = null;
       }
+      showingSavedRoute = false;
       await _restoreQueuedActions(loaded);
+      unawaited(_saveRoute());
       _startMessagePolling();
       // A reload after the server refused the start (the plan changed) tries again with the new version.
       if (sameTrip && loadResolved && !loaded.started) {
@@ -418,10 +432,90 @@ class DriverSession extends ChangeNotifier {
       }
     } else if (result.signInExpired) {
       await _signInExpired(result.failure);
+    } else if (result.failure == null) {
+      // Waypoint answered and has no open trip for this driver. That is authoritative: a route saved
+      // earlier is no longer valid.
+      final user = identity?.userId;
+      if (user != null && user.isNotEmpty) await routeStore?.clear(user);
+      if (showingSavedRoute) {
+        showingSavedRoute = false;
+        _baseTrip = _initialTrip;
+        _resetMessages();
+      }
+    } else if (_baseTrip == null) {
+      // Waypoint could not be reached and nothing is on screen: use the route saved on this phone, if it
+      // is for today.
+      final saved = await _savedRouteForToday();
+      if (saved != null) {
+        await _showSavedRoute(saved);
+      } else {
+        tripsError = result.failure;
+      }
     } else {
       tripsError = result.failure;
     }
     notifyListeners();
+  }
+
+  /// The route saved for this driver, but only if it is for the current Waypoint business day.
+  Future<SavedRoute?> _savedRouteForToday() async {
+    final store = routeStore;
+    final user = identity?.userId;
+    if (store == null || user == null || user.isEmpty) return null;
+    final saved = await store.read(user);
+    if (saved == null) return null;
+    if (saved.businessDate != ApiTripSource.dateKey(_clock())) {
+      await store.clear(user);
+      return null;
+    }
+    return saved;
+  }
+
+  Future<void> _showSavedRoute(SavedRoute saved) async {
+    _baseTrip = saved.trip;
+    showingSavedRoute = true;
+    tripsError = null;
+    _resetMessages();
+    if (saved.trip.started) {
+      loadCheck = LoadCheck.confirmed;
+      tripStartState = TripStartState.started;
+    } else {
+      loadCheck = LoadCheck.unchecked;
+      tripStartState = TripStartState.notStarted;
+    }
+    tripStartMessage = null;
+    await _restoreQueuedActions(saved.trip);
+    _startMessagePolling();
+  }
+
+  /// Saves the route as it stands now, including the stops already done, so a copy shown later has the
+  /// right progress. Failing to save is not a problem for the driver, so it is only ignored.
+  Future<void> _saveRoute() async {
+    final store = routeStore;
+    final user = identity?.userId;
+    final base = _baseTrip;
+    if (store == null || user == null || user.isEmpty || base == null || base.tripId.isEmpty) return;
+    final done = {...base.completedStopIds, ..._results.keys};
+    final snapshot = TripInfo(
+      tripId: base.tripId,
+      runId: base.runId,
+      vehicleCode: base.vehicleCode,
+      plate: base.plate,
+      tripRef: base.tripRef,
+      depot: base.depot,
+      window: base.window,
+      stops: base.stops,
+      completedStops: done.length,
+      completedStopIds: done,
+      planId: base.planId,
+      planVersion: base.planVersion,
+      runStatus: base.runStatus,
+    );
+    try {
+      await store.write(user, SavedRoute(businessDate: ApiTripSource.dateKey(_clock()), trip: snapshot));
+    } on Object {
+      // The saved copy is a convenience; the live route is what matters.
+    }
   }
 
   /// Rebuild the local route overlay and stable operation IDs from SQLite after
@@ -538,6 +632,11 @@ class DriverSession extends ChangeNotifier {
   /// Signs out and clears the trip state. It queues nothing: the route completion, if there is one,
   /// was queued (and sent) before this is called.
   Future<void> _endSession() async {
+    // Signing out removes the saved route, like the tokens: it is only meant for the driver who is
+    // signed in, and it cannot be opened again without signing in (which needs a connection).
+    final user = identity?.userId;
+    if (user != null && user.isNotEmpty) await routeStore?.clear(user);
+    showingSavedRoute = false;
     _stopMessagePolling();
     worker?.stop();
     signedIn = false;
@@ -601,6 +700,9 @@ class DriverSession extends ChangeNotifier {
 
   /// The stored sign-in is no longer accepted: go back to sign-in instead of showing a dead end.
   Future<void> _signInExpired(String? message) async {
+    final user = identity?.userId;
+    if (user != null && user.isNotEmpty) await routeStore?.clear(user);
+    showingSavedRoute = false;
     _stopMessagePolling();
     worker?.stop();
     signedIn = false;
@@ -635,6 +737,7 @@ class DriverSession extends ChangeNotifier {
       case TripStartStatus.started:
         tripStartState = TripStartState.started;
         _baseTrip = _baseTrip!.withRunStatus('in_progress');
+        unawaited(_saveRoute());
         unawaited(worker?.syncNow());
       case TripStartStatus.offline:
         tripStartState = TripStartState.waiting;
@@ -683,6 +786,7 @@ class DriverSession extends ChangeNotifier {
     ).toSyncEvent());
     _kickSync();
     _results[stop.stopId] = draft;
+    unawaited(_saveRoute());
     updates.insert(
       0,
       UpdateItem(
