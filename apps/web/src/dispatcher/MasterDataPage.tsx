@@ -4,8 +4,9 @@ import { useAuth } from "../auth/AuthContext";
 import { todayLocal } from "../api/date";
 import { useLocale } from "../i18n";
 import { timeInputValue } from "./outletTime.mjs";
+import { formatCoordinates, locationChange, openStreetMapLink, openStreetMapSearchLink } from "./outletLocation.mjs";
 
-type Outlet = { id: string; brand: string; name: string; district: string; depot: string; dockType: string; parkingConstraint: string; mallWindow: boolean; windowOpenTime: string; windowCloseTime: string; accessInstructions:string; accessInstructionsUpdatedBy?:string; accessInstructionsUpdatedAt?:string; accessInstructionsConfirmedBy?:string; accessInstructionsConfirmedAt?:string; chilledTemperatureMinC?:number|null; chilledTemperatureMaxC?:number|null; version: number };
+type Outlet = { id: string; brand: string; name: string; district: string; depot: string; dockType: string; parkingConstraint: string; mallWindow: boolean; windowOpenTime: string; windowCloseTime: string; accessInstructions:string; accessInstructionsUpdatedBy?:string; accessInstructionsUpdatedAt?:string; accessInstructionsConfirmedBy?:string; accessInstructionsConfirmedAt?:string; chilledTemperatureMinC?:number|null; chilledTemperatureMaxC?:number|null; latitude?:number; longitude?:number; locationApproximate?:boolean; version: number };
 type CalendarDay = { date: string; isOperating: boolean; version: number };
 type Policy = { version:number; cutoffLocalTime:string; deferralWeightPoints:number; maxDeferralCount:number; maxUnservedDays:number; maxTripsPerVehicle:number; createdBy?:string; createdAt?:string };
 type Vehicle = {id:string;type:string;temp:string;weightCapacityKg:number;volumeCapacityM3:number;fuelType:string;kmPerL:number;weeklyFuelQuotaL:number;homeDepot:string;version:number};
@@ -33,8 +34,10 @@ export function MasterDataPage() {
   async function updateOutlet(e: FormEvent<HTMLFormElement>) {
     e.preventDefault(); if (!outlet) return; setSaving(true); setError(""); setNotice("");
     const form = new FormData(e.currentTarget);
+    const place = locationChange(String(form.get("locationPair")||""), outlet, form.get("removeExactLocation")==="on");
+    if (place.change === "invalid") { setError(t(place.message)); setSaving(false); return; }
     const minRaw=String(form.get("chilledTemperatureMinC")||"");const maxRaw=String(form.get("chilledTemperatureMaxC")||"");
-    const body = { ...outlet, name: String(form.get("name")||"").trim(), district: String(form.get("district")||"").trim(), depot: String(form.get("depot")||"").trim(), dockType: String(form.get("dockType")), parkingConstraint: String(form.get("parkingConstraint")), mallWindow: form.get("mallWindow")==="on", windowOpenTime: String(form.get("windowOpenTime")||""), windowCloseTime: String(form.get("windowCloseTime")||""), accessInstructions:String(form.get("accessInstructions")||"").trim(), chilledTemperatureMinC:minRaw===""?null:Number(minRaw),chilledTemperatureMaxC:maxRaw===""?null:Number(maxRaw) };
+    const body = { ...outlet, ...(place.change==='set'?{location:{latitude:place.latitude,longitude:place.longitude}}:place.change==='clear'?{location:null}:{}), name: String(form.get("name")||"").trim(), district: String(form.get("district")||"").trim(), depot: String(form.get("depot")||"").trim(), dockType: String(form.get("dockType")), parkingConstraint: String(form.get("parkingConstraint")), mallWindow: form.get("mallWindow")==="on", windowOpenTime: String(form.get("windowOpenTime")||""), windowCloseTime: String(form.get("windowCloseTime")||""), accessInstructions:String(form.get("accessInstructions")||"").trim(), chilledTemperatureMinC:minRaw===""?null:Number(minRaw),chilledTemperatureMaxC:maxRaw===""?null:Number(maxRaw) };
     try { const saved = await apiJSON<{outlet:Outlet}>(`/shared/outlets/${encodeURIComponent(outlet.id)}`,token,{method:"PUT",headers:{"If-Match":String(outlet.version)},body:JSON.stringify(body)}); setOutlets(items=>items.map(item=>item.id===saved.outlet.id?saved.outlet:item)); setNotice(`${t("Outlet")} ${saved.outlet.id} ${t("saved as version")} ${saved.outlet.version}; ${t("change recorded in audit history.")}`); }
     catch(e){setError(e instanceof ApiError&&e.status===409?t("This outlet changed in another session. Reload the latest version before editing."):e instanceof Error?e.message:t("Outlet update failed"));}
     finally{setSaving(false);}
@@ -69,7 +72,8 @@ export function MasterDataPage() {
   return <section><h2>{t("Master data")}</h2><p>{t("Dispatcher changes are versioned, validated, and written to the audit history.")}</p>
     {error&&<p className="status-bad" role="alert">{error}</p>}{notice&&<p role="status">{notice}</p>}
     <h3>{t("Outlet access and delivery windows")}</h3>
-    <label>{t("Outlet")}<select value={selected} onChange={e=>setSelected(e.target.value)}>{outlets.map(item=><option key={item.id} value={item.id}>{item.id} · {item.brand} · {item.name}</option>)}</select></label>
+    {outlets.length>0&&<p className={outlets.some(item=>item.locationApproximate!==false)?"status-warn":"status-ok"} role="status">{t("Outlets with an exact location")}: {outlets.filter(item=>item.locationApproximate===false).length} / {outlets.length}. {t("Drivers are navigated only to exact locations.")}</p>}
+    <label>{t("Outlet")}<select value={selected} onChange={e=>setSelected(e.target.value)}>{outlets.map(item=><option key={item.id} value={item.id}>{item.id} · {item.brand} · {item.name}{item.locationApproximate===false?"":` · ${t("no exact location")}`}</option>)}</select></label>
     {outlet&&<form key={`${outlet.id}-${outlet.version}`} onSubmit={updateOutlet} className="grid">
       <p>{outlet.id} · {outlet.brand} · {t("version")} {outlet.version}</p>
       <label>{t("Outlet name")}<input name="name" defaultValue={outlet.name} maxLength={120} required/></label>
@@ -80,6 +84,13 @@ export function MasterDataPage() {
       <label>{t("Window opens")}<input name="windowOpenTime" type="time" defaultValue={timeInputValue(outlet.windowOpenTime)} /></label>
       <label>{t("Window closes")}<input name="windowCloseTime" type="time" defaultValue={timeInputValue(outlet.windowCloseTime)} /></label>
       <label><input name="mallWindow" type="checkbox" defaultChecked={outlet.mallWindow}/> {t("Mall delivery window")}</label>
+      <fieldset><legend>{t("Delivery location")}</legend>
+        <p className={outlet.locationApproximate===false?"status-ok":"status-warn"} role="status">{outlet.locationApproximate===false?t("Exact location recorded. Drivers are navigated to this point."):t("Only the approximate district position is known. Drivers are not navigated to it; they search by shop name until an exact location is recorded.")}</p>
+        <label>{t("Exact location (latitude, longitude)")}<input name="locationPair" inputMode="decimal" autoComplete="off" placeholder="6.93441, 79.84281" defaultValue={outlet.locationApproximate===false&&outlet.latitude!=null&&outlet.longitude!=null?formatCoordinates(outlet.latitude,outlet.longitude):""}/></label>
+        <p className="muted">{t("Open the shop in a map app, copy its latitude and longitude, and paste them here. Leave it unchanged to keep the current position.")}</p>
+        {outlet.locationApproximate===false&&<label><input name="removeExactLocation" type="checkbox"/> {t("Remove the exact location (go back to the approximate position)")}</label>}
+        <p>{outlet.locationApproximate===false&&outlet.latitude!=null&&outlet.longitude!=null?<a href={openStreetMapLink(outlet.latitude,outlet.longitude)} target="_blank" rel="noreferrer">{t("Check this point on OpenStreetMap")}</a>:<a href={openStreetMapSearchLink(outlet.name,outlet.district)} target="_blank" rel="noreferrer">{t("Find this shop on OpenStreetMap")}</a>}</p>
+      </fieldset>
       <label>{t("Landmark, gate and last 200 metres instructions")}<textarea name="accessInstructions" defaultValue={outlet.accessInstructions} maxLength={1000} rows={4} placeholder={t("Describe the correct entrance, landmark and final approach")}/></label>
       <fieldset><legend>{t("Chilled delivery temperature limits (°C)")}</legend><p className="muted">{t("Optional outlet-specific review thresholds. Leave both blank until the outlet's accepted range is confirmed; this system does not set food-safety limits.")}</p><div className="row"><label>{t("Minimum °C")}<input name="chilledTemperatureMinC" type="number" min="-40" max="40" step="0.1" defaultValue={outlet.chilledTemperatureMinC??""}/></label><label>{t("Maximum °C")}<input name="chilledTemperatureMaxC" type="number" min="-40" max="40" step="0.1" defaultValue={outlet.chilledTemperatureMaxC??""}/></label></div></fieldset>
       {outlet.accessInstructions&&<p className={accessInstructionsNeedConfirmation(outlet)?"status-warn":"status-ok"} role="status">

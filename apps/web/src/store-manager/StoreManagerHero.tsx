@@ -1,6 +1,8 @@
 import { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useLocale } from "../i18n";
+import { cutoffHasPassed, formatCutoff, withTime } from "./cutoff.mjs";
+import { useOrderCutoff } from "./useOrderCutoff";
 import heroBg from "../assets/store-manager/hero-bg.png";
 import iconHistory from "../assets/store-manager/icon-history.svg";
 
@@ -34,15 +36,21 @@ export function StoreManagerHero({
 }
 
 export function CutoffNotice() {
-  const { t } = useLocale();
-  const hour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Colombo", hour: "2-digit", hourCycle: "h23" }).format(new Date()));
-  const open = hour < 16;
+  const { t, locale } = useLocale();
+  // The cutoff is a policy a dispatcher can change, so it is read from the order service. Until it is
+  // known (or if it cannot be read) no time is stated.
+  const local = useOrderCutoff();
+  const time = formatCutoff(local, locale);
+  const passed = cutoffHasPassed(local);
+  const title = time === undefined || passed === undefined
+    ? t("Orders placed after the daily cutoff move to the next operating day.")
+    : passed ? withTime(t("Today's {time} cutoff has passed."), time) : withTime(t("Order by {time} today for the next run."), time);
   return (
     <div className="sm-cutoff-card" role="note">
       <span className="sm-cutoff-icon" aria-hidden="true"><img src={iconHistory} alt="" width={24} height={24} /></span>
       <div>
-        <p className="sm-cutoff-title">{open ? t("Order by 4:00 PM today for the next run.") : t("Today's 4:00 PM cutoff has passed.")}</p>
-        <p className="sm-cutoff-body muted">{t("Orders placed after 4:00 PM move to the next operating day. Individual delivery windows still apply.")}</p>
+        <p className="sm-cutoff-title">{title}</p>
+        <p className="sm-cutoff-body muted">{time === undefined ? t("Individual delivery windows still apply.") : withTime(t("Orders placed after {time} move to the next operating day. Individual delivery windows still apply."), time)}</p>
       </div>
     </div>
   );

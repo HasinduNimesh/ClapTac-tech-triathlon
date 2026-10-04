@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { ApiError, apiJSON } from "../api/client";
 import { todayInSriLanka } from "../api/date.mjs";
 import { newOperationId } from "../api/delivery";
-import { DEPOT_LABELS } from "../api/loading";
+import { DEPOT_LABELS, depotCode } from "../api/loading";
 import { DEFER_REASONS, FuelLedger, Plan, PlanDetail, PlanOrder } from "../api/planning";
 import { useAuth } from "../auth/AuthContext";
 import { useLocale } from "../i18n";
@@ -11,7 +11,7 @@ import { resolveFuelAttempt } from "./fuelSubmission.mjs";
 import { DisruptionRiskPanel } from "./DisruptionRiskPanel";
 import { Outlet, outletMap } from "./types";
 import { FRESH_TRIP_BUDGET_MINUTES, normalizePlan, planChecks, tripLoads } from "./planModel";
-import { DEPOT_LOCATIONS, LatLng, MapLine, MapMarker, WaypointMap } from "../components/WaypointMap";
+import { LatLng, MapLine, MapMarker, WaypointMap, depotPosition } from "../components/WaypointMap";
 import { Banner, Check, ChipGroup, DpHero, Drawer, Meter, Note, Panel, Stat, StatRow, Tag, brandTone, meterTone } from "./ui";
 import { clock, dateTime, dayLabel, hhmm, isChilled, kg, m3, pct, useApi } from "./useApi";
 
@@ -318,15 +318,16 @@ export function PlanningPage() {
                 const depots = new Set<string>();
                 loads.filter((l) => l.orderCount > 0).forEach((load, i) => {
                   const color = TRIP_COLORS[i % TRIP_COLORS.length];
-                  const depot = load.vehicle?.homeDepot || "DEPOT_NORTH";
-                  depots.add(depot);
+                  const depot = depotCode(load.vehicle?.homeDepot);
+                  const depotAt = depotPosition(depot);
+                  if (depotAt) depots.add(depot);
                   const stops = detail.allocations.filter((a) => a.tripId === load.tripId).sort((a, b) => a.sequence - b.sequence);
                   const points = stops.map((a) => at(ordersById.get(a.orderId)?.outletId)).filter((p): p is LatLng => Boolean(p));
-                  lines.push({ id: load.tripId, points: [DEPOT_LOCATIONS[depot] || DEPOT_LOCATIONS.DEPOT_NORTH, ...points], color, weight: 3 });
+                  lines.push({ id: load.tripId, points: depotAt ? [depotAt, ...points] : points, color, weight: 3 });
                   stops.forEach((a) => { const order = ordersById.get(a.orderId); const p = at(order?.outletId); if (p) markers.push({ id: a.id, at: p, kind: "stop", color, label: `${load.vehicle?.id || ""}·${a.sequence}`, title: `${load.vehicle?.id} ${t("Trip")} ${load.tripNumber} · ${a.sequence}. ${outletLabel(order)}` }); });
                 });
                 for (const u of detail.unallocated) { const order = ordersById.get(u.orderId); const p = at(order?.outletId); if (p) markers.push({ id: `u-${u.orderId}`, at: p, kind: "stop", color: "#c03221", title: `${u.orderRef || order?.orderRef} · ${t("Unallocated")} · ${t(u.reasonCode)}` }); }
-                for (const d of depots) markers.push({ id: `depot-${d}`, at: DEPOT_LOCATIONS[d] || DEPOT_LOCATIONS.DEPOT_NORTH, kind: "depot", color: "#232d42", label: `${DEPOT_LABELS[d] || d}`, title: `${DEPOT_LABELS[d] || d}` });
+                for (const d of depots) markers.push({ id: `depot-${d}`, at: depotPosition(d)!, kind: "depot", color: "#232d42", label: `${DEPOT_LABELS[d] || d}`, title: `${DEPOT_LABELS[d] || d}` });
                 return <div className="dp-panel-body dp-stack">
                   <WaypointMap label={t("Map of planned trips")} markers={markers} lines={lines} height={480} fitKey={`${detail.plan.id}-${loads.length}-${detail.allocations.length}`} />
                   <p className="muted" style={{ margin: 0, fontSize: "0.8125rem" }}>{t("Each colour is one vehicle trip in stop order; red points are unallocated orders. Outlet positions are approximate (district centre).")}</p>

@@ -51,7 +51,7 @@ void main() {
           orderRef: 'FR-4821',
           expectedQuantity: 120,
           onSave: (_) {},
-          onRejected: () => showTakeBackSheet(context, stop: sampleStops.last, orderRef: 'FR-4821', onSave: (_) {}),
+          onRejected: () => showTakeBackSheet(context, stop: sampleStops.last, orderRef: 'FR-4821', reason: takeBackReasonText('OUTLET_CLOSED'), onSave: (_) {}),
         ),
       ),
     );

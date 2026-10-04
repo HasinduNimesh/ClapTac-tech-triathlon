@@ -74,7 +74,7 @@ export function StoreManagerLayout() {
           <img src={iconUser} alt="" width={20} height={20} />
         </div>
         <div>
-          <p className="sm-sidebar-user-name">{profile?.userId || t("Store Manager")}</p>
+          <p className="sm-sidebar-user-name">{profile?.displayName?.trim() || profile?.userId || t("Store Manager")}</p>
           <p className="sm-sidebar-user-role muted">{t("Store Manager")}</p>
         </div>
       </div>
