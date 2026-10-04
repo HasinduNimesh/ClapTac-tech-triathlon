@@ -54,7 +54,7 @@ paths:
   /loading/trips/{tripId}/orders/{orderId}/issues:
     post:
       operationId: createLoadingIssue
-      description: Record MISSING or DAMAGED. Unique Idempotency-Key.
+      description: Record MISSING, DAMAGED or WRONG_ITEM. Unique Idempotency-Key. Attach a photo afterwards with the photo endpoint.
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: "#/components/parameters/TripID"
@@ -71,7 +71,7 @@ paths:
               type: object
               required: [type, affectedUnits]
               properties:
-                type: { type: string, enum: [MISSING, DAMAGED] }
+                type: { type: string, enum: [MISSING, DAMAGED, WRONG_ITEM] }
                 affectedUnits: { type: integer, minimum: 1 }
                 note: { type: string }
       responses:
@@ -92,14 +92,14 @@ paths:
             schema:
               type: object
               properties:
-                type: { type: string, enum: [MISSING, DAMAGED] }
+                type: { type: string, enum: [MISSING, DAMAGED, WRONG_ITEM] }
                 affectedUnits: { type: integer, minimum: 1 }
                 note: { type: string }
       responses:
         "200": { description: Updated }
     delete:
       operationId: deleteLoadingIssue
-      description: After the last issue is removed the order stays SHORTFALL until explicitly loaded.
+      description: Withdraws a report. After the last report is removed the order goes back to PENDING and must be loaded or reported again.
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: "#/components/parameters/TripID"
@@ -138,6 +138,121 @@ paths:
         "400": { description: Unknown decision }
         "403": { description: Caller is not a dispatcher }
         "409": { description: Loading session is already ready }
+  /loading/trips/{tripId}/orders/{orderId}/issues/{issueId}/photo:
+    post:
+      operationId: attachLoadingIssuePhoto
+      description: Attach a PNG or JPEG photo (max 4 MB) of the missing, damaged or wrong goods. A newer photo replaces the earlier one.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TripID"
+        - $ref: "#/components/parameters/OrderID"
+        - $ref: "#/components/parameters/IssueID"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        "200": { description: Photo stored; returns the issue with hasPhoto true }
+        "400": { description: Not a PNG or JPEG, or empty }
+        "413": { description: Photo too large }
+    get:
+      operationId: getLoadingIssuePhoto
+      description: The report photo, for a loader at that depot or a dispatcher. Not cached.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TripID"
+        - $ref: "#/components/parameters/OrderID"
+        - $ref: "#/components/parameters/IssueID"
+      responses:
+        "200":
+          description: Photo bytes
+          content:
+            image/jpeg: {}
+            image/png: {}
+        "404": { description: No photo }
+  /loading/trips/{tripId}/orders/{orderId}/issues/{issueId}/seen:
+    post:
+      operationId: markLoadingIssueSeen
+      description: Records the first time a dispatcher opened the report (loading:decide), so the loader sees it was seen.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TripID"
+        - $ref: "#/components/parameters/OrderID"
+        - $ref: "#/components/parameters/IssueID"
+      responses:
+        "200": { description: Seen recorded (idempotent) }
+  /loading/trips/{tripId}/sync:
+    post:
+      operationId: syncLoadingPlanVersion
+      description: >-
+        Moves a started loading session onto the dispatcher's newer plan version after the loader
+        acknowledged it in planning. Orders added to the trip become pending lines, orders taken off
+        are removed, and lines whose stop moved are re-sequenced with a change note; a moved line that
+        was already loaded goes back to pending for a recheck.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TripID"
+        - name: If-Match
+          in: header
+          schema: { type: string }
+          description: The plan version being acknowledged.
+      responses:
+        "200": { description: Loading detail on the new plan version }
+        "409": { description: Version not acknowledged yet, changed again, or loading not in progress }
+  /loading/trips/{tripId}/alerts:
+    post:
+      operationId: raiseDockAlert
+      description: The loader's "tell dispatcher", e.g. goods for another vehicle staged at this one (WRONG_VEHICLE). Unique Idempotency-Key.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TripID"
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [orderRef]
+              properties:
+                type: { type: string, enum: [WRONG_VEHICLE] }
+                orderRef: { type: string, maxLength: 64 }
+                belongsVehicleId: { type: string }
+                note: { type: string, maxLength: 500 }
+      responses:
+        "201": { description: Alert raised or replayed }
+  /loading/alerts:
+    get:
+      operationId: listDockAlerts
+      description: A date's dock alerts; loaders see their depot, dispatchers every depot.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: date
+          in: query
+          required: true
+          schema: { type: string, format: date }
+      responses:
+        "200": { description: Dock alerts, newest first }
+  /loading/alerts/{alertId}/resolve:
+    post:
+      operationId: resolveDockAlert
+      description: Dispatcher marks a dock alert handled (loading:decide).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: alertId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Alert resolved }
   /loading/trips/{tripId}/ready:
     post:
       operationId: markTripReady
@@ -145,12 +260,26 @@ paths:
         Atomic and immutable. Pending orders block (409 loading_incomplete). A shortfall blocks
         until the dispatcher accepts a partial load, or moves the line and the confirmed plan no
         longer carries it (409 dispatcher_decision_required).
+        On a refrigerated vehicle the departure checks are required: a chilled-zone reading
+        (chilledTemperatureC, which must be 2-4 °C) and the door seal (sealNumber). A request
+        without them is refused with 400, and a reading outside the range with 409. For any other
+        vehicle they are optional but still validated when sent.
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: "#/components/parameters/TripID"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                chilledTemperatureC: { type: number, minimum: -30, maximum: 30, description: Required for a refrigerated vehicle; must be 2-4 °C there. }
+                sealNumber: { type: string, maxLength: 40 }
       responses:
         "200": { description: Ready for departure }
-        "409": { description: loading_incomplete }
+        "400": { description: A refrigerated vehicle without chilledTemperatureC or sealNumber, or an impossible value }
+        "409": { description: loading_incomplete, dispatcher_decision_required, plan not acknowledged, or chilled zone out of range }
   /loading/internal/trips:
     get:
       operationId: listReadyTripsInternal

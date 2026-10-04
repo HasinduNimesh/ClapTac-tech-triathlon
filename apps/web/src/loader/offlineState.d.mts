@@ -7,7 +7,7 @@ export type LoadingQueueOperation = {
   tripId: string;
   planVersion?: number;
   orderId?: string;
-  payload?: { type?: string; affectedUnits?: number; note?: string; stage?: string; sealId?: string; serialNumbers?: string[]; condition?: string; evidenceRef?: string; receiverName?: string };
+  payload?: { type?: string; affectedUnits?: number; note?: string; stage?: string; sealId?: string; serialNumbers?: string[]; condition?: string; evidenceRef?: string; receiverName?: string; chilledTemperatureC?: number; sealNumber?: string };
   createdAt: string;
 };
 

@@ -11,8 +11,18 @@ const (
 	LoadLoaded    = "loaded"
 	LoadShortfall = "shortfall"
 
-	IssueMissing = "MISSING"
-	IssueDamaged = "DAMAGED"
+	IssueMissing   = "MISSING"
+	IssueDamaged   = "DAMAGED"
+	IssueWrongItem = "WRONG_ITEM"
+
+	AlertWrongVehicle = "WRONG_VEHICLE"
+
+	// FreshTripBudgetMinutes is the Fresh delivery window (03:30 to 08:00)
+	// each Fresh trip must fit in.
+	FreshTripBudgetMinutes = 270
+	// Chilled zone range the loader confirms before a refrigerated trip leaves.
+	ChilledZoneMinC = 2.0
+	ChilledZoneMaxC = 4.0
 
 	// Dispatcher decisions on a loader shortfall.
 	DecisionPartialLoad    = "PARTIAL_LOAD"
@@ -52,6 +62,8 @@ type Session struct {
 	ReadyAt                      *time.Time `json:"readyAt,omitempty"`
 	PlanVersion                  int        `json:"planVersion"`
 	AcknowledgedVersion          int        `json:"acknowledgedVersion"`
+	ReadyTemperatureC            *float64   `json:"readyTemperatureC,omitempty"`
+	ReadySeal                    string     `json:"readySeal,omitempty"`
 }
 
 type OrderLoad struct {
@@ -68,6 +80,10 @@ type OrderLoad struct {
 	SuggestedLoadSequence  int    `json:"suggestedLoadSequence"`
 	Status                 string `json:"status"`
 	UpdatedBy              string `json:"updatedBy,omitempty"`
+	// ChangedInVersion and ChangeNote record how a newer plan version changed
+	// this line (for example "Moved from Stop 4"), so the loader can recheck it.
+	ChangedInVersion int    `json:"changedInVersion,omitempty"`
+	ChangeNote       string `json:"changeNote,omitempty"`
 }
 
 type Issue struct {
@@ -82,6 +98,29 @@ type Issue struct {
 	DecisionNote   string     `json:"decisionNote,omitempty"`
 	DecidedBy      string     `json:"decidedBy,omitempty"`
 	DecidedAt      *time.Time `json:"decidedAt,omitempty"`
+	ReportedAt     *time.Time `json:"reportedAt,omitempty"`
+	HasPhoto       bool       `json:"hasPhoto"`
+	PhotoKey       string     `json:"-"`
+	PhotoMime      string     `json:"-"`
+	SeenBy         string     `json:"seenBy,omitempty"`
+	SeenAt         *time.Time `json:"seenAt,omitempty"`
+}
+
+// DockAlert is a loader's "tell dispatcher" note, such as goods staged at the
+// wrong vehicle.
+type DockAlert struct {
+	ID               string     `json:"id"`
+	TripID           string     `json:"tripId"`
+	Depot            string     `json:"depot"`
+	DeliveryDate     string     `json:"deliveryDate"`
+	Type             string     `json:"type"`
+	OrderRef         string     `json:"orderRef"`
+	BelongsVehicleID string     `json:"belongsVehicleId,omitempty"`
+	Note             string     `json:"note,omitempty"`
+	ReportedBy       string     `json:"reportedBy"`
+	CreatedAt        time.Time  `json:"createdAt"`
+	ResolvedBy       string     `json:"resolvedBy,omitempty"`
+	ResolvedAt       *time.Time `json:"resolvedAt,omitempty"`
 }
 
 type PlanningTrip struct {
@@ -98,6 +137,11 @@ type PlanningTrip struct {
 	VehicleType                  string                `json:"vehicleType"`
 	VehicleTemperatureCapability string                `json:"vehicleTemperatureCapability"`
 	VehicleDepot                 string                `json:"vehicleDepot"`
+	VehicleWeightCapacityKg      float64               `json:"vehicleWeightCapacityKg"`
+	VehicleVolumeCapacityM3      float64               `json:"vehicleVolumeCapacityM3"`
+	PlanPublishedBy              string                `json:"planPublishedBy,omitempty"`
+	PlannedDepartureAt           *time.Time            `json:"plannedDepartureAt,omitempty"`
+	PlannedReturnAt              *time.Time            `json:"plannedReturnAt,omitempty"`
 	Allocations                  []PlanningAlloc       `json:"allocations"`
 }
 
@@ -112,8 +156,20 @@ type PlanningAlloc struct {
 	OrderID          string     `json:"orderId"`
 	OrderRef         string     `json:"orderRef"`
 	OutletID         string     `json:"outletId"`
-	StopSequence     int        `json:"stopSequence"`
-	PlannedArrivalAt *time.Time `json:"plannedArrivalAt,omitempty"`
+	StopSequence       int        `json:"stopSequence"`
+	PlannedArrivalAt   *time.Time `json:"plannedArrivalAt,omitempty"`
+	PlannedDepartureAt *time.Time `json:"plannedDepartureAt,omitempty"`
+	Brand              string     `json:"brand,omitempty"`
+	WeightKg           float64    `json:"weightKg"`
+	VolumeM3           float64    `json:"volumeM3"`
+	Temperature        string     `json:"temperatureRequirement,omitempty"`
+	OutletName         string     `json:"outletName,omitempty"`
+	DockType           string     `json:"dockType,omitempty"`
+	District           string     `json:"district,omitempty"`
+	WindowOpen         string     `json:"windowOpen,omitempty"`
+	WindowClose        string     `json:"windowClose,omitempty"`
+	ParkingConstraint  string     `json:"parkingConstraint,omitempty"`
+	MallWindow         bool       `json:"mallWindow,omitempty"`
 }
 
 type OrderDetail struct {
