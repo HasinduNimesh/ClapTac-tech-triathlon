@@ -625,6 +625,7 @@ func (s Service) DecideIssue(ctx context.Context, profile *authorization.Profile
 	}
 	_ = s.Repo.MarkIssueSeen(ctx, issueID, actor(profile))
 	s.Peers.Publish(ctx, audit.ActionLoadingShortfallDecided, actor(profile), "ORDER", orderID, map[string]any{"issueId": issueID, "tripId": tripID, "decision": decision, "note": note})
+	s.notifyStoreOfShortfall(ctx, load, iss, decision)
 	return s.Repo.GetIssue(ctx, issueID)
 }
 

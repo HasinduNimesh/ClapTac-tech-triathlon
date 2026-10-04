@@ -920,3 +920,7 @@ export function translate(locale, source) {
   }
   return source;
 }
+
+// W4: chilled load exceptions rank first in dispatcher notifications.
+Object.assign(labels.si, { "Critical · chilled load exception": "විවේචනාත්මක · සිසිල් භාණ්ඩ බර ගැටලුව" });
+Object.assign(labels.ta, { "Critical · chilled load exception": "மிக முக்கியம் · குளிர் பொருள் ஏற்றுதல் சிக்கல்" });

@@ -109,6 +109,11 @@ func (h Handler) enqueueNotification(w http.ResponseWriter, r *http.Request) {
 			apierrors.BadRequest(w, "major delay must be between 30 minutes and 24 hours")
 			return
 		}
+	} else if e.Type == "LOAD_SHORTFALL" {
+		if e.Units < 1 || e.Units > 100000 || (e.Reason != "PARTIAL_LOAD" && e.Reason != "HOLD" && e.Reason != "MOVE_TO_NEXT_RUN") {
+			apierrors.BadRequest(w, "load shortfall needs units and a dispatcher decision")
+			return
+		}
 	} else {
 		apierrors.BadRequest(w, "unsupported notification type")
 		return
