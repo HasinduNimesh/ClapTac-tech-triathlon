@@ -290,7 +290,8 @@ func (p Postgres) PrepareTx(ctx context.Context, run domain.Run, stops []domain.
 func (p Postgres) StartRun(ctx context.Context, runID, actor string) (domain.Run, error) {
 	row := p.Pool.QueryRow(ctx, `
 		UPDATE runs SET status = $2, started_by = $3, started_at = now(), updated_at = now(), version = version + 1
-		WHERE id::text = $1 AND status = $4
+		WHERE id::text = $1 AND status = $4 AND EXISTS (
+			SELECT 1 FROM delivery.run_checkouts c WHERE c.run_id=runs.id AND c.plan_version=runs.plan_version AND c.status='confirmed')
 		RETURNING `+runReturning, runID, domain.RunInProgress, actor, domain.RunPrepared)
 	return scanRun(row)
 }
@@ -447,14 +448,22 @@ func (p Postgres) InsertDriverIncident(ctx context.Context, runID, stopID, opera
 func (p Postgres) OrderTracking(ctx context.Context, orderID string) (domain.OrderTracking, error) {
 	var t domain.OrderTracking
 	var short []byte
-	err := p.Pool.QueryRow(ctx, `SELECT r.id::text,r.trip_id,r.vehicle_id,r.status,s.id::text,COALESCE(s.outcome_code,''),COALESCE(s.outcome_reason,''),s.outcome_at,s.completed_at,s.loading_shortfall_summary
+	err := p.Pool.QueryRow(ctx, `SELECT r.id::text,r.trip_id,r.vehicle_id,r.status,s.id::text,COALESCE(s.outcome_code,''),COALESCE(s.outcome_reason,''),s.outcome_at,s.completed_at,s.loading_shortfall_summary,s.delivered_units
 		FROM stops s JOIN runs r ON r.id=s.run_id WHERE s.order_id=$1
-		ORDER BY r.updated_at DESC,COALESCE(s.completed_at,s.outcome_received_at,s.arrived_at) DESC NULLS LAST LIMIT 1`, orderID).Scan(&t.RunID, &t.TripID, &t.VehicleID, &t.RunStatus, &t.StopID, &t.Outcome, &t.Reason, &t.OccurredAt, &t.CompletedAt, &short)
+		ORDER BY r.updated_at DESC,COALESCE(s.completed_at,s.outcome_received_at,s.arrived_at) DESC NULLS LAST LIMIT 1`, orderID).Scan(&t.RunID, &t.TripID, &t.VehicleID, &t.RunStatus, &t.StopID, &t.Outcome, &t.Reason, &t.OccurredAt, &t.CompletedAt, &short, &t.DeliveredUnits)
 	if err == pgx.ErrNoRows {
 		return t, fmt.Errorf("not found")
 	}
 	if err != nil {
 		return t, err
+	}
+	if t.RunStatus == domain.RunInProgress {
+		prediction, e := p.ArrivalPrediction(ctx, t.StopID)
+		if e == nil { t.ArrivalPrediction = prediction }
+	}
+	if t.Outcome == domain.OutcomeRefused {
+		returned, e := p.ReturnedGoods(ctx, t.StopID)
+		if e == nil { t.ReturnedGoods = returned }
 	}
 	_ = json.Unmarshal(short, &t.LoadingShortfallSummary)
 	if t.LoadingShortfallSummary == nil {

@@ -19,5 +19,7 @@ images:
     newTag: dev
   - name: waypoint/agent-orchestrator
     newTag: dev
+  - name: waypoint/agent-assistants
+    newTag: dev
   - name: waypoint/web
     newTag: dev

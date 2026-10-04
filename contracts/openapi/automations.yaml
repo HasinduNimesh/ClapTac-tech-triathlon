@@ -1,0 +1,191 @@
+openapi: 3.1.0
+info:
+  title: Waypoint Personal Automations
+  version: 1.0.0
+servers:
+  - url: /api/v1
+security:
+  - bearerAuth: []
+paths:
+  /agent/workflows/draft:
+    post:
+      summary: Interpret a weekly deferral-list request without saving or executing it
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [message]
+              properties:
+                message: { type: string, maxLength: 4000 }
+      responses:
+        '200': { description: A definition with drafting source, or a clarification }
+        '403': { description: Store Manager or Dispatcher required }
+  /shared/automations/:
+    get:
+      summary: List the caller's non-deleted workflows and habit preference
+      responses:
+        '200': { description: items, habitEnabled and demoHistory }
+    post:
+      summary: Turn on an immutable tested preview belonging to the caller
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [previewId]
+              properties:
+                previewId: { type: string, format: uuid }
+      responses:
+        '201': { description: Workflow ID; repeating the same preview does not create a second workflow }
+        '409': { description: Preview missing, expired after 15 minutes, or workflow limit reached }
+  /shared/automations/preview:
+    post:
+      summary: Evaluate a candidate without performing its action
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [definition, at]
+              properties:
+                definition: { $ref: '#/components/schemas/Definition' }
+                at: { type: string, enum: [now, previous] }
+      responses:
+        '200': { description: Preview ID and result scoped to current outlet access }
+        '400': { description: Unsupported definition }
+        '422': { description: Historical coverage or data unavailable }
+  /shared/automations/{id}/status:
+    post:
+      summary: Pause, resume or soft-delete an owned workflow
+      parameters:
+        - $ref: '#/components/parameters/id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [status]
+              properties:
+                status: { type: string, enum: [active, paused, deleted] }
+      responses:
+        '200': { description: Updated status }
+        '404': { description: Workflow is missing, deleted or belongs to another person }
+  /shared/automations/habits:
+    get:
+      summary: Obtain eligible evidence-backed suggestions for the caller only
+      responses:
+        '200': { description: Up to three suggestions; empty when disabled or suppressed }
+  /shared/automations/habits/{id}/respond:
+    post:
+      summary: Answer an owned suggestion once
+      parameters:
+        - $ref: '#/components/parameters/id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [response]
+              properties:
+                response: { type: string, enum: [yes, no, never] }
+      responses:
+        '200': { description: Suggestion, prefill or review action, and persistent Yes/No counts }
+        '409': { description: Already answered, expired, suppressed, missing or no longer applicable }
+  /shared/automations/preferences:
+    put:
+      summary: Enable or disable the caller's habit helper independently of saved workflows
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [enabled]
+              properties:
+                enabled: { type: boolean }
+      responses:
+        '200': { description: Saved preference }
+  /shared/automations/inbox:
+    get:
+      summary: Latest 50 owned notifications with current outlet scope reapplied
+      responses:
+        '200': { description: Inbox items }
+  /shared/automations/runs:
+    get:
+      summary: Latest 50 owned completed or no-match runs
+      responses:
+        '200': { description: Run items }
+  /shared/automations/priorities:
+    get:
+      summary: Dispatcher-only deferred outlets and personal review flags
+      responses:
+        '200': { description: Deferred items and marked outlet IDs }
+    post:
+      summary: Manually flag a repeat-deferred outlet for personal review for seven days
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [outletId]
+              properties:
+                outletId: { type: string }
+      responses:
+        '200': { description: Review flag saved; allocation scores are unchanged }
+        '409': { description: Outlet has fewer than two recorded deferral dates }
+  /planning/internal/automation-snapshot:
+    get:
+      summary: Planning-owned historical projection; requires automations:read-internal service scope
+      parameters:
+        - name: at
+          in: query
+          required: true
+          schema: { type: string, format: date-time }
+      responses:
+        '200': { description: asOf, historySince, and deferred items; callers must respect historySince and enforce owner scope }
+        '403': { description: Missing internal service scope }
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  parameters:
+    id:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  schemas:
+    Definition:
+      type: object
+      additionalProperties: false
+      required: [version, name, weekday, time, timezone, action]
+      properties:
+        version: { type: integer, const: 1 }
+        name: { type: string, minLength: 1, maxLength: 120 }
+        weekday: { type: integer, minimum: 0, maximum: 6, description: Sunday is zero }
+        time: { type: string, pattern: '^[0-2][0-9]:[0-5][0-9]$' }
+        timezone: { type: string, const: Asia/Colombo }
+        action: { type: string, enum: [notify_deferrals, prefill_order, priority_review] }
+        prefill:
+          type: object
+          additionalProperties: false
+          required: [outletId, orderUnits, orderWeightKg, orderVolumeM3, temperatureRequirement]
+          properties:
+            outletId: { type: string }
+            orderUnits: { type: integer, minimum: 1, maximum: 1000000 }
+            orderWeightKg: { type: number, exclusiveMinimum: 0, maximum: 1000000 }
+            orderVolumeM3: { type: number, exclusiveMinimum: 0, maximum: 1000000 }
+            temperatureRequirement: { type: string, enum: [ambient, chilled] }

@@ -37,14 +37,15 @@ func main() {
 			TokenURL:     getenv("OIDC_TOKEN_URL", "http://thunderid:8090/oauth2/token"),
 			ClientID:     os.Getenv("M2M_CLIENT_ID"),
 			ClientSecret: os.Getenv("M2M_CLIENT_SECRET"),
-			Scope:        "orders:read-internal fleet:read-internal outlets:read-internal deliveries:read-internal audit:write policy:read-internal",
+			Scope:        "orders:read-internal fleet:read-internal fleet:update outlets:read-internal deliveries:read-internal audit:write policy:read-internal",
 			Resource:     getenv("OIDC_AUDIENCE", "waypoint-api"),
 		},
 	}
 	h := handler.Handler{
-		Authn:    app.Authenticator,
-		Profiles: client.Profiles{Shared: peers},
-		Service:  service.Service{Repo: store.Postgres{Pool: pool}, Peers: peers},
+		Authn:      app.Authenticator,
+		Automation: store.Postgres{Pool: pool},
+		Profiles:   client.Profiles{Shared: peers},
+		Service:    service.Service{Repo: store.Postgres{Pool: pool}, Peers: peers},
 	}
 	if err := app.Run(func(r chi.Router) { h.Routes(r) }); err != nil {
 		log.Fatal(err)

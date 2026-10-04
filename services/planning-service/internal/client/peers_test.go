@@ -91,7 +91,7 @@ func TestQueueNotificationUsesStableEventAndM2MAuth(t *testing.T) {
 			t.Fatal("notification enqueue must use service credentials")
 		}
 		b, _ := io.ReadAll(r.Body)
-		for _, want := range []string{`"eventKey":"deferral:PLAN-01:ORD-01"`, `"outletId":"OUT001"`, `"type":"DEFERRAL"`, `"orderRef":"ORD-01"`} {
+		for _, want := range []string{`"eventKey":"deferral:PLAN-01:ORD-01"`, `"outletId":"OUT001"`, `"type":"DEFERRAL"`, `"orderRef":"ORD-01"`, `"nextRun":"2026-10-07"`} {
 			if !strings.Contains(string(b), want) {
 				t.Fatalf("missing %s in payload %s", want, b)
 			}
@@ -99,7 +99,7 @@ func TestQueueNotificationUsesStableEventAndM2MAuth(t *testing.T) {
 		return &http.Response{StatusCode: http.StatusAccepted, Body: io.NopCloser(strings.NewReader(`{"notification":{"status":"enqueued","id":1}}`)), Request: r}, nil
 	})
 	p := Peers{SharedURL: "http://shared.test", M2M: testToken("planning-service-token"), HTTP: &http.Client{Transport: transport}}
-	if err := p.QueueNotification(context.Background(), "deferral:PLAN-01:ORD-01", "OUT001", "DEFERRAL", "ORD-01", "WINDOW", 0); err != nil {
+	if err := p.QueueNotification(context.Background(), "deferral:PLAN-01:ORD-01", "OUT001", "DEFERRAL", "ORD-01", "WINDOW", 0, "2026-10-07"); err != nil {
 		t.Fatal(err)
 	}
 }

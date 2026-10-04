@@ -47,6 +47,14 @@ func (p Postgres) Get(id string) (domain.Order, error) {
 	return scanOrder(row)
 }
 
+func (p Postgres) GetImported(source, externalID string) (domain.Order, error) {
+    row := p.Pool.QueryRow(context.Background(), `SELECT id::text,order_ref,outlet_id,brand,requested_delivery_date::text,
+        order_units,order_weight_kg,order_volume_m3,temperature_requirement,status,created_by,created_at,
+        source_system,COALESCE(external_order_id,'') FROM orders.orders
+        WHERE source_system=$1 AND external_order_id=$2`, source, externalID)
+    return scanOrder(row)
+}
+
 func (p Postgres) List(filter domain.ListFilter) ([]domain.Order, error) {
 	q := `
 		SELECT id::text, order_ref, outlet_id, brand, requested_delivery_date::text,
