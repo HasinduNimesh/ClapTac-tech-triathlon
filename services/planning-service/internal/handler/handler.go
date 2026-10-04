@@ -364,6 +364,9 @@ func writeErr(w http.ResponseWriter, err error) bool {
 		apierrors.NotFound(w, msg)
 	case strings.HasPrefix(msg, "conflict"):
 		apierrors.Conflict(w, msg)
+	case strings.HasPrefix(msg, "workshop_pending"):
+		// The vehicle is not in the workshop yet, so the recovery is incomplete and retryable.
+		apierrors.WriteCode(w, http.StatusBadGateway, "Bad Gateway", msg, "workshop_pending")
 	case strings.HasPrefix(msg, "stale_version"):
 		apierrors.Conflict(w, "plan version is stale; reload and acknowledge the current version")
 	case strings.HasPrefix(msg, "forbidden"):

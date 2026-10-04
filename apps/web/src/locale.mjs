@@ -1409,4 +1409,14 @@ Object.assign(labels.ta, {
   "In your Notifications only": "உங்கள் அறிவிப்புகளில் மட்டும்",
   "Notices the system recorded for your store appear here, newest first. Some are also sent as text messages.": "உங்கள் கடைக்காக அமைப்பு பதிவு செய்த அறிவிப்புகள் புதியவை முதலில் இங்கே தோன்றும். அவற்றில் சில குறுஞ்செய்தியாகவும் அனுப்பப்படும்.",
   "No notices have been recorded for your store yet.": "உங்கள் கடைக்கு இன்னும் அறிவிப்புகள் பதிவாகவில்லை.",
+  "Recovery is not complete": "ප්‍රතිසාධනය සම්පූර්ණ නැත",
+  "could not be marked as in the workshop, so it can still be planned. The replacement is not confirmed until this succeeds.": "වැඩමුළුවේ ඇති බව සටහන් කළ නොහැකි විය, එබැවින් එය තවමත් සැලසුම් කළ හැක. මෙය සාර්ථක වන තුරු ප්‍රතිස්ථාපනය තහවුරු කර නැත.",
+  "Trips already published:": "දැනටමත් ප්‍රකාශිත ගමන්:",
+  "Retry workshop update": "වැඩමුළු යාවත්කාලීනය නැවත උත්සාහ කරන්න",
+});
+Object.assign(labels.ta, {
+  "Recovery is not complete": "மீட்பு நிறைவடையவில்லை",
+  "could not be marked as in the workshop, so it can still be planned. The replacement is not confirmed until this succeeds.": "பட்டறையில் உள்ளதாகக் குறிக்க முடியவில்லை, எனவே இதைத் தொடர்ந்து திட்டமிட முடியும். இது வெற்றி பெறும் வரை மாற்று வாகனம் உறுதிசெய்யப்படாது.",
+  "Trips already published:": "ஏற்கனவே வெளியிடப்பட்ட பயணங்கள்:",
+  "Retry workshop update": "பட்டறைப் புதுப்பிப்பை மீண்டும் முயலவும்",
 });

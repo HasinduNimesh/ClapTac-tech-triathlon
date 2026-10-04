@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -20,6 +21,7 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 
+	"github.com/HasinduNimesh/ClapTac-tech-triathlon/pkg/audit"
 	"github.com/HasinduNimesh/ClapTac-tech-triathlon/pkg/auth"
 	"github.com/HasinduNimesh/ClapTac-tech-triathlon/pkg/authorization"
 	"github.com/HasinduNimesh/ClapTac-tech-triathlon/pkg/db"
@@ -92,7 +94,8 @@ func TestPlanningGenerateConfirm(t *testing.T) {
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0036_planning_unallocated_reasons.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0037_planning_deferral_next_run.sql"))
 
-	peers := httptest.NewServer(peerStub())
+	probe := &peerProbe{}
+	peers := httptest.NewServer(peerStubWith(probe))
 	t.Cleanup(peers.Close)
 
 	planPool, err := db.Open(ctx, dsn, "planning")
@@ -368,11 +371,55 @@ func TestPlanningGenerateConfirm(t *testing.T) {
 	if err := (planstore.Postgres{Pool: planPool}).Acknowledge(ctx, created.Plan.ID, 0, "USR003", authorization.RoleLoader); err == nil || err.Error() != "stale_version" {
 		t.Fatalf("stale ack should be rejected, got %v", err)
 	}
-	breakdownResult, err := (planservice.Service{Repo: planstore.Postgres{Pool: planPool}, Peers: client}).ConfirmBreakdown(ctx, &authorization.Profile{UserID: "USR002", Roles: []string{authorization.RoleDispatcher}}, created.Plan.ID, "VEH001", "VEH002", 1)
-	if err != nil || breakdownResult["status"] != "confirmed" || breakdownResult["planVersion"] != 2 {
-		t.Fatalf("confirmed breakdown reassignment did not publish a new plan version: %+v err=%v", breakdownResult, err)
-	}
 	var movedVehicle string
+	if got := probe.puts(); len(got) != 0 {
+		t.Fatalf("a rejected breakdown must not touch the fleet: %v", got)
+	}
+	// Fleet-service is down for the first attempt: the recovery must not be
+	// reported as confirmed, nothing may be committed, and no audit is written.
+	probe.failNextWorkshopPuts(1)
+	reassign := func() (int, string) {
+		rq, _ := http.NewRequest(http.MethodPost, planSrv.URL+"/api/v1/planning/plans/"+created.Plan.ID+"/breakdowns/reassign", strings.NewReader(`{"sourceVehicleId":"VEH001","replacementVehicleId":"VEH002","tripNumber":1}`))
+		rq.Header.Set("Authorization", "Bearer usr-dispatcher")
+		rq.Header.Set("Content-Type", "application/json")
+		rs, err := http.DefaultClient.Do(rq)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer rs.Body.Close()
+		return rs.StatusCode, readBody(rs)
+	}
+	status, failedBody := reassign()
+	if status != http.StatusBadGateway || !strings.Contains(failedBody, `"code":"workshop_pending"`) || strings.Contains(failedBody, `"confirmed"`) {
+		t.Fatalf("workshop failure must be a retryable non-success state, got %d %s", status, failedBody)
+	}
+	pending, err := (planstore.Postgres{Pool: planPool}).Get(ctx, created.Plan.ID)
+	if err != nil || pending.Status != "confirmed" || pending.CurrentVersion != 1 {
+		t.Fatalf("workshop failure must not create a plan version: %+v err=%v", pending, err)
+	}
+	if err := planPool.QueryRow(ctx, `SELECT vehicle_id FROM planning.allocations WHERE order_id='ord-1'`).Scan(&movedVehicle); err != nil || movedVehicle != "VEH001" {
+		t.Fatalf("workshop failure must leave the allocation on the source vehicle: %s %v", movedVehicle, err)
+	}
+	if n := probe.auditCount(audit.ActionBreakdownRecoveryConfirmed); n != 0 {
+		t.Fatalf("no recovery audit may be written before the vehicle is in the workshop, got %d", n)
+	}
+	// Retrying the identical request completes it exactly once.
+	status, okBody := reassign()
+	var breakdownResult map[string]any
+	_ = json.Unmarshal([]byte(okBody), &breakdownResult)
+	if status != http.StatusOK || breakdownResult["status"] != "confirmed" || breakdownResult["planVersion"] != float64(2) || breakdownResult["vehicleInWorkshop"] != true {
+		t.Fatalf("retry did not confirm the breakdown reassignment: %d %s", status, okBody)
+	}
+	if got := probe.puts(); len(got) != 2 || !strings.Contains(got[1], `"status":"in_workshop"`) || !strings.Contains(got[1], "/VEH001/availability") {
+		t.Fatalf("fleet should see the failed attempt then one successful in_workshop update for VEH001: %v", got)
+	}
+	var versions int
+	if err := planPool.QueryRow(ctx, `SELECT count(*) FROM planning.plan_publications WHERE plan_id=$1::uuid`, created.Plan.ID).Scan(&versions); err != nil || versions != 2 {
+		t.Fatalf("expected exactly one new plan version after the retry, have %d publications (err=%v)", versions, err)
+	}
+	if n := probe.auditCount(audit.ActionBreakdownRecoveryConfirmed); n != 1 {
+		t.Fatalf("expected exactly one BREAKDOWN_RECOVERY_CONFIRMED audit, got %d", n)
+	}
 	if err := planPool.QueryRow(ctx, `SELECT vehicle_id FROM planning.allocations WHERE order_id='ord-1'`).Scan(&movedVehicle); err != nil || movedVehicle != "VEH002" {
 		t.Fatalf("breakdown allocation did not move atomically: %s %v", movedVehicle, err)
 	}
@@ -878,8 +925,52 @@ func overweightOrderPeerStub() http.Handler {
 	return r
 }
 
-func peerStub() http.Handler {
+// peerProbe lets a test make fleet-service's availability update fail and
+// observe which fleet updates and audit actions the planner sent.
+type peerProbe struct {
+	mu       sync.Mutex
+	failPuts int
+	putLog   []string
+	actions  []string
+}
+
+func (p *peerProbe) failNextWorkshopPuts(n int) { p.mu.Lock(); p.failPuts = n; p.mu.Unlock() }
+func (p *peerProbe) puts() []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return append([]string(nil), p.putLog...)
+}
+func (p *peerProbe) auditCount(action string) int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	n := 0
+	for _, a := range p.actions {
+		if a == action {
+			n++
+		}
+	}
+	return n
+}
+
+func peerStub() http.Handler { return peerStubWith(&peerProbe{}) }
+
+func peerStubWith(probe *peerProbe) http.Handler {
 	r := chi.NewRouter()
+	r.Put("/api/v1/fleet/vehicles/{id}/availability", func(w http.ResponseWriter, req *http.Request) {
+		raw, _ := io.ReadAll(req.Body)
+		probe.mu.Lock()
+		probe.putLog = append(probe.putLog, req.URL.Path+" "+string(raw))
+		fail := probe.failPuts > 0
+		if fail {
+			probe.failPuts--
+		}
+		probe.mu.Unlock()
+		if fail {
+			http.Error(w, "fleet unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{"availability": map[string]any{"vehicleId": chi.URLParam(req, "id"), "status": "in_workshop"}})
+	})
 	r.Get("/api/v1/delivery/internal/outlets/last-served", func(w http.ResponseWriter, _ *http.Request) {
 		httpx.WriteJSON(w, http.StatusOK, map[string]any{"items": []map[string]any{{"outletId": "OUT034", "lastServedAt": "2026-09-28T16:00:00Z"}}})
 	})
@@ -927,7 +1018,14 @@ func peerStub() http.Handler {
 		}
 		httpx.WriteJSON(w, http.StatusOK, map[string]any{"profile": map[string]any{"userId": "USR002", "subject": p.Subject, "roles": []string{role}}})
 	})
-	r.Post("/api/v1/shared/audit-events", func(w http.ResponseWriter, _ *http.Request) {
+	r.Post("/api/v1/shared/audit-events", func(w http.ResponseWriter, req *http.Request) {
+		var event struct {
+			Action string `json:"action"`
+		}
+		_ = json.NewDecoder(req.Body).Decode(&event)
+		probe.mu.Lock()
+		probe.actions = append(probe.actions, event.Action)
+		probe.mu.Unlock()
 		httpx.WriteJSON(w, http.StatusAccepted, map[string]any{"status": "ingested"})
 	})
 	return r

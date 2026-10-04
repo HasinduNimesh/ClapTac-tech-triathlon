@@ -11,6 +11,8 @@ type Problem struct {
 	Status   int    `json:"status"`
 	Detail   string `json:"detail,omitempty"`
 	Instance string `json:"instance,omitempty"`
+	// Code is a stable machine-readable reason a client can branch on.
+	Code string `json:"code,omitempty"`
 }
 
 func Write(w http.ResponseWriter, status int, title, detail string) {
@@ -22,6 +24,13 @@ func Write(w http.ResponseWriter, status int, title, detail string) {
 		Status: status,
 		Detail: detail,
 	})
+}
+
+// WriteCode is Write plus a stable machine-readable code.
+func WriteCode(w http.ResponseWriter, status int, title, detail, code string) {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(Problem{Type: "about:blank", Title: title, Status: status, Detail: detail, Code: code})
 }
 
 func Unauthorized(w http.ResponseWriter, detail string) {
