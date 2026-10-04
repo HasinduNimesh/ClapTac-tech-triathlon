@@ -220,6 +220,18 @@ func TestAuditSearchKPIsAndAppendOnly(t *testing.T) {
 	if res := request("dispatcher-test", "/api/v1/shared/audit/events?limit=1000"); res.Code != http.StatusBadRequest {
 		t.Fatalf("invalid search bound: %d %s", res.Code, res.Body.String())
 	}
+	if res := request("dispatcher-test", "/api/v1/shared/audit/export.csv?action=MASTER_DATA_CALENDAR_UPDATED"); res.Code != http.StatusOK ||
+		!strings.HasPrefix(res.Header().Get("Content-Type"), "text/csv") ||
+		!strings.Contains(res.Header().Get("Content-Disposition"), "attachment; filename=") ||
+		!strings.HasPrefix(res.Body.String(), "event_id,timestamp,actor_id") {
+		t.Fatalf("dispatcher audit export: %d %v %s", res.Code, res.Header(), res.Body.String())
+	}
+	if res := request("driver-test", "/api/v1/shared/audit/export.csv"); res.Code != http.StatusForbidden {
+		t.Fatalf("driver audit export: %d", res.Code)
+	}
+	if res := request("dispatcher-test", "/api/v1/shared/audit/export.csv?from=bad"); res.Code != http.StatusBadRequest {
+		t.Fatalf("invalid export filter: %d", res.Code)
+	}
 	put := func(subject, path, body string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodPut, path, bytes.NewBufferString(body))
 		req.Header.Set("Authorization", "Bearer "+subject)

@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
-import { apiJSON } from "../api/client";
+import { apiFetch, apiJSON } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { useLocale } from "../i18n";
 import { buildAuditSearchParams } from "./auditQuery.mjs";
@@ -44,6 +44,20 @@ export function AuditPage() {
     } catch (e) { setError(e instanceof Error ? e.message : "Audit data could not be loaded"); }
     finally { setLoading(false); }
   }
+  async function exportCsv() {
+    if (!token) return;
+    setError("");
+    try {
+      const params = buildAuditSearchParams({ query, action, resourceType, resourceId, actorId, from, to }, 0);
+      params.delete("limit"); params.delete("offset");
+      const res = await apiFetch(`/shared/audit/export.csv?${params}`, token, { headers: { Accept: "text/csv" } });
+      if (!res.ok) throw new Error(await res.text() || res.statusText);
+      const url = URL.createObjectURL(await res.blob());
+      const a = document.createElement("a");
+      a.href = url; a.download = "audit-export.csv"; a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) { setError(e instanceof Error ? e.message : "Audit export failed"); }
+  }
   useEffect(() => { void load(); }, [token]);
   function submit(e: FormEvent) { e.preventDefault(); void load(0); }
 
@@ -69,6 +83,7 @@ export function AuditPage() {
       <label>{t("From (Sri Lanka time)")}<input aria-label={t("From (Sri Lanka time)")} type="datetime-local" value={from} onChange={e => setFrom(e.target.value)} /></label>
       <label>{t("To (Sri Lanka time)")}<input aria-label={t("To (Sri Lanka time)")} type="datetime-local" value={to} onChange={e => setTo(e.target.value)} /></label>
       <button type="submit" disabled={loading}>{loading ? t("Searching…") : t("Search")}</button>
+      <button type="button" onClick={() => void exportCsv()}>{t("Export CSV")}</button>
     </form>
     {result && <>
       <p>{result.total} {t("matching events · page")} {Math.floor(result.offset / result.limit) + 1}</p>

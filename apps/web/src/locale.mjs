@@ -920,3 +920,7 @@ export function translate(locale, source) {
   }
   return source;
 }
+
+// W14 audit export
+Object.assign(labels.si, { "Export CSV": "CSV ලෙස අපනයනය" });
+Object.assign(labels.ta, { "Export CSV": "CSV ஆக ஏற்றுமதி" });
