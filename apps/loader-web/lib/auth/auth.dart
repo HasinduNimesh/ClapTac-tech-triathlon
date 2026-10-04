@@ -47,7 +47,7 @@ class AuthSession {
       );
 }
 
-enum SignInError { notConfigured, denied, notVerified, exchangeFailed, noConnection, noProfile, wrongRole, wrongAudience, sessionExpired }
+enum SignInError { notConfigured, denied, notVerified, exchangeFailed, noConnection, noProfile, wrongRole, wrongAudience, sessionExpired, inactivity }
 
 class SignInException implements Exception {
   SignInException(this.kind, [this.detail = '']);
@@ -88,6 +88,9 @@ class AuthService extends ChangeNotifier {
   static const _sessionKey = 'waypoint.loader.session';
   static const _stateKey = 'waypoint.loader.oidc.state';
   static const _verifierKey = 'waypoint.loader.oidc.verifier';
+  // Why the last person was signed out by the app (inactivity). Per-tab storage, so the message
+  // survives the round trip to the identity server's end-session page and back.
+  static const _reasonKey = 'waypoint.loader.signout.reason';
   // How long before expiry a token is renewed.
   static const _renewBefore = Duration(seconds: 60);
 
@@ -125,7 +128,10 @@ class AuthService extends ChangeNotifier {
 
   Future<void> _restore() async {
     final raw = browser.sessionGet(_sessionKey);
-    if (raw == null) return _setSignedOut();
+    if (raw == null) {
+      error = _takeSignOutReason();
+      return _setSignedOut();
+    }
     AuthSession stored;
     try {
       stored = AuthSession.fromJson(jsonDecode(raw) as Map<String, dynamic>);
@@ -298,11 +304,20 @@ class AuthService extends ChangeNotifier {
 
   /// Ends the session here and, when the identity server has an end-session endpoint, there
   /// too, so the next person on a shared tablet is not signed in by the previous one's cookie.
-  Future<void> signOut() async {
+  ///
+  /// [reason] is shown on the sign-in screen (the app signed the person out, they did not choose
+  /// to). It is also kept in this tab's storage, so it is still there if the browser leaves for
+  /// the identity server's sign-out page and returns.
+  Future<void> signOut({SignInException? reason}) async {
     final idToken = session?.idToken;
     _clear();
     status = AuthStatus.signedOut;
-    error = null;
+    error = reason;
+    if (reason != null && reason.kind == SignInError.inactivity) {
+      browser.sessionSet(_reasonKey, reason.detail.isEmpty ? 'inactivity' : 'inactivity:${reason.detail}');
+    } else {
+      browser.sessionRemove(_reasonKey);
+    }
     notifyListeners();
     final end = (await _discoverQuietly())?.endSession;
     if (end != null) {
@@ -318,7 +333,16 @@ class AuthService extends ChangeNotifier {
 
   // ------------------------------------------------------------------ plumbing
 
+  SignInException? _takeSignOutReason() {
+    final raw = browser.sessionGet(_reasonKey);
+    if (raw == null) return null;
+    browser.sessionRemove(_reasonKey);
+    if (!raw.startsWith('inactivity')) return null;
+    return SignInException(SignInError.inactivity, raw.contains(':') ? raw.substring(raw.indexOf(':') + 1) : '');
+  }
+
   void _store(AuthSession s, {bool notify = true}) {
+    browser.sessionRemove(_reasonKey);
     session = s;
     status = AuthStatus.signedIn;
     error = null;
