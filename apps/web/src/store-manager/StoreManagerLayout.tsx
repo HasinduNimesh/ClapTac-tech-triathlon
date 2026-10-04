@@ -13,6 +13,8 @@ import iconHistory from "../assets/store-manager/icon-history.svg";
 import "../dispatcher/dispatcher.css";
 import "./storeManager.css";
 import iconUser from "../assets/store-manager/icon-user.svg";
+import { NotificationBell } from "../notifications/NotificationBell";
+import { useStoreManagerNotifications } from "../notifications/useRoleNotifications";
 
 export function StoreManagerLayout() {
   const { profile, logout } = useAuth();
@@ -22,6 +24,8 @@ export function StoreManagerLayout() {
   const ordersActive = pathname === "/store-manager/orders" || pathname.startsWith("/store-manager/tracking") || pathname.startsWith("/store-manager/receipts");
 
   const outletId = profile?.outletIds?.[0];
+  // XR-3: receipts to confirm, arrival changes, deferrals and recent store messages, as on the notifications page.
+  const notifications = useStoreManagerNotifications();
 
   useEffect(() => {
     if (!navOpen) return;
@@ -57,6 +61,7 @@ export function StoreManagerLayout() {
         <NavLink to="/store-manager/notifications" className={({ isActive }) => `sm-nav-item${isActive ? " active" : ""}`} onClick={() => setNavOpen(false)}>
           <span className="sm-nav-icon" aria-hidden="true"><img src={iconBell} alt="" width={15} height={16} /></span>
           {t("Notifications")}
+          {notifications.unreadCount > 0 && <span className="dp-tag dp-tag--red" style={{ marginLeft: "auto" }}>{notifications.unreadCount}</span>}
         </NavLink>
         <NavLink to="/store-manager/automations" className={({ isActive }) => `sm-nav-item${isActive ? " active" : ""}`} onClick={() => setNavOpen(false)}>
           <span className="sm-nav-icon" aria-hidden="true"><img src={iconHistory} alt="" width={20} height={20} /></span>
@@ -124,6 +129,7 @@ export function StoreManagerLayout() {
             <p className="sm-topbar-outlet-role muted">{`Waypoint Delivery · ${t("Store Manager")}`}</p>
           </div>
           <div className="sm-topbar-right">
+            <NotificationBell feed={notifications} allTo="/store-manager/notifications" icon={iconBell} />
             {outletId && (
               <div className="sm-outlet-badge">
                 <span>{outletId}</span>

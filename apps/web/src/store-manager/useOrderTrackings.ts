@@ -23,6 +23,15 @@ export type Tracking = {
   custody?: { id: string; stage: string; sealId: string; serialNumbers: string[]; condition: string; recordedBy: string; recordedAt: string; receiverName?: string }[];
 };
 
+/** Every order of this outlet with its tracking; orders whose tracking could not be loaded are returned separately. */
+export async function fetchOrderTrackings(token: string): Promise<{ rows: Tracking[]; unavailable: Order[] }> {
+  const body = await apiJSON<{ items: Order[] }>("/orders", token);
+  const settled = await Promise.allSettled(
+    (body.items || []).map(async (order) => (await apiJSON<{ tracking: Tracking }>(`/orders/${order.id}/tracking`, token)).tracking),
+  );
+  return splitTrackingResults(body.items || [], settled);
+}
+
 export function useOrderTrackings() {
   const { user } = useAuth();
   const token = user?.access_token || "";

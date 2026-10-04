@@ -1,0 +1,14 @@
+type StorageLike = { getItem(key: string): string | null; setItem(key: string, value: string): void } | undefined;
+export const NOTIFICATION_STATE_EVENT: string;
+export const NOTIFICATION_REFRESH_EVENT: string;
+export function browserStorage(): Storage | undefined;
+export function readStateKey(role: string, userId?: string): string;
+export function deferralStateKey(userId: string): string;
+export function etaStateKey(userId: string): string;
+export function requestNotificationRefresh(): void;
+export function readIds(storage: StorageLike, key: string): Set<string>;
+export function addIds(storage: StorageLike, key: string, ids: Iterable<string>): Set<string>;
+export function replaceIds(storage: StorageLike, key: string, ids: Iterable<string>): void;
+export function pruneIds(storage: StorageLike, key: string, currentKeys: Iterable<string>): boolean;
+export function readSeenEta(storage: StorageLike, userId: string): Record<string, string>;
+export function mergeSeenEta(storage: StorageLike, userId: string, patch: Record<string, string>): Record<string, string>;

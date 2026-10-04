@@ -874,25 +874,44 @@ func (s Service) ConfirmBreakdown(ctx context.Context, profile *authorization.Pr
 	updated, _ := s.Repo.Get(ctx, pl.ID)
 	s.Peers.Publish(ctx, audit.ActionBreakdownRecoveryConfirmed, actorID(profile), "PLAN", pl.PlanRef, map[string]any{"decidedBy": actorID(profile), "sourceVehicleId": sourceVehicle, "replacementVehicleId": targetVehicle, "tripNumber": tripNo, "version": updated.CurrentVersion, "movedStops": len(moved), "vehicleInWorkshop": true})
 	s.Peers.Publish(ctx, audit.ActionPlanConfirmed, actorID(profile), "PLAN", pl.PlanRef, map[string]any{"reason": "vehicle_breakdown", "sourceVehicleId": sourceVehicle, "replacementVehicleId": targetVehicle, "tripNumber": tripNo, "version": updated.CurrentVersion})
-	oldByOrder := make(map[string]domain.Allocation, len(allocs))
-	for _, a := range allocs {
+	// XR-3: a breakdown is critical, so every store whose delivery now arrives 30 minutes or more
+	// later gets a text (MAJOR_DELAY), subject to its consent and alert preferences in shared-service.
+	for _, d := range breakdownDelays(allocs, moved) {
+		o := orders[d.OrderID]
+		if err := s.Peers.QueueNotification(ctx, fmt.Sprintf("breakdown:%s:%d:%s", pl.ID, updated.CurrentVersion, d.OrderID), o.OutletID, "MAJOR_DELAY", o.OrderRef, "", d.Minutes, ""); err != nil && s.Peers.Logger != nil {
+			s.Peers.Logger.Error("notification_enqueue_failed", "event", "major_delay", "order_id", d.OrderID, "error", err)
+		}
+	}
+	return map[string]any{"status": "confirmed", "planVersion": updated.CurrentVersion, "sourceVehicleId": sourceVehicle, "replacementVehicleId": targetVehicle, "tripNumber": tripNo, "movedStops": len(moved), "noticeDrafts": notices, "vehicleInWorkshop": true, "decidedBy": actorID(profile)}, nil
+}
+
+// breakdownDelay is a moved stop whose planned arrival slipped enough to text the store.
+type breakdownDelay struct {
+	OrderID string
+	Minutes int
+}
+
+// majorDelayThresholdMinutes is when a later arrival becomes a critical text to the store.
+const majorDelayThresholdMinutes = 30
+
+// breakdownDelays compares each moved stop with its allocation before the breakdown and keeps those
+// now arriving at least majorDelayThresholdMinutes later. Stops without both times are skipped.
+func breakdownDelays(before, moved []domain.Allocation) []breakdownDelay {
+	oldByOrder := make(map[string]domain.Allocation, len(before))
+	for _, a := range before {
 		oldByOrder[a.OrderID] = a
 	}
+	var out []breakdownDelay
 	for _, a := range moved {
 		old := oldByOrder[a.OrderID]
 		if old.PlannedArrivalAt == nil || a.PlannedArrivalAt == nil {
 			continue
 		}
-		delay := majorDelayMinutes(old.PlannedArrivalAt, a.PlannedArrivalAt)
-		if delay < 30 {
-			continue
-		}
-		o := orders[a.OrderID]
-		if err := s.Peers.QueueNotification(ctx, fmt.Sprintf("breakdown:%s:%d:%s", pl.ID, updated.CurrentVersion, a.OrderID), o.OutletID, "MAJOR_DELAY", o.OrderRef, "", delay, ""); err != nil && s.Peers.Logger != nil {
-			s.Peers.Logger.Error("notification_enqueue_failed", "event", "major_delay", "order_id", a.OrderID, "error", err)
+		if delay := majorDelayMinutes(old.PlannedArrivalAt, a.PlannedArrivalAt); delay >= majorDelayThresholdMinutes {
+			out = append(out, breakdownDelay{OrderID: a.OrderID, Minutes: delay})
 		}
 	}
-	return map[string]any{"status": "confirmed", "planVersion": updated.CurrentVersion, "sourceVehicleId": sourceVehicle, "replacementVehicleId": targetVehicle, "tripNumber": tripNo, "movedStops": len(moved), "noticeDrafts": notices, "vehicleInWorkshop": true, "decidedBy": actorID(profile)}, nil
+	return out
 }
 
 func majorDelayMinutes(previous, next *time.Time) int {
