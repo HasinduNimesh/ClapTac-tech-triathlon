@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
+import '../auth/auth_failure.dart';
 import '../auth/auth_gateway.dart';
 import '../data/driver_models.dart';
 
@@ -52,7 +53,13 @@ class ApiTripStarter implements TripStarter {
   @override
   Future<TripStartResult> start(TripInfo trip, {required String operationId}) async {
     if (trip.started) return const TripStartResult(TripStartStatus.started);
-    final token = await _auth.accessToken();
+    final String? token;
+    try {
+      token = await _auth.accessToken();
+    } on AuthFailure {
+      // A refresh was needed and Waypoint could not be reached: the sign-in is still good.
+      return const TripStartResult(TripStartStatus.offline);
+    }
     if (token == null) return const TripStartResult(TripStartStatus.signInNeeded, 'Your sign-in expired. Sign in again.');
     if (trip.planId.isEmpty) {
       return const TripStartResult(TripStartStatus.refused, 'This trip has no plan to acknowledge, so it cannot be started from the phone.');

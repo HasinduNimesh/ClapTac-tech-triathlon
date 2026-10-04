@@ -44,6 +44,7 @@ export type DeliveryRun = {
   planId?: string;
   planVersion?: number;
   acknowledgedVersion?: number;
+  startedAt?: string;
   completedAt?: string;
 };
 

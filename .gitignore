@@ -6,6 +6,8 @@
 
 # Go
 bin/
+# `go build` in tools/dev-oidc writes its binary here
+/tools/dev-oidc/dev-oidc
 dist/
 vendor/
 *.exe

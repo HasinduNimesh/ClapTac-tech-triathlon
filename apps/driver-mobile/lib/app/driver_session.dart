@@ -3,9 +3,11 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../auth/auth_gateway.dart';
+import '../connectivity/connectivity_monitor.dart';
 import '../auth/profile_api.dart';
 import '../data/driver_models.dart';
 import '../data/sample_data.dart';
+import '../messages/messages.dart';
 import '../offline/local_database.dart';
 import '../screens/states/end_of_day_screen.dart';
 import '../screens/updates/updates_screen.dart';
@@ -13,6 +15,7 @@ import '../sync/operations.dart';
 import '../sync/sync.dart';
 import '../sync/sqlite_sync_queue.dart';
 import '../sync/sync_worker.dart';
+import '../trips/route_store.dart';
 import '../trips/trip_source.dart';
 import '../trips/trip_start.dart';
 import '../widgets/driver_shell.dart';
@@ -21,6 +24,13 @@ import '../widgets/note_banner.dart';
 String _two(int value) => value.toString().padLeft(2, '0');
 
 String clockLabel(DateTime time) => '${_two(time.hour)}:${_two(time.minute)}';
+
+/// Waypoint's business clock (Asia/Colombo, fixed UTC+05:30), for times the server decided, so they
+/// read the same whatever timezone the phone is set to.
+String businessClockLabel(DateTime time) => clockLabel(time.toUtc().add(const Duration(hours: 5, minutes: 30)));
+
+/// Updates entries that stand for a dispatcher message have an id starting with this.
+const messageUpdatePrefix = 'msg:';
 
 /// A local action remains queued until Waypoint confirms it was applied.
 const savedNotSent = 'saved on this phone, not sent yet';
@@ -43,6 +53,10 @@ class DriverSession extends ChangeNotifier {
     this.trips,
     this.worker,
     this.starter,
+    this.connectivity,
+    this.messageSource,
+    this.messagePollInterval = const Duration(seconds: 30),
+    this.routeStore,
   })  : _initialTrip = trip ?? ((demoRoute || (auth == null && demoAuth)) ? sampleTrip : null),
         _clock = clock ?? DateTime.now,
         _newId = newId ?? newOperationId {
@@ -51,9 +65,13 @@ class DriverSession extends ChangeNotifier {
       syncDetail = detail;
       // Each tick is a chance to start a trip that could not be started without a connection.
       if (tripStartState == TripStartState.waiting && !tripStarting && loadResolved) unawaited(startTrip());
+      // No live route yet (it could not be loaded, or the saved copy is on screen): each tick is another
+      // chance to load it, quietly, so the driver is not left on an error until they tap Try again.
+      if ((showingSavedRoute || (tripsError != null && !hasRoute)) && signedIn) unawaited(loadTrips(silent: true));
       if (signedIn) _refreshPending();
       notifyListeners();
     };
+    _watchConnectivity();
     if (demoUpdates) {
       updates.add(const UpdateItem(
         id: planConflictId,
@@ -67,6 +85,156 @@ class DriverSession extends ChangeNotifier {
 
   static const planConflictId = 'plan-conflict';
 
+  /// Keeps the route on the phone so it can still be shown when Waypoint cannot be reached. Null in demo
+  /// and test sessions.
+  final RouteStore? routeStore;
+
+  /// True while the route on screen is the copy saved on the phone, because the live one could not be
+  /// loaded. It is replaced by the live route as soon as that can be loaded.
+  bool showingSavedRoute = false;
+
+  /// Tells the session when the phone gains or loses its network. Null in demo and test sessions,
+  /// which then always count as online.
+  final ConnectivityMonitor? connectivity;
+  StreamSubscription<bool>? _connectivitySubscription;
+
+  /// Whether the phone reports a network. See also [offline].
+  bool deviceOnline = true;
+
+  /// True when the phone has no network, or the last attempt to reach Waypoint failed. What the driver
+  /// records is saved on the phone either way and sent when the connection is back.
+  bool get offline => !deviceOnline || syncProgress == SyncProgress.offline;
+
+  void _watchConnectivity() {
+    final monitor = connectivity;
+    if (monitor == null) return;
+    _connectivitySubscription = monitor.changes.listen(_onlineChanged);
+    unawaited(monitor.isOnline().then(_onlineChanged));
+  }
+
+  void _onlineChanged(bool online) {
+    if (online == deviceOnline) return;
+    deviceOnline = online;
+    notifyListeners();
+    if (online) unawaited(_onReconnected());
+  }
+
+  /// The network is back: send what is waiting and retry what failed for lack of it, instead of
+  /// waiting for the next timer tick.
+  Future<void> _onReconnected() async {
+    final gateway = auth;
+    if (gateway is RevocationRetry) unawaited((gateway as RevocationRetry).retryPendingRevocations());
+    if (!signedIn) return;
+    if ((tripsError != null && !hasRoute) || showingSavedRoute) await loadTrips();
+    if (tripStartState == TripStartState.waiting && loadResolved) await startTrip();
+    await worker?.syncNow();
+    await _refreshPending();
+  }
+
+  /// Reads and acknowledges dispatch's messages about the trip. Null in demo and test sessions.
+  final MessageSource? messageSource;
+  final Duration messagePollInterval;
+  Timer? _messageTimer;
+  bool _fetchingMessages = false;
+
+  /// What dispatch has sent about this trip, oldest first.
+  List<DispatcherMessage> messages = const [];
+
+  /// Counts up whenever a message the driver has not seen before arrives, so the screen can tell them.
+  int newMessageSerial = 0;
+  final Set<String> _seenMessageIds = {};
+
+  /// Whether the messages of the current trip have been read at least once. Only then is a message that
+  /// shows up news; what was already waiting on the first read is not, even when that read was empty.
+  bool _hasReadMessages = false;
+
+  int get unreadMessages => messages.where((message) => !message.acknowledged).length;
+
+  /// Reads the trip's messages. Called when the route loads, on a timer, and when the connection
+  /// returns. A failure keeps what was already shown: messages are never lost by a missed refresh.
+  Future<void> refreshMessages() async {
+    final source = messageSource;
+    if (source == null || !signedIn || !hasRoute || _fetchingMessages) return;
+    final tripId = _baseTrip!.tripId;
+    final epoch = _identityEpoch;
+    _fetchingMessages = true;
+    MessageLoad result;
+    try {
+      result = await source.load(tripId);
+    } on Object {
+      // A read that fails any way at all just keeps what was shown; it must not block the next read.
+      result = const MessageLoad.failed('Waypoint sent messages the app could not read.');
+    } finally {
+      // Only the session that started this read may release its guard; a newer session has its own.
+      if (epoch == _identityEpoch) _fetchingMessages = false;
+    }
+    if (epoch != _identityEpoch) return; // someone else is signed in now: these are not their messages
+    if (!signedIn) return;
+    if (_baseTrip?.tripId != tripId) {
+      // The route changed while this was in flight: the answer is for the old trip. Read the new one.
+      if (_baseTrip != null) unawaited(refreshMessages());
+      return;
+    }
+    final loaded = result.messages;
+    if (loaded == null) {
+      if (result.signInExpired) await _signInExpired(result.failure);
+      notifyListeners();
+      return;
+    }
+    // The first read after signing in is not news: only messages that arrive afterwards are.
+    var arrived = false;
+    for (final message in loaded) {
+      if (_seenMessageIds.add(message.id) && !message.acknowledged && _hasReadMessages) arrived = true;
+    }
+    _hasReadMessages = true;
+    messages = loaded;
+    if (arrived) newMessageSerial++;
+    notifyListeners();
+  }
+
+  /// Marks a message as read on the server. Needs a connection: when there is none the message stays
+  /// unread and the reason is returned for the driver. Returns null when it worked.
+  Future<String?> acknowledgeMessage(String messageId) async {
+    final source = messageSource;
+    final index = messages.indexWhere((message) => message.id == messageId);
+    if (source == null || index < 0) return 'That message is no longer available.';
+    if (messages[index].acknowledged) return null;
+    final epoch = _identityEpoch;
+    final result = await source.acknowledge(messages[index].tripId.isEmpty ? _baseTrip!.tripId : messages[index].tripId, messageId);
+    if (epoch != _identityEpoch) return null; // answered for a driver who has since signed out
+    if (result.signInExpired) {
+      await _signInExpired(result.failure);
+      notifyListeners();
+      return result.failure;
+    }
+    if (!result.isDone) return result.failure;
+    messages = [for (final message in messages) message.id == messageId ? message.asAcknowledged() : message];
+    notifyListeners();
+    return null;
+  }
+
+  void _startMessagePolling() {
+    _messageTimer?.cancel();
+    if (messageSource == null) return;
+    _messageTimer = Timer.periodic(messagePollInterval, (_) => unawaited(refreshMessages()));
+    unawaited(refreshMessages());
+  }
+
+  void _stopMessagePolling() {
+    _messageTimer?.cancel();
+    _messageTimer = null;
+    _fetchingMessages = false;
+    _resetMessages();
+  }
+
+  /// Forgets the messages of the trip the driver was on, so a different trip never shows or announces
+  /// them.
+  void _resetMessages() {
+    messages = const [];
+    _seenMessageIds.clear();
+    _hasReadMessages = false;
+  }
+
   final LocalDatabase database;
   final SyncQueue queue;
   final DeliverySyncWorker? worker;
@@ -74,8 +242,20 @@ class DriverSession extends ChangeNotifier {
   /// Acknowledges the plan and starts the run on the server. Null in demo and test sessions.
   final TripStarter? starter;
 
+  bool _disposed = false;
+
+  /// Work that was still under way when the session was disposed (a retry waiting for Waypoint) finishes
+  /// quietly instead of notifying listeners that are gone.
+  @override
+  void notifyListeners() {
+    if (!_disposed) super.notifyListeners();
+  }
+
   @override
   void dispose() {
+    _disposed = true;
+    unawaited(_connectivitySubscription?.cancel());
+    _messageTimer?.cancel();
     worker?.onProgress = null;
     super.dispose();
   }
@@ -107,6 +287,12 @@ class DriverSession extends ChangeNotifier {
   int _pendingCount = 0;
   SyncProgress syncProgress = SyncProgress.idle;
   String? syncDetail;
+
+  /// Changes every time the person using the phone changes: a sign-in, a sign-out, a session that ended.
+  /// A request starts under one value and, when Waypoint answers, is only used if the value is still the
+  /// same. Otherwise the answer belongs to someone who is no longer signed in (or to an earlier session of
+  /// the same person) and is thrown away: it must never reach, or be saved for, whoever is signed in now.
+  int _identityEpoch = 0;
 
   bool signedIn = false;
   bool signingIn = false;
@@ -157,7 +343,7 @@ class DriverSession extends ChangeNotifier {
   int get pendingUploads => queue is SqliteSyncQueue ? _pendingCount : _results.length + _incidents;
 
   List<UpdateItem> get visibleUpdates {
-    if (worker == null) return updates;
+    if (worker == null) return [..._messageItems, ...updates];
     final (title, detail, tone) = switch (syncProgress) {
       SyncProgress.idle => ('Sync up to date', 'No unsent updates are waiting.', NoteTone.success),
       SyncProgress.syncing => ('Syncing', 'Sending saved updates to Waypoint in order.', NoteTone.info),
@@ -167,7 +353,22 @@ class DriverSession extends ChangeNotifier {
       SyncProgress.offline => ('Waiting for connection', syncDetail ?? 'Saved updates will retry when Waypoint can be reached.', NoteTone.offline),
       SyncProgress.needsAttention => ('Sync needs attention', syncDetail ?? 'A saved update needs review before later updates can sync.', NoteTone.danger),
     };
-    return [UpdateItem(title: title, detail: detail, time: clockLabel(_clock()), tone: tone), ...updates];
+    return [UpdateItem(title: title, detail: detail, time: clockLabel(_clock()), tone: tone), ..._messageItems, ...updates];
+  }
+
+  /// Dispatch's messages as Updates entries, unread ones first. Opening one shows it in full and, when
+  /// it is unread, offers to acknowledge it.
+  List<UpdateItem> get _messageItems {
+    final unread = [for (final message in messages.reversed) if (!message.acknowledged) message];
+    final read = [for (final message in messages.reversed) if (message.acknowledged) message];
+    UpdateItem item(DispatcherMessage message) => UpdateItem(
+          id: '$messageUpdatePrefix${message.id}',
+          title: message.acknowledged ? 'Message from dispatch' : 'Message from dispatch - please acknowledge',
+          detail: message.body,
+          time: businessClockLabel(message.createdAt),
+          tone: message.acknowledged ? NoteTone.success : NoteTone.amber,
+        );
+    return [for (final message in unread) item(message), for (final message in read) item(message)];
   }
 
   Future<void> _refreshPending() async {
@@ -207,11 +408,14 @@ class DriverSession extends ChangeNotifier {
   Future<void> restore() async {
     final gateway = auth;
     if (gateway == null) return;
+    // Tokens left over from an earlier sign-out without signal can be revoked now.
+    if (gateway is RevocationRetry) unawaited((gateway as RevocationRetry).retryPendingRevocations());
     restoring = true;
     notifyListeners();
     final profile = await gateway.restore();
     restoring = false;
     if (profile != null) {
+      _identityEpoch++;
       identity = profile;
       signedIn = true;
       await _useIdentity(profile);
@@ -220,15 +424,64 @@ class DriverSession extends ChangeNotifier {
     if (profile != null) await loadTrips();
   }
 
+  /// The load in progress, if any, and the session it was started for. Everyone who asks for the route
+  /// while it is running shares it, but only within the same session: a new driver never waits on, or is
+  /// given the answer to, the previous driver's request.
+  Future<void>? _tripLoad;
+  int _tripLoadEpoch = -1;
+
+  /// What the driver is told when Waypoint's answer could not be read at all.
+  static const unreadableRoute = unreadableRouteMessage;
+
   /// Loads today's route for the signed-in driver. Safe to call again to retry.
-  Future<void> loadTrips() async {
-    final source = trips;
-    if (source == null || tripsLoading || !signedIn) return;
-    tripsLoading = true;
-    tripsError = null;
-    notifyListeners();
-    final result = await source.loadToday();
+  ///
+  /// There is only ever one load at a time. A call made while one is running does not start another: it
+  /// joins it and ends with the same result. A [silent] load, used for the automatic retries, does not
+  /// show the loading state or clear the error while it waits, so the screen does not flicker every few
+  /// seconds; but when the driver taps Try again during one, the screen shows the loading state at once
+  /// (rather than ignoring the tap until the request times out) and then the result.
+  Future<void> loadTrips({bool silent = false}) {
+    if (trips == null || !signedIn) return Future<void>.value();
+    final running = _tripLoad;
+    if (running != null && _tripLoadEpoch == _identityEpoch) {
+      if (!silent && !tripsLoading) {
+        tripsLoading = true;
+        notifyListeners();
+      }
+      return running;
+    }
+    final epoch = _identityEpoch;
+    late final Future<void> load;
+    load = _loadTrips(silent: silent, epoch: epoch).whenComplete(() {
+      if (identical(_tripLoad, load)) _tripLoad = null;
+    });
+    _tripLoadEpoch = epoch;
+    return _tripLoad = load;
+  }
+
+  Future<void> _loadTrips({required bool silent, required int epoch}) async {
+    final source = trips!;
+    if (!silent) {
+      tripsLoading = true;
+      tripsError = null;
+      notifyListeners();
+    }
+    TripLoad result;
+    try {
+      result = await source.loadToday();
+    } on Object {
+      // Whatever went wrong inside the source, the load ends here with a visible error and the next
+      // attempt (the timer, or the driver) is free to try again. It must never leave the load stuck.
+      result = const TripLoad.failed(unreadableRoute);
+    }
+    // The driver changed while Waypoint was answering: this is someone else's route (or an earlier
+    // session's). Nothing about it may be applied, saved or shown, and the screen's state is not touched,
+    // because it now belongs to whoever is signed in.
+    if (epoch != _identityEpoch) return;
     tripsLoading = false;
+    // Waypoint answered (with a route, or with "no trip"): whatever failed before is over. A loud load
+    // clears the error up front, but a quiet retry leaves it in place until now.
+    if (result.failure == null) tripsError = null;
     if (!signedIn) {
       notifyListeners();
       return;
@@ -237,6 +490,10 @@ class DriverSession extends ChangeNotifier {
     if (loaded != null) {
       final sameTrip = _baseTrip?.tripId == loaded.tripId;
       _baseTrip = loaded;
+      // A different trip has its own messages: drop the old trip's the moment the route changes, so they
+      // are never shown against the new one, and what the new trip already has waiting is read silently
+      // the first time instead of being announced as new.
+      if (!sameTrip) _resetMessages();
       if (loaded.started) {
         // Already started (the app was restarted mid-run): do not ask for the load check again.
         loadCheck = LoadCheck.confirmed;
@@ -247,7 +504,11 @@ class DriverSession extends ChangeNotifier {
         tripStartState = TripStartState.notStarted;
         tripStartMessage = null;
       }
+      showingSavedRoute = false;
       await _restoreQueuedActions(loaded);
+      if (epoch != _identityEpoch) return; // signed out (or changed) while the queue was being read
+      unawaited(_saveRoute());
+      _startMessagePolling();
       // A reload after the server refused the start (the plan changed) tries again with the new version.
       if (sameTrip && loadResolved && !loaded.started) {
         notifyListeners();
@@ -256,10 +517,91 @@ class DriverSession extends ChangeNotifier {
       }
     } else if (result.signInExpired) {
       await _signInExpired(result.failure);
+    } else if (result.failure == null) {
+      // Waypoint answered and has no open trip for this driver. That is authoritative: a route saved
+      // earlier is no longer valid.
+      final user = identity?.userId;
+      if (user != null && user.isNotEmpty) await routeStore?.clear(user);
+      if (showingSavedRoute) {
+        showingSavedRoute = false;
+        _baseTrip = _initialTrip;
+        _resetMessages();
+      }
+    } else if (_baseTrip == null) {
+      // Waypoint could not be reached and nothing is on screen: use the route saved on this phone, if it
+      // is for today.
+      final saved = await _savedRouteForToday();
+      if (epoch != _identityEpoch) return; // the saved route was for the driver who has since signed out
+      if (saved != null) {
+        await _showSavedRoute(saved);
+      } else {
+        tripsError = result.failure;
+      }
     } else {
       tripsError = result.failure;
     }
     notifyListeners();
+  }
+
+  /// The route saved for this driver, but only if it is for the current Waypoint business day.
+  Future<SavedRoute?> _savedRouteForToday() async {
+    final store = routeStore;
+    final user = identity?.userId;
+    if (store == null || user == null || user.isEmpty) return null;
+    final saved = await store.read(user);
+    if (saved == null) return null;
+    if (saved.businessDate != ApiTripSource.dateKey(_clock())) {
+      await store.clear(user);
+      return null;
+    }
+    return saved;
+  }
+
+  Future<void> _showSavedRoute(SavedRoute saved) async {
+    _baseTrip = saved.trip;
+    showingSavedRoute = true;
+    tripsError = null;
+    _resetMessages();
+    if (saved.trip.started) {
+      loadCheck = LoadCheck.confirmed;
+      tripStartState = TripStartState.started;
+    } else {
+      loadCheck = LoadCheck.unchecked;
+      tripStartState = TripStartState.notStarted;
+    }
+    tripStartMessage = null;
+    await _restoreQueuedActions(saved.trip);
+    _startMessagePolling();
+  }
+
+  /// Saves the route as it stands now, including the stops already done, so a copy shown later has the
+  /// right progress. Failing to save is not a problem for the driver, so it is only ignored.
+  Future<void> _saveRoute() async {
+    final store = routeStore;
+    final user = identity?.userId;
+    final base = _baseTrip;
+    if (store == null || user == null || user.isEmpty || base == null || base.tripId.isEmpty) return;
+    final done = {...base.completedStopIds, ..._results.keys};
+    final snapshot = TripInfo(
+      tripId: base.tripId,
+      runId: base.runId,
+      vehicleCode: base.vehicleCode,
+      plate: base.plate,
+      tripRef: base.tripRef,
+      depot: base.depot,
+      window: base.window,
+      stops: base.stops,
+      completedStops: done.length,
+      completedStopIds: done,
+      planId: base.planId,
+      planVersion: base.planVersion,
+      runStatus: base.runStatus,
+    );
+    try {
+      await store.write(user, SavedRoute(businessDate: ApiTripSource.dateKey(_clock()), trip: snapshot));
+    } on Object {
+      // The saved copy is a convenience; the live route is what matters.
+    }
   }
 
   /// Rebuild the local route overlay and stable operation IDs from SQLite after
@@ -327,6 +669,7 @@ class DriverSession extends ChangeNotifier {
         notifyListeners();
         return false;
       }
+      _identityEpoch++;
       identity = profile;
       signedIn = true;
       await _useIdentity(profile);
@@ -369,6 +712,24 @@ class DriverSession extends ChangeNotifier {
         return _pendingCount;
       }
     }
+    await _endSession();
+    return 0;
+  }
+
+  /// Signs out and clears the trip state. It queues nothing: the route completion, if there is one,
+  /// was queued (and sent) before this is called.
+  Future<void> _endSession() async {
+    // Signing out removes the saved route, like the tokens: it is only meant for the driver who is
+    // signed in, and it cannot be opened again without signing in (which needs a connection).
+    final user = identity?.userId;
+    // Forget the driver first, so a save asked for after this point has nobody to save for, and every
+    // request still in flight for them is from an earlier session and will be thrown away.
+    _identityEpoch++;
+    tripsLoading = false;
+    identity = null;
+    showingSavedRoute = false;
+    if (user != null && user.isNotEmpty) await routeStore?.clear(user);
+    _stopMessagePolling();
     worker?.stop();
     signedIn = false;
     if (queue is SqliteSyncQueue) await (queue as SqliteSyncQueue).useOwner(null);
@@ -384,11 +745,62 @@ class DriverSession extends ChangeNotifier {
     _incidents = 0;
     updates.removeWhere((item) => item.id != planConflictId);
     notifyListeners();
-    return 0;
+  }
+
+  /// Finishes the route the driver has just completed. It sends the completion and everything before
+  /// it; if that all got through it looks for another trip for this vehicle today and, if there is
+  /// one, opens it instead of signing out (the driver confirms its load as usual). With no further
+  /// trip, or when that could not be checked, it signs out: everything is already sent, and the next
+  /// sign-in finds any later trip by itself.
+  ///
+  /// When updates could not be sent the driver stays signed in with the same route and the result
+  /// says how many, exactly as [finishTrip] does.
+  Future<TripWrapUpResult> completeTrip() async {
+    final source = trips;
+    if (!routeComplete || source == null || !signedIn) {
+      final unsent = await finishTrip();
+      return unsent == 0 ? const TripWrapUpResult.signedOut() : TripWrapUpResult.unsent(unsent);
+    }
+    final finished = _baseTrip!;
+    await queue.enqueue(Operations.routeCompleted(operationId: _operationId('route-completed'), trip: trip, occurredAt: _clock()).toSyncEvent());
+    final syncing = worker;
+    if (syncing != null && queue is SqliteSyncQueue) {
+      await syncing.syncNow();
+      await _refreshPending();
+      if (_pendingCount > 0) {
+        notifyListeners();
+        return TripWrapUpResult.unsent(_pendingCount);
+      }
+    }
+    // Everything is sent, so the server no longer lists the finished trip as open.
+    _results.clear();
+    _operationIds.clear();
+    _incidents = 0;
+    await loadTrips();
+    final next = _baseTrip;
+    if (signedIn && next != null && next.tripId != finished.tripId) {
+      tab = DriverTab.route;
+      notifyListeners();
+      return TripWrapUpResult.nextTrip(finished: finished, next: next);
+    }
+    if (!signedIn) return const TripWrapUpResult.signedOut();
+    // No further trip, or it could not be checked. The completion was already sent above, so this must
+    // not go through finishTrip(), which would see a finished route and queue it a second time.
+    await _endSession();
+    return const TripWrapUpResult.signedOut();
   }
 
   /// The stored sign-in is no longer accepted: go back to sign-in instead of showing a dead end.
   Future<void> _signInExpired(String? message) async {
+    final user = identity?.userId;
+    // Forget the driver first: a save asked for after this point finds nobody to save for, and one
+    // asked for before it is already queued ahead of the clear below, so it cannot outlive it.
+    _identityEpoch++;
+    tripsLoading = false;
+    identity = null;
+    showingSavedRoute = false;
+    if (user != null && user.isNotEmpty) await routeStore?.clear(user);
+    _stopMessagePolling();
     worker?.stop();
     signedIn = false;
     if (queue is SqliteSyncQueue) await (queue as SqliteSyncQueue).useOwner(null);
@@ -410,10 +822,14 @@ class DriverSession extends ChangeNotifier {
     final source = starter;
     if (source == null || !hasRoute || tripStarting || tripStartState == TripStartState.started) return;
     final base = _baseTrip!;
+    final epoch = _identityEpoch;
     tripStartState = TripStartState.starting;
     tripStartMessage = null;
     notifyListeners();
     final result = await source.start(trip, operationId: _operationId('start:${base.tripId}'));
+    // Started for a driver who has since signed out: it says nothing about whoever is signed in now, and
+    // the state on screen is theirs, so it is left alone.
+    if (epoch != _identityEpoch) return;
     if (!signedIn || _baseTrip?.tripId != base.tripId) {
       tripStartState = TripStartState.notStarted;
       return;
@@ -422,6 +838,7 @@ class DriverSession extends ChangeNotifier {
       case TripStartStatus.started:
         tripStartState = TripStartState.started;
         _baseTrip = _baseTrip!.withRunStatus('in_progress');
+        unawaited(_saveRoute());
         unawaited(worker?.syncNow());
       case TripStartStatus.offline:
         tripStartState = TripStartState.waiting;
@@ -470,6 +887,7 @@ class DriverSession extends ChangeNotifier {
     ).toSyncEvent());
     _kickSync();
     _results[stop.stopId] = draft;
+    unawaited(_saveRoute());
     updates.insert(
       0,
       UpdateItem(
@@ -607,6 +1025,30 @@ class DriverSession extends ChangeNotifier {
 }
 
 enum LoadCheck { unchecked, confirmed, discrepancy, overridden }
+
+enum TripWrapUp { signedOut, unsent, nextTrip }
+
+/// How finishing a route ended: the driver was signed out, updates are still unsent (and the driver
+/// is still signed in), or another trip was opened.
+class TripWrapUpResult {
+  const TripWrapUpResult.signedOut()
+      : kind = TripWrapUp.signedOut,
+        unsent = 0,
+        finished = null,
+        next = null;
+  const TripWrapUpResult.unsent(this.unsent)
+      : kind = TripWrapUp.unsent,
+        finished = null,
+        next = null;
+  const TripWrapUpResult.nextTrip({required TripInfo this.finished, required TripInfo this.next})
+      : kind = TripWrapUp.nextTrip,
+        unsent = 0;
+
+  final TripWrapUp kind;
+  final int unsent;
+  final TripInfo? finished;
+  final TripInfo? next;
+}
 
 /// `waiting`: no connection yet, will retry. `refused`: the server said no (see the message).
 enum TripStartState { notStarted, starting, waiting, started, refused }

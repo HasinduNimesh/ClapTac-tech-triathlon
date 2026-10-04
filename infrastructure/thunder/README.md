@@ -24,12 +24,14 @@ The Flutter driver app signs in with Authorization Code + PKCE through the syste
 |---|---|
 | Client ID | `waypoint-driver` (`MOBILE_OIDC_CLIENT_ID`) |
 | Redirect URI | `dev.claptac.waypointdriver:/oauth2redirect` (`MOBILE_OIDC_REDIRECT_URI`; must match `appAuthRedirectScheme` in `apps/driver-mobile/android/app/build.gradle.kts`) |
-| Scopes | `openid profile` |
+| Scopes | `openid profile`; add `offline_access` (build option `OIDC_SCOPES`) once the client is allowed refresh tokens, so a driver is not sent back to the browser every time the access token expires |
 | ID token | `aud` must be the client ID and the request `nonce` must be echoed (AppAuth validates both). The access token keeps `aud = waypoint-api`. |
 
 After sign-in the app calls `GET /api/v1/shared/profiles/me` with the access token and only continues when the returned roles include `DRIVER`. A 404 means the person exists in ThunderID but is not provisioned in Waypoint.
 
 The local `tools/dev-oidc` server accepts any client and redirect URI and has a `driver` user (password `waypoint`, vehicle `VEH001`). A real ThunderID tenant must register the client and redirect URI explicitly, and must not allow plain HTTP.
+
+The local `tools/dev-oidc` issues a refresh token when `offline_access` is requested and rotates it on every use. `ACCESS_TOKEN_TTL_SECONDS=90` makes people's access tokens short-lived so a refresh can be watched; service-to-service tokens stay at one hour. It also has `POST /oauth2/revoke` (RFC 7009) for refresh tokens, which answers 200 whether or not the token was known, and advertises it as `revocation_endpoint`; the driver app calls it on sign-out. A real ThunderID tenant must allow the public `waypoint-driver` client to use its revocation endpoint with only a `client_id` (no secret).
 
 To try it against Compose on an Android phone over USB (debug build, plain HTTP to localhost):
 
