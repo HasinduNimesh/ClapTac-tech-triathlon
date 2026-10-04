@@ -73,6 +73,15 @@ type Run struct {
 	AcknowledgedVersion          int        `json:"acknowledgedVersion"`
 }
 
+type Checkout struct {
+	PlanVersion       int       `json:"planVersion"`
+	Status            string    `json:"status"`
+	ConfirmedOrderIDs []string  `json:"confirmedOrderIds"`
+	MissingOrderIDs   []string  `json:"missingOrderIds"`
+	CheckedBy         string    `json:"checkedBy"`
+	CheckedAt         time.Time `json:"checkedAt"`
+}
+
 type TripMessage struct {
 	ID             string     `json:"id"`
 	TripID         string     `json:"tripId"`
@@ -176,11 +185,50 @@ type Proof struct {
 	ReceiverName string `json:"receiverName,omitempty"`
 }
 
+type ArrivalPrediction struct {
+	StopID string `json:"stopId"`
+	EstimatedArrivalAt time.Time `json:"estimatedArrivalAt"`
+	PreviouslyCommunicatedAt *time.Time `json:"previouslyCommunicatedAt,omitempty"`
+	NotifiedArrivalAt *time.Time `json:"notifiedArrivalAt,omitempty"`
+	ArrivalRangeLower *time.Time `json:"arrivalRangeLower,omitempty"`
+	ArrivalRangeUpper *time.Time `json:"arrivalRangeUpper,omitempty"`
+	LateRisk string `json:"lateRisk"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+type ReturnedGoods struct {
+    StopID string `json:"stopId"`
+    RunID string `json:"runId"`
+    OrderID string `json:"orderId"`
+    OrderRef string `json:"orderRef"`
+    OutletID string `json:"outletId"`
+    OperationID string `json:"operationId"`
+    Goods string `json:"goods"`
+    Units int `json:"units"`
+    Reason string `json:"reason"`
+    Note string `json:"note,omitempty"`
+    Resolution string `json:"resolution"`
+    DriverID string `json:"driverId"`
+    OccurredAt time.Time `json:"occurredAt"`
+    RecordedAt time.Time `json:"recordedAt"`
+    FollowupOrderID string `json:"followupOrderId,omitempty"`
+    FollowupOrderRef string `json:"followupOrderRef,omitempty"`
+    FollowupDate string `json:"followupDate,omitempty"`
+}
+
+type ReturnDetails struct {
+    Goods string `json:"goods"`
+    Units int `json:"units"`
+    Resolution string `json:"resolution"`
+}
+
 type OrderTracking struct {
+    ReturnedGoods *ReturnedGoods `json:"returnedGoods,omitempty"`
 	RunID                   string         `json:"runId"`
 	TripID                  string         `json:"tripId"`
 	VehicleID               string         `json:"vehicleId,omitempty"`
 	RunStatus               string         `json:"runStatus"`
+	ArrivalPrediction       *ArrivalPrediction `json:"arrivalPrediction,omitempty"`
 	StopID                  string         `json:"stopId"`
 	Outcome                 string         `json:"outcome"`
 	Reason                  string         `json:"reason,omitempty"`
@@ -188,6 +236,7 @@ type OrderTracking struct {
 	CompletedAt             *time.Time     `json:"completedAt,omitempty"`
 	Proofs                  []ProofSummary `json:"proofs"`
 	LoadingShortfallSummary []any          `json:"loadingShortfallSummary"`
+	DeliveredUnits          *int           `json:"deliveredUnits,omitempty"`
 }
 
 type OutletLastServed struct {
@@ -262,6 +311,7 @@ type LoadingOrder struct {
 	Brand                  string     `json:"brand"`
 	StopSequence           int        `json:"stopSequence"`
 	PlannedArrivalAt       *time.Time `json:"plannedArrivalAt,omitempty"`
+	PlannedDepartureAt     *time.Time `json:"plannedDepartureAt,omitempty"`
 	LoadingStatus          string     `json:"loadingStatus"`
 	TemperatureRequirement string     `json:"temperatureRequirement"`
 	ExpectedUnits          int        `json:"expectedUnits"`

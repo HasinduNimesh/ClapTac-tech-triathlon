@@ -29,6 +29,7 @@ import (
 	planclient "github.com/HasinduNimesh/ClapTac-tech-triathlon/services/planning-service/internal/client"
 	planhandler "github.com/HasinduNimesh/ClapTac-tech-triathlon/services/planning-service/internal/handler"
 	planservice "github.com/HasinduNimesh/ClapTac-tech-triathlon/services/planning-service/internal/service"
+	plandomain "github.com/HasinduNimesh/ClapTac-tech-triathlon/services/planning-service/internal/domain"
 	planstore "github.com/HasinduNimesh/ClapTac-tech-triathlon/services/planning-service/internal/store"
 )
 
@@ -771,6 +772,20 @@ func TestPlanningDeferralNextRunAndRepeatWarning(t *testing.T) {
 		t.Fatalf("a next-run target on or before the plan date should be rejected 400, got %d: %s", badDeferRes.StatusCode, badDeferBody)
 	}
 
+	// W3: a deferral without a next run does not save.
+	noRun, _ := http.NewRequest(http.MethodPost, planSrv.URL+"/api/v1/planning/plans/"+createdA.Plan.ID+"/deferrals", strings.NewReader(`{"orderId":"ord-1","reasonCode":"NO_ELIGIBLE_VEHICLE"}`))
+	noRun.Header.Set("Authorization", "Bearer usr-dispatcher")
+	noRun.Header.Set("Content-Type", "application/json")
+	noRunRes, err := http.DefaultClient.Do(noRun)
+	if err != nil {
+		t.Fatal(err)
+	}
+	noRunBody := readBody(noRunRes)
+	noRunRes.Body.Close()
+	if noRunRes.StatusCode != http.StatusBadRequest {
+		t.Fatalf("a deferral without nextRunTarget should be rejected 400, got %d: %s", noRunRes.StatusCode, noRunBody)
+	}
+
 	deferReq, _ := http.NewRequest(http.MethodPost, planSrv.URL+"/api/v1/planning/plans/"+createdA.Plan.ID+"/deferrals", strings.NewReader(`{"orderId":"ord-1","reasonCode":"NO_ELIGIBLE_VEHICLE","comment":"No reefer free today","nextRunTarget":"2026-09-30"}`))
 	deferReq.Header.Set("Authorization", "Bearer usr-dispatcher")
 	deferReq.Header.Set("Content-Type", "application/json")
@@ -1057,4 +1072,204 @@ func repoRoot(t *testing.T) string {
 	}
 	t.Fatal("go.mod not found")
 	return ""
+}
+
+func TestPlanningRemovingTheLastOrderRemovesTheEmptyTrip(t *testing.T) {
+	ctx := context.Background()
+	req := testcontainers.ContainerRequest{
+		Image:        "postgres:16-alpine",
+		ExposedPorts: []string{"5432/tcp"},
+		Env: map[string]string{
+			"POSTGRES_USER": "waypoint", "POSTGRES_PASSWORD": "waypoint", "POSTGRES_DB": "waypoint",
+		},
+		WaitingFor: wait.ForLog("database system is ready to accept connections").WithOccurrence(2).WithStartupTimeout(60 * time.Second),
+	}
+	pg, err := startPostgresContainer(ctx, testcontainers.GenericContainerRequest{ContainerRequest: req, Started: true})
+	if err != nil {
+		t.Skipf("testcontainers postgres:16-alpine unavailable: %v", err)
+	}
+	t.Cleanup(func() { _ = pg.Terminate(ctx) })
+	host, _ := pg.Host(ctx)
+	port, _ := pg.MappedPort(ctx, "5432")
+	dsn := "postgres://waypoint:waypoint@" + host + ":" + port.Port() + "/waypoint?sslmode=disable"
+	root := repoRoot(t)
+	for _, name := range []string{"0001_init.sql", "0007_planning.sql", "0013_planning_stop_times.sql", "0020_planning_publications.sql"} {
+		applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", name))
+	}
+	pool, err := db.Open(ctx, dsn, "planning")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+	repo := planstore.Postgres{Pool: pool}
+	plan, err := repo.Create(ctx, "2026-11-05", "usr-dispatcher")
+	if err != nil {
+		t.Fatal(err)
+	}
+	add := func(orderID, vehicle string, tripNo int) plandomain.Allocation {
+		trip, err := repo.EnsureTrip(ctx, plan.ID, vehicle, tripNo)
+		if err != nil {
+			t.Fatal(err)
+		}
+		seq, _ := repo.NextSeq(ctx, trip.ID)
+		a, err := repo.InsertAllocation(ctx, plandomain.Allocation{PlanID: plan.ID, OrderID: orderID, TripID: trip.ID, VehicleID: vehicle, Sequence: seq})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return a
+	}
+	first := add("ord-1", "VEH001", 1)
+	second := add("ord-2", "VEH001", 2)
+	if trips, _ := repo.ListTrips(ctx, plan.ID); len(trips) != 2 {
+		t.Fatalf("two trips before removal, got %d", len(trips))
+	}
+	if err := repo.DeleteAllocation(ctx, plan.ID, first.ID); err != nil {
+		t.Fatal(err)
+	}
+	trips, _ := repo.ListTrips(ctx, plan.ID)
+	if len(trips) != 1 || trips[0].ID != second.TripID {
+		t.Fatalf("the trip emptied by removing its only order must go with it: %+v", trips)
+	}
+	if err := repo.DeleteAllocation(ctx, plan.ID, first.ID); err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("removing the same allocation twice must be not found, got %v", err)
+	}
+	third := add("ord-3", "VEH001", 1)
+	if trips, _ := repo.ListTrips(ctx, plan.ID); len(trips) != 2 || third.TripID == "" {
+		t.Fatalf("adding an order to that vehicle again recreates the trip: %+v", trips)
+	}
+}
+
+// TestPlanningPriorityNextPlanCarriedAcrossPlans proves W3: an outlet deferred
+// on two consecutive runs is priorityNextPlan on the plan recording the second
+// deferral AND on the next plan, because the flag is derived from persisted
+// deferral history rather than from the plan being viewed.
+func TestPlanningPriorityNextPlanCarriedAcrossPlans(t *testing.T) {
+	ctx := context.Background()
+	req := testcontainers.ContainerRequest{
+		Image:        "postgres:16-alpine",
+		ExposedPorts: []string{"5432/tcp"},
+		Env: map[string]string{
+			"POSTGRES_USER": "waypoint", "POSTGRES_PASSWORD": "waypoint", "POSTGRES_DB": "waypoint",
+		},
+		WaitingFor: wait.ForLog("database system is ready to accept connections").WithOccurrence(2).WithStartupTimeout(60 * time.Second),
+	}
+	pg, err := startPostgresContainer(ctx, testcontainers.GenericContainerRequest{ContainerRequest: req, Started: true})
+	if err != nil {
+		t.Skipf("testcontainers postgres:16-alpine unavailable: %v", err)
+	}
+	t.Cleanup(func() { _ = pg.Terminate(ctx) })
+	host, err := pg.Host(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	port, err := pg.MappedPort(ctx, "5432")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dsn := "postgres://waypoint:waypoint@" + host + ":" + port.Port() + "/waypoint?sslmode=disable"
+	root := repoRoot(t)
+	for _, m := range []string{"0001_init.sql", "0007_planning.sql", "0013_planning_stop_times.sql", "0020_planning_publications.sql", "0035_planning_disruption_risks.sql", "0036_planning_unallocated_reasons.sql", "0037_planning_deferral_next_run.sql"} {
+		applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", m))
+	}
+	peers := httptest.NewServer(peerStub())
+	t.Cleanup(peers.Close)
+	planPool, err := db.Open(ctx, dsn, "planning")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(planPool.Close)
+	planH := planhandler.Handler{
+		Authn:    bearerAuth{},
+		Profiles: staticProfiles{},
+		Service: planservice.Service{Repo: planstore.Postgres{Pool: planPool}, Peers: planclient.Peers{
+			OrdersURL: peers.URL, FleetURL: peers.URL, SharedURL: peers.URL, DeliveryURL: peers.URL,
+			M2M: staticToken("svc-planning"),
+		}},
+	}
+	planR := chi.NewRouter()
+	planH.Routes(planR)
+	planSrv := httptest.NewServer(planR)
+	t.Cleanup(planSrv.Close)
+
+	call := func(method, path, body string, want int) []byte {
+		t.Helper()
+		r, _ := http.NewRequest(method, planSrv.URL+path, strings.NewReader(body))
+		r.Header.Set("Authorization", "Bearer usr-dispatcher")
+		r.Header.Set("Content-Type", "application/json")
+		res, err := http.DefaultClient.Do(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		b, _ := io.ReadAll(res.Body)
+		if res.StatusCode != want {
+			t.Fatalf("%s %s: got %d want %d: %s", method, path, res.StatusCode, want, b)
+		}
+		return b
+	}
+	createPlan := func(date string) string {
+		t.Helper()
+		var created struct {
+			Plan struct {
+				ID string `json:"id"`
+			} `json:"plan"`
+		}
+		if err := json.Unmarshal(call(http.MethodPost, "/api/v1/planning/plans", `{"deliveryDate":"`+date+`"}`, http.StatusCreated), &created); err != nil {
+			t.Fatal(err)
+		}
+		return created.Plan.ID
+	}
+	type flags struct{ deferredLastRun, priority bool }
+	orderFlags := func(planID string) flags {
+		t.Helper()
+		var detail struct {
+			Orders []struct {
+				OutletID         string `json:"outletId"`
+				DeferredLastRun  bool   `json:"deferredLastRun"`
+				PriorityNextPlan bool   `json:"priorityNextPlan"`
+			} `json:"orders"`
+		}
+		if err := json.Unmarshal(call(http.MethodGet, "/api/v1/planning/plans/"+planID, "", http.StatusOK), &detail); err != nil {
+			t.Fatal(err)
+		}
+		if len(detail.Orders) != 1 || detail.Orders[0].OutletID != "OUT034" {
+			t.Fatalf("expected the single OUT034 order: %+v", detail.Orders)
+		}
+		return flags{detail.Orders[0].DeferredLastRun, detail.Orders[0].PriorityNextPlan}
+	}
+	deferOrder := func(planID, nextRun string) {
+		t.Helper()
+		call(http.MethodPost, "/api/v1/planning/plans/"+planID+"/deferrals", `{"orderId":"ord-1","reasonCode":"NO_ELIGIBLE_VEHICLE","comment":"No reefer free","nextRunTarget":"`+nextRun+`"}`, http.StatusCreated)
+	}
+
+	// Plan A: first deferral. Nothing earlier, so neither flag, even after deferring.
+	planA := createPlan("2026-09-29")
+	deferOrder(planA, "2026-09-30")
+	if got := orderFlags(planA); got != (flags{false, false}) {
+		t.Fatalf("plan A (first deferral): %+v", got)
+	}
+
+	// Plan B: warns that the outlet was deferred last run, but one earlier deferral is not yet priority.
+	planB := createPlan("2026-09-30")
+	if got := orderFlags(planB); got != (flags{true, false}) {
+		t.Fatalf("plan B before its own deferral should warn but not be priority: %+v", got)
+	}
+	// Second consecutive deferral on B: priority on the plan where it was made.
+	deferOrder(planB, "2026-10-01")
+	if got := orderFlags(planB); got != (flags{true, true}) {
+		t.Fatalf("plan B after the second deferral should be priority: %+v", got)
+	}
+
+	// Plan C has no deferral of its own; the flag must come from persisted history.
+	planC := createPlan("2026-10-01")
+	if got := orderFlags(planC); got != (flags{true, true}) {
+		t.Fatalf("plan C must still flag the outlet priority from deferral history: %+v", got)
+	}
+	// Viewing earlier plans again is unaffected by the later ones.
+	if got := orderFlags(planA); got != (flags{false, false}) {
+		t.Fatalf("plan A re-read: %+v", got)
+	}
+	if got := orderFlags(planB); got != (flags{true, true}) {
+		t.Fatalf("plan B re-read: %+v", got)
+	}
 }

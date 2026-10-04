@@ -15,7 +15,7 @@ func TestApplyFairnessHistoryCombinesInputsAndClampsUnknownServiceAge(t *testing
 	orders := []domain.Order{{ID: "recent", OutletID: "OUT-1"}, {ID: "new", OutletID: "OUT-2"}}
 	policy := domain.PlanningPolicy{DeferralWeightPoints: 10, MaxDeferralCount: 3, MaxUnservedDays: 45}
 
-	available, err := applyFairnessHistory(orders, map[string]int{"OUT-1": 2}, nil, map[string]time.Time{"OUT-1": lastServedAt}, nil, asOf, policy, map[string]string{"OUT-1": "2026-09-28"}, nil)
+	available, err := applyFairnessHistory(orders, map[string]int{"OUT-1": 2}, nil, map[string]time.Time{"OUT-1": lastServedAt}, nil, asOf, policy, map[string]string{"OUT-1": "2026-09-28"}, nil, nil)
 	if err != nil || !available {
 		t.Fatalf("history should be available: available=%v err=%v", available, err)
 	}
@@ -44,7 +44,7 @@ func TestApplyFairnessHistoryClearsRepeatDeferralWarningAfterLaterService(t *tes
 	policy := domain.PlanningPolicy{DeferralWeightPoints: 10, MaxDeferralCount: 3, MaxUnservedDays: 45}
 
 	lastAttempted := map[string]time.Time{"OUT-1": servedAfterDeferral}
-	_, err := applyFairnessHistory(orders, map[string]int{"OUT-1": 1}, nil, map[string]time.Time{"OUT-1": servedAfterDeferral}, nil, asOf, policy, map[string]string{"OUT-1": "2026-09-20"}, lastAttempted)
+	_, err := applyFairnessHistory(orders, map[string]int{"OUT-1": 1}, nil, map[string]time.Time{"OUT-1": servedAfterDeferral}, nil, asOf, policy, map[string]string{"OUT-1": "2026-09-20"}, nil, lastAttempted)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestApplyFairnessHistoryClearsRepeatDeferralWarningAfterLaterFailedAttempt(
 	// lastServed is empty: the later run failed, so it never reached
 	// OutletLastServed. Only lastAttempted sees it.
 	_, err := applyFairnessHistory(orders, map[string]int{"OUT-1": 1}, nil, nil, nil, asOf, policy,
-		map[string]string{"OUT-1": "2026-09-20"}, map[string]time.Time{"OUT-1": attemptedAfterDeferral})
+		map[string]string{"OUT-1": "2026-09-20"}, nil, map[string]time.Time{"OUT-1": attemptedAfterDeferral})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -82,7 +82,7 @@ func TestApplyFairnessHistoryClearsRepeatDeferralWarningAfterLaterFailedAttempt(
 func TestApplyFairnessHistoryFallsBackExplicitlyWhenDeliveryHistoryFails(t *testing.T) {
 	orders := []domain.Order{{ID: "deferred", OutletID: "OUT-1"}}
 	policy := domain.PlanningPolicy{DeferralWeightPoints: 10, MaxDeferralCount: 3, MaxUnservedDays: 45}
-	available, err := applyFairnessHistory(orders, map[string]int{"OUT-1": 2}, nil, nil, errors.New("delivery history offline"), time.Time{}, policy, nil, nil)
+	available, err := applyFairnessHistory(orders, map[string]int{"OUT-1": 2}, nil, nil, errors.New("delivery history offline"), time.Time{}, policy, nil, nil, nil)
 	if err != nil || available {
 		t.Fatalf("delivery history failure should use explicit deferral-only fallback: available=%v err=%v", available, err)
 	}
@@ -92,8 +92,42 @@ func TestApplyFairnessHistoryFallsBackExplicitlyWhenDeliveryHistoryFails(t *test
 }
 
 func TestApplyFairnessHistoryRejectsMissingDeferralSignal(t *testing.T) {
-	_, err := applyFairnessHistory([]domain.Order{{OutletID: "OUT-1"}}, nil, errors.New("deferral table unavailable"), nil, nil, time.Time{}, domain.PlanningPolicy{}, nil, nil)
+	_, err := applyFairnessHistory([]domain.Order{{OutletID: "OUT-1"}}, nil, errors.New("deferral table unavailable"), nil, nil, time.Time{}, domain.PlanningPolicy{}, nil, nil, nil)
 	if err == nil || err.Error() != "load outlet deferral history: deferral table unavailable" {
 		t.Fatalf("unexpected deferral history error: %v", err)
+	}
+}
+
+// W3: priorityNextPlan is derived from persisted deferral history, so a later
+// plan carries it without needing a deferral on the plan being viewed.
+func TestApplyFairnessHistoryCarriesPriorityNextPlanFromConsecutiveDeferrals(t *testing.T) {
+	loc := time.FixedZone("Asia/Colombo", 5*60*60+30*60)
+	asOf := time.Date(2026, time.October, 1, 0, 0, 0, 0, loc)
+	policy := domain.PlanningPolicy{DeferralWeightPoints: 10, MaxDeferralCount: 3, MaxUnservedDays: 45}
+	orders := []domain.Order{
+		{ID: "repeat", OutletID: "OUT-REPEAT"}, // deferred 09-29 and 09-30 -> priority
+		{ID: "single", OutletID: "OUT-SINGLE"}, // deferred only 09-30 -> warning, not priority
+		{ID: "broken", OutletID: "OUT-BROKEN"}, // deferred 09-28, attempted 09-29, deferred 09-30
+		{ID: "none", OutletID: "OUT-NONE"},
+	}
+	last := map[string]string{"OUT-REPEAT": "2026-09-30", "OUT-SINGLE": "2026-09-30", "OUT-BROKEN": "2026-09-30"}
+	earlier := map[string]string{"OUT-REPEAT": "2026-09-29", "OUT-BROKEN": "2026-09-28"}
+	attempted := map[string]time.Time{"OUT-BROKEN": time.Date(2026, time.September, 29, 10, 0, 0, 0, loc)}
+	if _, err := applyFairnessHistory(orders, nil, nil, nil, nil, asOf, policy, last, earlier, attempted); err != nil {
+		t.Fatal(err)
+	}
+	// No deferral exists on this plan, so only history can set the flag.
+	markPriorityNextPlan(orders, map[string]bool{})
+	if !orders[0].PriorityNextPlan {
+		t.Fatalf("a repeat-deferred outlet must stay priority on the next plan: %+v", orders[0])
+	}
+	if orders[1].PriorityNextPlan || !orders[1].DeferredLastRun {
+		t.Fatalf("a single prior deferral warns but is not priority yet: %+v", orders[1])
+	}
+	if orders[2].PriorityNextPlan {
+		t.Fatalf("an attempt between the two deferrals breaks the consecutive chain: %+v", orders[2])
+	}
+	if orders[3].PriorityNextPlan {
+		t.Fatalf("an outlet without deferrals must not be priority: %+v", orders[3])
 	}
 }

@@ -47,7 +47,8 @@ export function OrderListPage() {
   const { order, planning, stage, receipt } = selected;
   const steps = timelineSteps(selected);
   const why = isDeferred(stage) ? deferralExplanation(planning.reasonCode) : null;
-  const eta = planning.plannedArrivalAt;
+  const prediction = selected.delivery?.arrivalPrediction;
+  const eta = prediction?.estimatedArrivalAt || planning.plannedArrivalAt;
 
   return (
     <>
@@ -96,8 +97,23 @@ export function OrderListPage() {
             {eta && (
               <p className="sm-eta-box">
                 <strong>{t("Expected arrival")}: {formatDay(colomboDate(eta))} · {colomboTime(eta)}</strong>
+                {prediction?.arrivalRangeLower && prediction.arrivalRangeUpper && <span className="muted">{t("Arrival range")}: {formatDay(colomboDate(prediction.arrivalRangeLower))} - {colomboTime(prediction.arrivalRangeLower)} {t("to")} {formatDay(colomboDate(prediction.arrivalRangeUpper))} - {colomboTime(prediction.arrivalRangeUpper)}</span>}
+                {prediction?.lateRisk && <span className="muted">{t(prediction.lateRisk)}</span>}
                 <span className="muted">{t("ETA reflects reported events; this is not continuous GPS tracking.")}</span>
               </p>
+            )}
+
+            {prediction?.previouslyCommunicatedAt && prediction.notifiedArrivalAt && (
+              <p role="status">{t("Arrival changed from")} {formatDay(colomboDate(prediction.previouslyCommunicatedAt))} - {colomboTime(prediction.previouslyCommunicatedAt)} {t("to")} {formatDay(colomboDate(prediction.notifiedArrivalAt))} - {colomboTime(prediction.notifiedArrivalAt)}</p>
+            )}
+
+            {selected.delivery?.returnedGoods && (
+              <div className="sm-alert-card" role="status">
+                <h3 className="sm-alert-title">{t("Returned goods")}</h3>
+                <p className="sm-alert-body">{selected.delivery.returnedGoods.units} - {selected.delivery.returnedGoods.goods} - {t(selected.delivery.returnedGoods.reason)}</p>
+                <p className="sm-alert-body">{selected.delivery.returnedGoods.resolution === "REQUEST_DEFERRAL" ? t("Dispatcher deferral requested") : t("Re-attempt on next run")}</p>
+                {selected.delivery.returnedGoods.followupOrderRef && <p className="sm-alert-body">{t("Follow-up order")}: {selected.delivery.returnedGoods.followupOrderRef} - {selected.delivery.returnedGoods.followupDate}</p>}
+              </div>
             )}
 
             {why && (

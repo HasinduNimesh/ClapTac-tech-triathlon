@@ -92,6 +92,13 @@ func TestAuditSearchKPIsAndAppendOnly(t *testing.T) {
 	if _, err = pool.Exec(ctx, string(migration)); err != nil {
 		t.Fatalf("apply notification migration: %v", err)
 	}
+	migration, err = os.ReadFile("../../../../database/migrations/0056_shared_arrival_notifications.sql")
+	if err != nil { t.Fatal(err) }
+	if _, err = pool.Exec(ctx, string(migration)); err != nil { t.Fatalf("apply arrival notification migration: %v", err) }
+    migration, err = os.ReadFile("../../../../database/migrations/0059_shared_rejected_delivery.sql")
+    if err != nil { t.Fatal(err) }
+    if _, err = pool.Exec(ctx, string(migration)); err != nil { t.Fatalf("apply rejected delivery migration: %v", err) }
+
 	now := time.Now().UTC().Truncate(time.Second)
 	_, err = pool.Exec(ctx, `INSERT INTO audit.events(event_id,actor_id,action,resource_type,resource_id,new_state,timestamp,source) VALUES
 	('e1','USR001','PLAN_GENERATED','PLAN','P-01','{"allocated":3}'::jsonb,$1,'planning-service'),
@@ -144,6 +151,24 @@ func TestAuditSearchKPIsAndAppendOnly(t *testing.T) {
 	if err = pool.QueryRow(ctx, `SELECT status FROM shared.notification_outbox WHERE id=$1`, deliveryClaim.ID).Scan(&deliveryStatus); err != nil || deliveryStatus != "DELIVERED" {
 		t.Fatalf("callback status=%q err=%v", deliveryStatus, err)
 	}
+	arrival := store.NotificationEvent{EventKey: "arrival:stop-1:old:new", OutletID: "OUT001", Type: "ARRIVAL_CHANGE", OrderRef: "ORD-01", OldArrivalAt: "2026-10-03T08:00:00Z", NewArrivalAt: "2026-10-03T08:30:00Z"}
+	arrivalFirst, err := s.EnqueueNotification(ctx, arrival)
+	if err != nil || arrivalFirst.Status != "enqueued" { t.Fatalf("arrival notification=%+v err=%v", arrivalFirst, err) }
+	arrivalAgain, err := s.EnqueueNotification(ctx, arrival)
+	if err != nil || arrivalAgain.Status != "duplicate" || arrivalAgain.ID != arrivalFirst.ID { t.Fatalf("duplicate arrival notification=%+v err=%v", arrivalAgain, err) }
+	var arrivalBody string
+	if err := pool.QueryRow(ctx, `SELECT body FROM shared.notification_outbox WHERE id=$1`, arrivalFirst.ID).Scan(&arrivalBody); err != nil || !strings.Contains(arrivalBody, "from 03 Oct 13:30 to 03 Oct 14:00") {
+		t.Fatalf("arrival body=%q err=%v", arrivalBody, err)
+	}
+    returned := store.NotificationEvent{EventKey:"returned-goods:stop-1",OutletID:"OUT001",Type:"DELIVERY_REJECTED",
+        OrderRef:"ORD-01",Goods:"Rejected cartons",Units:2,Reason:"GOODS_REJECTED",
+        Resolution:"NEXT_RUN",FollowupDate:"2026-10-05"}
+    returnedFirst, err := s.EnqueueNotification(ctx, returned)
+    if err != nil || returnedFirst.Status != "enqueued" { t.Fatalf("return notice=%+v err=%v",returnedFirst,err) }
+    returnedReplay, err := s.EnqueueNotification(ctx, returned)
+    if err != nil || returnedReplay.Status != "duplicate" || returnedReplay.ID != returnedFirst.ID {
+        t.Fatalf("duplicate return notice=%+v err=%v",returnedReplay,err)
+    }
 	preferences.ConsentEnabled = false
 	preferences, err = s.SaveNotificationPreferences(ctx, preferences, 1, "u-dispatcher", audit.Event{Action: "OUTLET_NOTIFICATION_PREFERENCES_UPDATED"})
 	if err != nil || preferences.Version != 2 || preferences.ConsentedAt != nil {
