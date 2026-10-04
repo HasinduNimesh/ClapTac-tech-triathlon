@@ -252,7 +252,7 @@ export function PlanningPage() {
                           const order = ordersById.get(u.orderId);
                           return (
                             <tr key={u.orderId} className={order?.deferredLastRun ? "is-alert" : undefined}>
-                              <td><span className="dp-cell-main">{u.orderRef || order?.orderRef || u.orderId}</span><span className="dp-cell-sub">{order ? `${isChilled(order.temperatureRequirement) ? t("Chilled") : t("Ambient")} · ${m3(order.orderVolumeM3)}` : ""}</span></td>
+                              <td><span className="dp-cell-main">{u.orderRef || order?.orderRef || u.orderId}</span>{order?.priorityNextPlan && <span className="dp-cell-sub"><Tag tone="red">{t("Priority outlet")}</Tag></span>}<span className="dp-cell-sub">{order ? `${isChilled(order.temperatureRequirement) ? t("Chilled") : t("Ambient")} · ${m3(order.orderVolumeM3)}` : ""}</span></td>
                               <td><span className="dp-cell-main">{outletLabel(order)}</span><span className="dp-cell-sub">{DEPOT_LABELS[depotOf(order) || ""] || ""}</span></td>
                               <td>{order && <Tag tone={brandTone(order.brand)}>{t(order.brand)}</Tag>}</td>
                               <td><span className="dp-cell-main">{order ? kg(order.orderWeightKg) : "—"}</span><span className="dp-cell-sub">{order ? m3(order.orderVolumeM3) : ""}</span></td>
