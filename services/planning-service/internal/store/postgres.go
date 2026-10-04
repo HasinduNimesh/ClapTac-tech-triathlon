@@ -403,15 +403,27 @@ func (p Postgres) GetAllocation(ctx context.Context, planID, allocID string) (do
 	return a, err
 }
 
+// DeleteAllocation removes one allocation. A trip left with no allocations is removed with it,
+// so a published plan never shows loaders and drivers an empty trip. Adding an order to that
+// vehicle again recreates the trip (EnsureTrip).
 func (p Postgres) DeleteAllocation(ctx context.Context, planID, allocID string) error {
-	tag, err := p.Pool.Exec(ctx, `DELETE FROM allocations WHERE plan_id::text = $1 AND id::text = $2`, planID, allocID)
+	tx, err := p.Pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
-	if tag.RowsAffected() == 0 {
+	defer tx.Rollback(ctx)
+	var tripID string
+	err = tx.QueryRow(ctx, `DELETE FROM allocations WHERE plan_id::text = $1 AND id::text = $2 RETURNING trip_id::text`, planID, allocID).Scan(&tripID)
+	if err == pgx.ErrNoRows {
 		return fmt.Errorf("not found")
 	}
-	return nil
+	if err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, `DELETE FROM planning.trips t WHERE t.id::text=$1 AND NOT EXISTS(SELECT 1 FROM planning.allocations a WHERE a.trip_id=t.id)`, tripID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func (p Postgres) ListAllocations(ctx context.Context, planID string) ([]domain.Allocation, error) {
