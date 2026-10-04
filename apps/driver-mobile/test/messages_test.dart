@@ -92,6 +92,20 @@ class _PerTripSource implements MessageSource {
   Future<MessageAck> acknowledge(String tripId, String messageId) async => const MessageAck.done();
 }
 
+/// A source whose next read can throw, as one does when the server sends something it cannot read.
+class _ThrowingOnceSource extends _Source {
+  bool throwNext = false;
+  @override
+  Future<MessageLoad> load(String tripId) async {
+    if (throwNext) {
+      throwNext = false;
+      loads++;
+      throw TypeError();
+    }
+    return super.load(tripId);
+  }
+}
+
 class _Source implements MessageSource {
   List<DispatcherMessage> messages = [];
   MessageLoad? failure;
@@ -367,6 +381,24 @@ void main() {
       await session.refreshMessages();
       expect(session.messages, isEmpty);
       expect(await session.acknowledgeMessage('x'), contains('no longer available'));
+    });
+  });
+
+  group('a message read that throws', () {
+    test('does not stop later reads: the guard is released and what was shown stays', () async {
+      final source = _ThrowingOnceSource()..messages = [_message('a')];
+      final session = _session(source);
+      addTearDown(session.dispose);
+      await session.signIn();
+      await _settle();
+      expect(session.messages.map((m) => m.id), ['a']);
+      source.throwNext = true;
+      await session.refreshMessages();
+      expect(session.messages.map((m) => m.id), ['a'], reason: 'a failed read keeps what was shown');
+      source.messages = [_message('a'), _message('b')];
+      await session.refreshMessages().timeout(const Duration(seconds: 2));
+      expect(source.loads, 3, reason: 'the third read really ran');
+      expect(session.messages.map((m) => m.id), ['a', 'b']);
     });
   });
 
