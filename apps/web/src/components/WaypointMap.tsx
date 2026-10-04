@@ -4,11 +4,8 @@ import "leaflet/dist/leaflet.css";
 
 export type LatLng = [number, number];
 
-// Approximate depot positions (the official dataset has no coordinates).
-export const DEPOT_LOCATIONS: Record<string, LatLng> = {
-  DEPOT_NORTH: [6.9608, 79.8857], // Peliyagoda distribution centre
-  DEPOT_SOUTH: [7.2955, 80.6356], // Kandy regional hub
-};
+// Approximate depot positions (the official dataset has no coordinates); look them up with depotPosition.
+export { DEPOT_LOCATIONS, depotPosition } from "../api/depots.mjs";
 
 export type MapMarker = {
   id: string;
