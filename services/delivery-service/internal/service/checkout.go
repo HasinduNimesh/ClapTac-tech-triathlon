@@ -7,6 +7,7 @@ import (
 
 	"github.com/HasinduNimesh/ClapTac-tech-triathlon/pkg/audit"
 	"github.com/HasinduNimesh/ClapTac-tech-triathlon/pkg/authorization"
+	"github.com/HasinduNimesh/ClapTac-tech-triathlon/pkg/depot"
 	"github.com/HasinduNimesh/ClapTac-tech-triathlon/services/delivery-service/internal/domain"
 )
 
@@ -24,7 +25,12 @@ func assessCheckout(orders []domain.LoadingOrder, confirmed []string) ([]string,
 	}
 	missing := make([]string, 0)
 	for _, order := range orders {
-		if !seen[order.OrderID] || !strings.EqualFold(order.LoadingStatus, "loaded") || len(order.ShortfallSummary) > 0 {
+		// A trip only reaches checkout once loading is "ready", which means every
+		// shortfall on it has been cleared by the dispatcher (partial load or move
+		// to next run). A cleared shortfall is a partial load the driver confirms,
+		// not a missing order; lines still pending are never ready.
+		cleared := strings.EqualFold(order.LoadingStatus, "loaded") || strings.EqualFold(order.LoadingStatus, "shortfall")
+		if !seen[order.OrderID] || !cleared {
 			missing = append(missing, order.OrderID)
 		}
 	}
@@ -76,7 +82,7 @@ func (s Service) CheckoutStatus(ctx context.Context, profile *authorization.Prof
 		return s.Repo.Checkout(ctx, run.ID)
 	}
 	if authorization.HasPermission(profile.Roles, authorization.PermLoadingView) {
-		if profile.Depot == "" || profile.Depot != run.Depot { return nil, fmt.Errorf("forbidden: loader depot mismatch") }
+		if profile.Depot == "" || !depot.Same(profile.Depot, run.Depot) { return nil, fmt.Errorf("forbidden: loader depot mismatch") }
 		return s.Repo.Checkout(ctx, run.ID)
 	}
 	if authorization.HasPermission(profile.Roles, authorization.PermDeliveryStart) {
