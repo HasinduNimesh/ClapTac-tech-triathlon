@@ -4,7 +4,7 @@ import { apiJSON } from "../api/client";
 import { todayInSriLanka } from "../api/date.mjs";
 import { DeliveryStop, DeliveryTripDetail, DeliveryTripSummary, LatenessProbability, LiveLocation } from "../api/delivery";
 import { DEPOT_LABELS, LoadingTripSummary, depotCode, sameDepot } from "../api/loading";
-import { PlanDetail } from "../api/planning";
+import { DisruptionRisk, PlanDetail } from "../api/planning";
 import { useAuth } from "../auth/AuthContext";
 import { useLocale } from "../i18n";
 import { ARRIVAL_ESTIMATE_VERSION, estimateArrival, previousReportedStop } from "./arrivalEstimate.mjs";
@@ -12,6 +12,7 @@ import { calibratedArrivalRange } from "./arrivalRange.mjs";
 import { evaluatedLatenessCalibrations } from "./latenessCalibration.mjs";
 import { singleFlightMessagePost } from "./singleFlightMessagePost.mjs";
 import { enrichTripWithWatch, generateNeedsActionAlerts } from "./tripWatch.mjs";
+import { disruptionsForTrip, groupActionsByTrip } from "./liveAlerts.mjs";
 import { FRESH_TRIP_BUDGET_MINUTES } from "./planModel";
 import { runRecovery } from "./breakdownRecovery.mjs";
 import { useDepot } from "./DispatcherLayout";
@@ -25,11 +26,12 @@ import { clock, dateTime, errorText, isChilled, minutesAgo, useApi, useToken } f
 type TripMessage = { id: string; tripId: string; stopId?: string; body: string; sentBy: string; createdAt: string; acknowledgedBy?: string; acknowledgedAt?: string };
 type BreakdownProposal = { planId: string; vehicleId: string; items: { tripNumber: number; stops: { allocationId: string; orderId: string; orderRef: string; outletId: string; stopSequence: number; urgencyRank?: number; chilled?: boolean; windowClose?: string }[]; options: { vehicleId: string; valid: boolean; projectedStops: number; failures: { reasonCode: string }[] }[] }[]; confirmed: boolean; critical?: boolean; severity?: string };
 type RowState = "broken" | "late" | "silent" | "done" | "ok" | "waiting";
-type Row = { summary: DeliveryTripSummary; detail?: DeliveryTripDetail; state: RowState; next?: DeliveryStop; nextEta?: ReturnType<typeof estimateArrival>; lastUpdate?: string; chilled: boolean; incident?: Incident; watch?: ReturnType<typeof enrichTripWithWatch> };
+type Row = { summary: DeliveryTripSummary; detail?: DeliveryTripDetail; state: RowState; next?: DeliveryStop; nextEta?: ReturnType<typeof estimateArrival>; lastUpdate?: string; chilled: boolean; incident?: Incident; watch?: ReturnType<typeof enrichTripWithWatch>; disruptions?: ReturnType<typeof disruptionsForTrip> };
 type Severity = "critical" | "high" | "medium" | "low";
-type ActionItem = { key: string; severity: Severity; title: string; text: string; actions: { label: string; onClick?: () => void; to?: string; primary?: boolean }[] };
+type ActionItem = { key: string; severity: Severity; tripId?: string; tripLabel?: string; title: string; text: string; actions: { label: string; onClick?: () => void; to?: string; primary?: boolean }[] };
 
 const fallbackServiceTime = { minutes: 20, version: "fixed_20m_v1" };
+const RISK_TYPE_LABELS: Record<string, string> = { HEAVY_RAIN: "Heavy rain", FLOODING: "Flooding", LANDSLIDE: "Landslide", ROAD_CLOSURE: "Road closure", ROAD_DAMAGE: "Road damage", OTHER: "Other" };
 const postTripMessageOnce = singleFlightMessagePost(async ({ token, tripId, body, stopId }) =>
   apiJSON(`/delivery/trips/${tripId}/messages`, token, { method: "POST", body: JSON.stringify({ body, stopId: stopId || undefined }) }),
 );
@@ -57,6 +59,7 @@ export function LiveOperationsPage() {
   const incidents = useApi<{ items: Incident[] }>("/fleet/incidents?openOnly=true");
   const outlets = useApi<{ items: Outlet[] }>("/shared/outlets");
   const loading = useApi<{ items: LoadingTripSummary[] }>(`/loading/trips?date=${date}`);
+  const risks = useApi<{ items: DisruptionRisk[] }>(`/planning/disruption-risks?date=${date}`);
   const forecast = useApi<{ forecast?: { serviceMinutesPerStop?: number; serviceEstimateVersion?: string } }>("/orders/forecast");
   const serviceMinutes = forecast.data?.forecast?.serviceMinutesPerStop ?? fallbackServiceTime.minutes;
 
@@ -105,7 +108,10 @@ export function LiveOperationsPage() {
     }, now);
     const silent = watch.isSilent;
     const state: RowState = incident ? "broken" : done ? "done" : nextEta && (nextEta.kind === "late" || nextEta.kind === "risk") ? "late" : silent ? "silent" : started ? "ok" : "waiting";
-    return { ...row, next, nextEta, lastUpdate, state, incident, watch, chilled: stops.some((s) => isChilled(s.temperatureRequirement)) };
+    // LO-6: road and weather risks recorded for this date that touch the depot, a district still to visit, or this trip.
+    const remaining = stops.filter((s) => !s.outcomeCode);
+    const disruptions = done ? [] : disruptionsForTrip(risks.data?.items, { tripId: row.summary.tripId, vehicleId: row.summary.vehicleId, depot: row.summary.depot, planRef: plan.data?.plan?.planRef, remainingDistricts: (remaining.length ? remaining : stops).map((s) => s.district || "") });
+    return { ...row, next, nextEta, lastUpdate, state, incident, watch, disruptions, chilled: stops.some((s) => isChilled(s.temperatureRequirement)) };
   });
   const order: RowState[] = ["broken", "late", "silent", "ok", "waiting", "done"];
   const sorted = [...evaluated].sort((a, b) => order.indexOf(a.state) - order.indexOf(b.state));
@@ -117,24 +123,32 @@ export function LiveOperationsPage() {
   const strandedStops = evaluated.filter((r) => r.state === "broken").reduce((s, r) => s + (r.detail?.stops.filter((x) => !x.outcomeCode).length || 0), 0);
 
   const actions: ActionItem[] = [];
+  const tripLabel = (vehicleId?: string, tripNumber?: number) => `${vehicleId} · ${t("trip")} ${tripNumber ?? 1}`;
+  const tripOf = (tripId: string) => { const r = evaluated.find((x) => x.summary.tripId === tripId); return r ? { tripId, tripLabel: tripLabel(r.summary.vehicleId, r.summary.tripNumber) } : {}; };
   for (const row of evaluated.filter((r) => r.state === "broken")) {
     const remaining = row.detail?.stops.filter((s) => !s.outcomeCode) || [];
-    actions.push({ key: `inc-${row.incident!.id}`, severity: "critical", title: `${row.summary.vehicleId} ${t("broke down")}: ${remaining.length} ${t("stops stranded")}, ${remaining.filter((s) => isChilled(s.temperatureRequirement)).length} ${t("of them chilled")}`, text: `${t(row.incident!.type)} · ${row.incident!.description} · ${t("reported")} ${dateTime(row.incident!.reportedAt)}`, actions: [{ label: t("Acknowledge"), onClick: () => setAcknowledged((a) => [...a, `inc-${row.incident!.id}`]) }, { label: `→ ${t("Open recovery")}`, primary: true, onClick: () => setRecovery(row.incident!) }] });
+    actions.push({ key: `inc-${row.incident!.id}`, severity: "critical", ...tripOf(row.summary.tripId), title: `${row.summary.vehicleId} ${t("broke down")}: ${remaining.length} ${t("stops stranded")}, ${remaining.filter((s) => isChilled(s.temperatureRequirement)).length} ${t("of them chilled")}`, text: `${t(row.incident!.type)} · ${row.incident!.description} · ${t("reported")} ${dateTime(row.incident!.reportedAt)}`, actions: [{ label: t("Acknowledge"), onClick: () => setAcknowledged((a) => [...a, `inc-${row.incident!.id}`]) }, { label: `→ ${t("Open recovery")}`, primary: true, onClick: () => setRecovery(row.incident!) }] });
   }
   for (const incident of openIncidents.filter((i) => !evaluated.some((r) => r.incident?.id === i.id))) {
     actions.push({ key: `inc-${incident.id}`, severity: "high", title: `${incident.vehicleId} · ${t(incident.type)}`, text: `${incident.description} · ${t("blocked for planning on")} ${incident.date}`, actions: [{ label: t("Open recovery"), primary: true, onClick: () => setRecovery(incident) }] });
   }
-  for (const row of lateRows) actions.push({ key: `late-${row.summary.tripId}`, severity: "high", title: `${row.summary.vehicleId} ${t("will reach")} ${row.next?.outletName || row.next?.outletId || ""} ${t("after its window closes")}`, text: `${t("Window")} ${clock(row.next?.plannedWindowOpen)}–${clock(row.next?.plannedWindowClose)} · ${t(row.nextEta?.label || "")}`, actions: [{ label: t("Acknowledge"), onClick: () => setAcknowledged((a) => [...a, `late-${row.summary.tripId}`]) }, { label: t("Open trip"), onClick: () => setOpenTrip(row.summary.tripId) }] });
+  for (const row of lateRows) actions.push({ key: `late-${row.summary.tripId}`, severity: "high", ...tripOf(row.summary.tripId), title: `${row.summary.vehicleId} ${t("will reach")} ${row.next?.outletName || row.next?.outletId || ""} ${t("after its window closes")}`, text: `${t("Window")} ${clock(row.next?.plannedWindowOpen)}–${clock(row.next?.plannedWindowClose)} · ${t(row.nextEta?.label || "")}`, actions: [{ label: t("Acknowledge"), onClick: () => setAcknowledged((a) => [...a, `late-${row.summary.tripId}`]) }, { label: t("Open trip"), onClick: () => setOpenTrip(row.summary.tripId) }] });
   const watchAlerts = generateNeedsActionAlerts(evaluated.flatMap((r) => (r.watch ? [r.watch] : [])), new Set<string>(), now)
     .filter((a) => a.type === "CHILLED_OVERAGE" || evaluated.find((r) => r.summary.tripId === a.tripId)?.state === "silent");
   for (const alert of watchAlerts) {
     const ackAction = { label: t("Acknowledge"), onClick: () => setAcknowledged((a) => [...a, alert.id]) };
     const openAction = { label: t("Open trip"), primary: alert.type === "CHILLED_OVERAGE", onClick: () => setOpenTrip(alert.tripId) };
-    if (alert.type === "SILENT_TRIP") actions.push({ key: alert.id, severity: "medium", title: `${t("No update from")} ${alert.vehicleId} ${t("for")} ${alert.minutes} ${t("minutes")}`, text: `${t("No update since")} ${alert.timeStr}${alert.lastKnownPlace ? ` · ${t("Last known")}: ${alert.lastKnownPlace}` : ""} · ${t("Records made offline will sync when signal returns")}`, actions: [ackAction, openAction] });
-    else actions.push({ key: alert.id, severity: "high", title: `${alert.vehicleId} · ${t("Chilled goods on board running long")}`, text: `${t("Chilled time on board")}: ${alert.chilledMinutes}m (${t("exceeds allowed limit")})`, actions: [ackAction, openAction] });
+    if (alert.type === "SILENT_TRIP") actions.push({ key: alert.id, severity: "medium", ...tripOf(alert.tripId), title: `${t("No update from")} ${alert.vehicleId} ${t("for")} ${alert.minutes} ${t("minutes")}`, text: `${t("No update since")} ${alert.timeStr}${alert.lastKnownPlace ? ` · ${t("Last known")}: ${alert.lastKnownPlace}` : ""} · ${t("Records made offline will sync when signal returns")}`, actions: [ackAction, openAction] });
+    else actions.push({ key: alert.id, severity: "high", ...tripOf(alert.tripId), title: `${alert.vehicleId} · ${t("Chilled goods on board running long")}`, text: `${t("Chilled time on board")}: ${alert.chilledMinutes}m (${t("exceeds allowed limit")})`, actions: [ackAction, openAction] });
   }
-  for (const trip of (loading.data?.items || []).filter((x) => (x.shortfallCount || 0) > 0)) actions.push({ key: `short-${trip.tripId}`, severity: "medium", title: `${t("Loading shortfall on")} ${trip.vehicleId} ${t("trip")} ${trip.tripNumber ?? 1}: ${trip.shortfallCount} ${t("order(s) short before departure")}`, text: `${DEPOT_LABELS[trip.depot || ""] || trip.depot || ""} · ${trip.planRef || ""}`, actions: [{ label: t("Review shortfall"), primary: true, to: "/dispatcher/notifications" }] });
+  for (const trip of (loading.data?.items || []).filter((x) => (x.shortfallCount || 0) > 0)) actions.push({ key: `short-${trip.tripId}`, severity: "medium", tripId: trip.tripId, tripLabel: tripLabel(trip.vehicleId, trip.tripNumber), title: `${t("Loading shortfall on")} ${trip.vehicleId} ${t("trip")} ${trip.tripNumber ?? 1}: ${trip.shortfallCount} ${t("order(s) short before departure")}`, text: `${DEPOT_LABELS[trip.depot || ""] || trip.depot || ""} · ${trip.planRef || ""}`, actions: [{ label: t("Review shortfall"), primary: true, to: "/dispatcher/notifications" }] });
+  for (const row of evaluated) {
+    const top = row.disruptions?.[0];
+    if (!top || top.effectiveSeverity !== "HIGH") continue;
+    actions.push({ key: `risk-${row.summary.tripId}-${top.id}`, severity: "medium", ...tripOf(row.summary.tripId), title: `${row.summary.vehicleId} ${t("may be delayed by")} ${t(RISK_TYPE_LABELS[top.riskType] || top.riskType).toLowerCase()} · ${top.scopeKey}`, text: `${top.summary}${top.summary ? " · " : ""}${t("Source")}: ${top.source}`, actions: [{ label: t("Acknowledge"), onClick: () => setAcknowledged((a) => [...a, `risk-${row.summary.tripId}-${top.id}`]) }, { label: t("Open trip"), onClick: () => setOpenTrip(row.summary.tripId) }] });
+  }
   const openActions = actions.filter((a) => !acknowledged.includes(a.key));
+  const actionGroups = groupActionsByTrip(openActions);
   const rail = (s: Severity) => (s === "critical" ? "dp-list-item--critical" : s === "high" ? "dp-list-item--high" : s === "medium" ? "dp-list-item--medium" : "");
   const sevTone = (s: Severity) => (s === "critical" ? "red" : s === "high" ? "amber" : s === "medium" ? "primary" : "muted") as "red" | "amber" | "primary" | "muted";
 
@@ -157,22 +171,48 @@ export function LiveOperationsPage() {
       </StatRow>
       <div className="dp-body">
         {error && <p className="dp-note dp-note--red" role="alert">{error}</p>}
-        <Panel title={<>{t("Needs action")} <Tag tone="red">{openActions.length}</Tag></>} sub={t("Ranked by impact: breakdowns and chilled goods, closing windows, silent trips, then loading and delivery issues")} flush>
+        <Panel title={<>{t("Needs action")} <Tag tone="red">{openActions.length}</Tag></>} sub={t("Ranked by impact and grouped by trip: breakdowns and chilled goods, closing windows, silent trips, road risks, then loading and delivery issues")} flush>
           {openActions.length === 0 ? <p className="dp-empty">{t("Nothing needs a decision right now.")}</p> : (
             <div className="dp-list">
-              {openActions.map((item) => (
-                <div key={item.key} className={`dp-list-item dp-list-item--rail ${rail(item.severity)}`}>
-                  <div className="dp-list-main">
-                    <p className="dp-list-title"><Tag tone={sevTone(item.severity)}>{t(item.severity === "critical" ? "Critical" : item.severity === "high" ? "High" : item.severity === "medium" ? "Medium" : "Low")}</Tag> {item.title}</p>
-                    <p className="dp-list-text">{item.text}</p>
+              {actionGroups.map((group) => {
+                const item = group.items[0];
+                const sevLabel = (s: Severity) => t(s === "critical" ? "Critical" : s === "high" ? "High" : s === "medium" ? "Medium" : "Low");
+                const buttons = (a: ActionItem) => a.actions.map((action) => action.to
+                  ? <Link key={action.label} to={action.to} className={`dp-btn dp-btn--sm${action.primary ? "" : " dp-btn--secondary"}`}>{action.label}</Link>
+                  : <button key={action.label} type="button" className={`dp-btn dp-btn--sm${action.primary ? "" : " dp-btn--secondary"}`} onClick={action.onClick}>{action.label}</button>);
+                if (group.items.length === 1) return (
+                  <div key={group.key} className={`dp-list-item dp-list-item--rail ${rail(item.severity)}`}>
+                    <div className="dp-list-main">
+                      <p className="dp-list-title"><Tag tone={sevTone(item.severity)}>{sevLabel(item.severity)}</Tag> {item.title}</p>
+                      <p className="dp-list-text">{item.text}</p>
+                    </div>
+                    <div className="dp-list-actions">{buttons(item)}</div>
                   </div>
-                  <div className="dp-list-actions">
-                    {item.actions.map((action) => action.to
-                      ? <Link key={action.label} to={action.to} className={`dp-btn dp-btn--sm${action.primary ? "" : " dp-btn--secondary"}`}>{action.label}</Link>
-                      : <button key={action.label} type="button" className={`dp-btn dp-btn--sm${action.primary ? "" : " dp-btn--secondary"}`} onClick={action.onClick}>{action.label}</button>)}
+                );
+                // LO-2: several alerts on one trip read as one problem, under the trip's worst severity.
+                return (
+                  <div key={group.key} className={`dp-list-item dp-list-item--rail ${rail(group.severity)}`} style={{ display: "block" }}>
+                    <div className="dp-row dp-row--between">
+                      <p className="dp-list-title" style={{ margin: 0 }}><Tag tone={sevTone(group.severity)}>{sevLabel(group.severity)}</Tag> {group.label} · {group.items.length} {t("issues on this trip")}</p>
+                      <div className="dp-list-actions">
+                        <button type="button" className="dp-btn dp-btn--sm dp-btn--secondary" onClick={() => setAcknowledged((a) => [...a, ...group.items.map((i) => i.key)])}>{t("Acknowledge all")}</button>
+                        {group.tripId && <button type="button" className="dp-btn dp-btn--sm" onClick={() => setOpenTrip(group.tripId!)}>{t("Open trip")}</button>}
+                      </div>
+                    </div>
+                    <ul style={{ listStyle: "none", margin: "10px 0 0", padding: 0, display: "grid", gap: 8 }}>
+                      {group.items.map((i) => (
+                        <li key={i.key} className="dp-row dp-row--between" style={{ borderTop: "1px solid #eef1f6", paddingTop: 8, alignItems: "flex-start" }}>
+                          <div className="dp-list-main">
+                            <p className="dp-list-title" style={{ fontSize: "0.875rem" }}><Tag tone={sevTone(i.severity)}>{sevLabel(i.severity)}</Tag> {i.title}</p>
+                            <p className="dp-list-text">{i.text}</p>
+                          </div>
+                          <div className="dp-list-actions">{buttons(i)}</div>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </Panel>
@@ -207,7 +247,7 @@ export function LiveOperationsPage() {
                         <td><span className="dp-cell-main">{clock(plan.data?.allocations?.find((a) => a.tripId === row.summary.tripId && a.orderId === row.next?.orderId)?.plannedArrivalAt)}</span><span className={`dp-cell-sub${row.nextEta?.kind === "late" || row.nextEta?.kind === "risk" ? " dp-cell-sub--amber" : " dp-cell-sub--green"}`}>{row.state === "broken" ? t("No ETA") : row.nextEta?.eta ? clock(row.nextEta.eta) : t("Unknown")}</span></td>
                         <td>{row.chilled ? <Tag tone="cool">❄ {t("Chilled")}</Tag> : <Tag tone="primary">{t("Ambient")}</Tag>}{row.watch?.isChilledLong && <Tag tone="amber" block>{t("Chilled time on board")}: {row.watch.chilledMinutes}m ({t("exceeds allowed limit")})</Tag>}</td>
                         <td><span className={`dp-cell-main${row.state === "silent" ? " dp-cell-sub--amber" : ""}`}>{clock(row.lastUpdate)}</span><span className={`dp-cell-sub${row.state === "silent" ? " dp-cell-sub--amber" : ""}`}>{ago === undefined ? t("No driver update yet") : `${ago} ${t("min ago")}`}</span>{row.state === "silent" && row.watch && <><Tag tone="silent" block>{t("No update since")} {row.watch.silentTime}</Tag>{row.watch.lastKnownPlace && <span className="dp-cell-sub">{t("Last known")}: {row.watch.lastKnownPlace}</span>}</>}</td>
-                        <td>{statusTag(row)}</td>
+                        <td>{statusTag(row)}{row.disruptions?.[0] && <Tag tone={row.disruptions[0].effectiveSeverity === "HIGH" ? "red" : row.disruptions[0].effectiveSeverity === "MEDIUM" ? "amber" : "muted"} block><span title={`${row.disruptions.map((d) => `${d.scopeKey}: ${d.summary}`).join(" · ")}`}>⛈ {t(RISK_TYPE_LABELS[row.disruptions[0].riskType] || row.disruptions[0].riskType)}{row.disruptions.length > 1 ? ` +${row.disruptions.length - 1}` : ""} · {t("may delay")}</span></Tag>}</td>
                       </tr>
                     );
                   })}
