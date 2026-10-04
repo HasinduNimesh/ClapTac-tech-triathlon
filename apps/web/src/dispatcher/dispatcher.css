@@ -19,6 +19,9 @@
   --dp-red-bg: #fceeeb;
   --dp-cool: #007f91;
   --dp-cool-bg: #e7f6f8;
+  --dp-silent: #4b5568;
+  --dp-silent-bg: #f3f4f7;
+  --dp-silent-chip: #e2e6ee;
   --dp-shadow: 0 2px 8px rgba(17, 38, 146, 0.08);
 }
 
@@ -260,6 +263,10 @@
 .dp-tag--red { background: var(--dp-red-bg); color: var(--dp-red); }
 .dp-tag--cool { background: var(--dp-cool-bg); color: var(--dp-cool); }
 .dp-tag--purple { background: #f3ecff; color: #6b3fc8; }
+/* Silent trip: grey, no update for a while */
+.dp-tag--silent { background: var(--dp-silent-chip); color: var(--dp-silent); }
+/* A tag on its own line inside a table cell; long text may wrap */
+.dp-tag--block { display: flex; width: fit-content; max-width: 100%; margin-top: 4px; white-space: normal; }
 
 .dp-chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .dp-chip {
@@ -365,6 +372,12 @@
 .dp-table tr.is-selected td { background: var(--dp-tint); }
 .dp-table tr.is-clickable { cursor: pointer; }
 .dp-table tr.is-clickable:hover td { background: #f7f8fc; }
+/* Silent trip (W8): grey row with a grey rail. Hover keeps the grey so the text contrast holds. */
+.dp-table tr.is-silent td,
+.dp-table tr.is-silent.is-clickable:hover td { background: var(--dp-silent-bg); }
+.dp-table tr.is-silent td:first-child { box-shadow: inset 3px 0 0 var(--dp-silent); }
+.dp-table tr.is-silent .dp-cell-sub { color: var(--dp-silent); }
+.dp-table tr.is-silent .dp-cell-sub--amber { color: var(--dp-amber); }
 .dp-cell-main { display: block; font-weight: 600; }
 .dp-cell-sub { display: block; font-size: 0.75rem; color: var(--dp-muted); }
 .dp-cell-sub--red { color: var(--dp-red); }

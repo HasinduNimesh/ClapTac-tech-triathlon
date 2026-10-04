@@ -88,7 +88,7 @@ export function LiveOperationsPage() {
     const incident = openIncidents.find((i) => i.vehicleId === row.summary.vehicleId);
     const started = /progress|started|en_route/i.test(row.summary.status || "") || Boolean(lastUpdate);
     const done = /complete/i.test(row.summary.status || "") || (stops.length > 0 && !next);
-    // W8: silent-trip and chilled-on-board watch, from real trip data only.
+    // W8: silent trip and chilled-on-board watch, from real trip data only.
     const active = started && !done;
     const lastReported = [...stops].reverse().find((s) => s.outcomeCode || s.arrivedAt);
     const watch = enrichTripWithWatch({
@@ -195,15 +195,15 @@ export function LiveOperationsPage() {
                     const first = stops[0];
                     const ago = minutesAgo(row.lastUpdate, now);
                     return (
-                      <tr key={row.summary.tripId} className={`is-clickable${row.state === "broken" ? " is-alert" : ""}${row.state === "silent" ? " trip-greyed-out silent-trip" : ""}`} onClick={() => setOpenTrip(row.summary.tripId)}>
+                      <tr key={row.summary.tripId} className={`is-clickable${row.state === "broken" ? " is-alert" : ""}${row.state === "silent" ? " is-silent" : ""}`} onClick={() => setOpenTrip(row.summary.tripId)}>
                         <td><button type="button" className="dp-link" onClick={(e) => { e.stopPropagation(); setOpenTrip(row.summary.tripId); }}>{row.summary.vehicleId}</button><span className="dp-cell-sub">{DEPOT_LABELS[row.summary.depot || ""] || row.summary.depot}</span></td>
                         <td><span className="dp-cell-main">{t(first?.brand || "—")}</span><span className="dp-cell-sub">{first?.district || ""}</span></td>
                         <td>{row.summary.tripNumber ?? 1} {t("of")} 2</td>
                         <td><span className="dp-dots" aria-label={`${row.summary.completedStops ?? 0} ${t("of")} ${row.summary.stopCount ?? stops.length} ${t("stops")}`}>{stops.map((s) => <span key={s.id} className={`dp-dot${s.outcomeCode ? (/fail|refus/i.test(s.outcomeCode) ? " dp-dot--failed" : " dp-dot--done") : ""}`} />)}</span> <span className="dp-cell-sub" style={{ display: "inline" }}>{row.summary.completedStops ?? 0} {t("of")} {row.summary.stopCount ?? stops.length}</span></td>
                         <td><span className={`dp-cell-main${row.state === "broken" ? " dp-cell-sub--red" : ""}`}>{row.next ? `${row.next.outletId}${row.next.outletName ? ` ${row.next.outletName}` : ""}` : "—"}</span><span className="dp-cell-sub">{row.state === "broken" ? t("Stranded with the truck") : row.next ? `${t("Window")} ${clock(row.next.plannedWindowOpen)} ${t("to")} ${clock(row.next.plannedWindowClose)}` : ""}</span></td>
                         <td><span className="dp-cell-main">{clock(plan.data?.allocations?.find((a) => a.tripId === row.summary.tripId && a.orderId === row.next?.orderId)?.plannedArrivalAt)}</span><span className={`dp-cell-sub${row.nextEta?.kind === "late" || row.nextEta?.kind === "risk" ? " dp-cell-sub--amber" : " dp-cell-sub--green"}`}>{row.state === "broken" ? t("No ETA") : row.nextEta?.eta ? clock(row.nextEta.eta) : t("Unknown")}</span></td>
-                        <td>{row.chilled ? <Tag tone="cool">❄ {t("Chilled")}</Tag> : <Tag tone="primary">{t("Ambient")}</Tag>}{row.watch?.isChilledLong && <span className="status-amber chilled-amber">{t("Chilled time on board")}: {row.watch.chilledMinutes}m ({t("exceeds allowed limit")})</span>}</td>
-                        <td><span className={`dp-cell-main${row.state === "silent" ? " dp-cell-sub--amber" : ""}`}>{clock(row.lastUpdate)}</span><span className={`dp-cell-sub${row.state === "silent" ? " dp-cell-sub--amber" : ""}`}>{ago === undefined ? t("No driver update yet") : `${ago} ${t("min ago")}`}</span>{row.state === "silent" && row.watch && <><span className="badge-grey">{t("No update since")} {row.watch.silentTime}</span>{row.watch.lastKnownPlace && <span className="dp-cell-sub">{t("Last known")}: {row.watch.lastKnownPlace}</span>}</>}</td>
+                        <td>{row.chilled ? <Tag tone="cool">❄ {t("Chilled")}</Tag> : <Tag tone="primary">{t("Ambient")}</Tag>}{row.watch?.isChilledLong && <Tag tone="amber" block>{t("Chilled time on board")}: {row.watch.chilledMinutes}m ({t("exceeds allowed limit")})</Tag>}</td>
+                        <td><span className={`dp-cell-main${row.state === "silent" ? " dp-cell-sub--amber" : ""}`}>{clock(row.lastUpdate)}</span><span className={`dp-cell-sub${row.state === "silent" ? " dp-cell-sub--amber" : ""}`}>{ago === undefined ? t("No driver update yet") : `${ago} ${t("min ago")}`}</span>{row.state === "silent" && row.watch && <><Tag tone="silent" block>{t("No update since")} {row.watch.silentTime}</Tag>{row.watch.lastKnownPlace && <span className="dp-cell-sub">{t("Last known")}: {row.watch.lastKnownPlace}</span>}</>}</td>
                         <td>{statusTag(row)}</td>
                       </tr>
                     );
@@ -229,7 +229,9 @@ function TripMap({ rows, outlets, onOpen }: { rows: Row[]; outlets: Map<string, 
   const { t } = useLocale();
   const [selected, setSelected] = useState("");
   const color = (s: RowState) => (s === "broken" ? "#c03221" : s === "late" ? "#d9822b" : s === "silent" || s === "waiting" ? "#8a92a6" : "#008b52");
-  const tone = (s: RowState) => (s === "broken" ? "red" : s === "late" ? "amber" : s === "silent" || s === "waiting" ? "muted" : "green") as "red" | "amber" | "muted" | "green";
+  const tone = (s: RowState) => (s === "broken" ? "red" : s === "late" ? "amber" : s === "silent" ? "silent" : s === "waiting" ? "muted" : "green") as "red" | "amber" | "silent" | "muted" | "green";
+  // The marker disc is grey for silent and waiting trips; its label text uses the darker silent grey so it stays readable on the white label.
+  const labelColor = (s: RowState) => (s === "silent" || s === "waiting" ? "#4b5568" : undefined);
   const stateLabel = (s: RowState) => t(s === "broken" ? "Broken down" : s === "late" ? "Will miss window" : s === "silent" ? "No update" : s === "done" ? "Completed" : s === "waiting" ? "Not started" : "On track");
   const silentText = (row: Row) => (row.state === "silent" && row.watch?.silentTime ? `${t("No update since")} ${row.watch.silentTime}` : stateLabel(row.state));
   const at = (stop?: DeliveryStop): LatLng | undefined => {
@@ -257,7 +259,7 @@ function TripMap({ rows, outlets, onOpen }: { rows: Row[]; outlets: Map<string, 
         if (p) markers.push({ id: `${row.summary.tripId}-${s.id}`, at: p, kind: "stop", color: s.outcomeCode ? "#008b52" : "#3a57e8", label: String(s.stopSequence), title: `${s.stopSequence}. ${s.outletId} ${s.outletName || ""}` });
       }
     }
-    if (truck) markers.push({ id: row.summary.tripId, at: truck, kind: "truck", color: color(row.state), selected: focus, label: `${row.summary.vehicleId} · ${silentText(row)}`, title: `${row.summary.vehicleId} · ${silentText(row)}`, onClick: () => setSelected(row.summary.tripId) });
+    if (truck) markers.push({ id: row.summary.tripId, at: truck, kind: "truck", color: color(row.state), labelColor: labelColor(row.state), selected: focus, label: `${row.summary.vehicleId} · ${silentText(row)}`, title: `${row.summary.vehicleId} · ${silentText(row)}`, onClick: () => setSelected(row.summary.tripId) });
   }
   for (const d of depots) markers.push({ id: `depot-${d}`, at: depotPosition(d)!, kind: "depot", color: "#232d42", label: `${DEPOT_LABELS[d] || d} ${t("depot")}`, title: `${DEPOT_LABELS[d] || d} ${t("depot")}` });
   const chosen = rows.find((r) => r.summary.tripId === selected);

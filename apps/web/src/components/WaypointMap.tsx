@@ -12,6 +12,8 @@ export type MapMarker = {
   at: LatLng;
   kind: "depot" | "store" | "stop" | "truck";
   color: string;
+  /** Text colour of the label when it must differ from the marker colour (for contrast). */
+  labelColor?: string;
   label?: string;
   title: string;
   selected?: boolean;
@@ -28,7 +30,7 @@ function icon(m: MapMarker) {
   const glyph = m.kind === "depot" ? "D" : m.kind === "store" ? "★" : m.kind === "truck" ? "▶" : "";
   const ring = m.selected ? "box-shadow:0 0 0 8px rgba(58,87,232,.22);" : "";
   const html = `<span style="display:flex;align-items:center;justify-content:center;width:${size}px;height:${size}px;border-radius:50%;background:${m.color};border:3px solid #fff;color:#fff;font:700 ${size > 20 ? 12 : 9}px Inter,sans-serif;${ring}">${glyph}</span>`
-    + (m.label ? `<span style="position:absolute;left:${size + 4}px;top:${size / 2 - 11}px;white-space:nowrap;padding:3px 7px;border-radius:4px;background:#fff;color:${m.kind === "stop" ? "#232d42" : m.color};font:600 12px Inter,sans-serif;box-shadow:0 1px 4px rgba(0,0,0,.15)">${m.label.replace(/[<>&]/g, "")}</span>` : "");
+    + (m.label ? `<span style="position:absolute;left:${size + 4}px;top:${size / 2 - 11}px;white-space:nowrap;padding:3px 7px;border-radius:4px;background:#fff;color:${m.kind === "stop" ? "#232d42" : (m.labelColor ?? m.color)};font:600 12px Inter,sans-serif;box-shadow:0 1px 4px rgba(0,0,0,.15)">${m.label.replace(/[<>&]/g, "")}</span>` : "");
   return L.divIcon({ className: "wp-map-marker", html, iconSize: [size, size], iconAnchor: [size / 2, size / 2] });
 }
 
