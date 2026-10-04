@@ -160,6 +160,12 @@ def load_trip(day, load_all=True, ver=1):
     trips = b.get("items", []) if s == 200 else []
     chk("W2", "loader sees %s trip(s) for %s" % (len(trips), day), s == 200 and trips, (s, b))
     tid = trips[0]["tripId"]
+    for t in trips:  # use the first trip that actually has orders; the planner may split small orders over several trips
+        sd, det = call("GET", "/loading/trips/%s" % t["tripId"], T["loader"])
+        if sd == 200 and det.get("orders"):
+            tid = t["tripId"]
+            break
+    chk("W2", "no empty trip is published to the loader for %s" % day, all(call("GET", "/loading/trips/%s" % t["tripId"], T["loader"])[1].get("orders") for t in trips), "empty trip present")
     s, b = call("POST", "/loading/trips/%s/start" % tid, T["loader"], headers={"If-Match": str(ver)})
     chk("W2", "loader starts loading session (planVersion %s)" % ver, s == 200 and b.get("status") == "in_progress", (s, b))
     orders = b.get("orders", [])

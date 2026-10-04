@@ -1399,3 +1399,14 @@ countMessages.push(
   [/^(\d+) waiting$/, "{count} waiting"],
   [/^(\d+) photo\(s\) waiting$/, "{count} photo(s) waiting"],
 );
+// W4: a store with no text-message consent or alert still sees its notices in-app.
+Object.assign(labels.si, {
+  "In your Notifications only": "ඔබේ දැනුම්දීම් තුළ පමණි",
+  "Notices the system recorded for your store appear here, newest first. Some are also sent as text messages.": "පද්ධතිය ඔබේ වෙළඳසැල සඳහා සටහන් කළ දැනුම්දීම් මෙහි අලුත්ම ඒවා මුලින් පෙන්වයි. ඒවායින් සමහරක් කෙටි පණිවුඩ ලෙසද යැවේ.",
+  "No notices have been recorded for your store yet.": "ඔබේ වෙළඳසැල සඳහා තවමත් දැනුම්දීම් සටහන් වී නැත.",
+});
+Object.assign(labels.ta, {
+  "In your Notifications only": "உங்கள் அறிவிப்புகளில் மட்டும்",
+  "Notices the system recorded for your store appear here, newest first. Some are also sent as text messages.": "உங்கள் கடைக்காக அமைப்பு பதிவு செய்த அறிவிப்புகள் புதியவை முதலில் இங்கே தோன்றும். அவற்றில் சில குறுஞ்செய்தியாகவும் அனுப்பப்படும்.",
+  "No notices have been recorded for your store yet.": "உங்கள் கடைக்கு இன்னும் அறிவிப்புகள் பதிவாகவில்லை.",
+});

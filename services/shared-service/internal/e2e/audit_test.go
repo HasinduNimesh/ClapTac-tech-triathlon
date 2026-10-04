@@ -107,6 +107,16 @@ func TestAuditSearchKPIsAndAppendOnly(t *testing.T) {
 	if _, err = pool.Exec(ctx, string(shortfallMigration)); err != nil {
 		t.Fatalf("apply shortfall notification migration: %v", err)
 	}
+	inAppMigration, err := os.ReadFile("../../../../database/migrations/0072_notification_in_app_only.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, string(inAppMigration)); err != nil {
+		t.Fatalf("apply in-app notification migration: %v", err)
+	}
+	if _, err = pool.Exec(ctx, string(inAppMigration)); err != nil {
+		t.Fatalf("in-app notification migration must be safe to run twice: %v", err)
+	}
 	now := time.Now().UTC().Truncate(time.Second)
 	_, err = pool.Exec(ctx, `INSERT INTO audit.events(event_id,actor_id,action,resource_type,resource_id,new_state,timestamp,source) VALUES
 	('e1','USR001','PLAN_GENERATED','PLAN','P-01','{"allocated":3}'::jsonb,$1,'planning-service'),
@@ -186,8 +196,11 @@ func TestAuditSearchKPIsAndAppendOnly(t *testing.T) {
 		t.Fatal("stale preferences version should conflict")
 	}
 	suppressed, err := s.EnqueueNotification(ctx, store.NotificationEvent{EventKey: "deferral:PLAN-02:ORD-02", OutletID: "OUT001", Type: "DEFERRAL", OrderRef: "ORD-02", Reason: "WINDOW"})
-	if err != nil || suppressed.Status != "suppressed" {
-		t.Fatalf("opt-out should suppress notification: %+v err=%v", suppressed, err)
+	if err != nil || suppressed.Status != "in_app_only" || suppressed.ID == 0 {
+		t.Fatalf("opt-out must keep the in-app notice but not send it by SMS: %+v err=%v", suppressed, err)
+	}
+	if next, err := s.ClaimNotification(ctx); err != nil || next != nil {
+		t.Fatalf("an in-app-only notice must never be claimed for SMS: %+v err=%v", next, err)
 	}
 	items, total, err := s.SearchAudit(ctx, store.AuditFilter{Query: "USR001", Limit: 10})
 	if err != nil || total != 2 || len(items) != 2 {
