@@ -20,7 +20,7 @@ if [ -f "$DIR/seeds/catalog.sql" ]; then
 fi
 
 # Eight weeks of simulated store trading and the agent observations built from it.
-# Runs once; delete the 'seed-baseline' row in inventory.simulation_runs to regenerate.
+# Runs once; call inventory.delete_simulation_run on the seed-baseline run to regenerate.
 if [ -f "$DIR/seeds/inventory_history.sql" ]; then
   echo "seed inventory history (first run takes a minute)"
   psql "$URL" -v ON_ERROR_STOP=1 -q -f "$DIR/seeds/inventory_history.sql"

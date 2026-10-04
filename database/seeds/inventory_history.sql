@@ -1,7 +1,9 @@
 -- Eight weeks of store trading for every listed outlet product, plus the
 -- agent knowledge built from it. Runs once: it skips when the
 -- 'seed-baseline' simulation run already exists. Every row is marked
--- simulated = true under that run, so deleting the run removes it all.
+-- simulated = true under that run. Plain DELETEs on the append-only ledger and
+-- observations are refused; to regenerate, remove the run with
+--   SELECT inventory.delete_simulation_run(id) FROM inventory.simulation_runs WHERE code = 'seed-baseline';
 --
 -- Deterministic: every "random" value is a hash of outlet, product and date.
 -- Model per outlet product, per day:
@@ -272,10 +274,10 @@ BEGIN
   WHERE t.sale_id = s.id AND s.simulation_run_id = run;
 
   -- Raw weekly facts per outlet product, for the full weeks in the period.
-  INSERT INTO ai.observations (subject_type, subject_id, metric, value, unit, period_start, period_end, source, raw, simulated)
+  INSERT INTO ai.observations (subject_type, subject_id, metric, value, unit, period_start, period_end, source, raw, simulated, simulation_run_id)
   SELECT 'outlet_product', w.outlet_id || ':' || w.product_id, m.metric, m.value, 'each', w.week_start, w.week_start + 6, 'inventory_ledger',
          jsonb_build_object('outlet_id', w.outlet_id, 'product_id', w.product_id, 'received', w.received, 'sold', w.sold,
-                            'expired', w.expired, 'damaged', w.damaged, 'adjusted', w.adjusted, 'lost_sales', w.lost), true
+                            'expired', w.expired, 'damaged', w.damaged, 'adjusted', w.adjusted, 'lost_sales', w.lost), true, run
   FROM (
     SELECT g.*, COALESCE(lw.lost, 0) AS lost
     FROM (
@@ -303,8 +305,8 @@ BEGIN
   WHERE w.week_start >= v_start;
 
   -- Weekly takings and waste value per outlet.
-  INSERT INTO ai.observations (subject_type, subject_id, metric, value, unit, period_start, period_end, source, raw, simulated)
-  SELECT 'outlet', x.outlet_id, x.metric, x.value, 'LKR', x.week_start, x.week_start + 6, 'inventory_ledger', jsonb_build_object('outlet_id', x.outlet_id), true
+  INSERT INTO ai.observations (subject_type, subject_id, metric, value, unit, period_start, period_end, source, raw, simulated, simulation_run_id)
+  SELECT 'outlet', x.outlet_id, x.metric, x.value, 'LKR', x.week_start, x.week_start + 6, 'inventory_ledger', jsonb_build_object('outlet_id', x.outlet_id), true, run
   FROM (
     SELECT mv.outlet_id, date_trunc('week', (mv.occurred_at AT TIME ZONE 'Asia/Colombo'))::date AS week_start,
            'sales_value' AS metric, sum(-mv.quantity_each * pr.unit_price) AS value
