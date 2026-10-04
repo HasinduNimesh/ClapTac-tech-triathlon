@@ -27,6 +27,7 @@ const (
 	ActionLoadingShortfallRecorded     = "LOADING_SHORTFALL_RECORDED"
 	ActionLoadingShortfallUpdated      = "LOADING_SHORTFALL_UPDATED"
 	ActionLoadingShortfallRemoved      = "LOADING_SHORTFALL_REMOVED"
+	ActionLoadingShortfallDecided      = "LOADING_SHORTFALL_DECIDED"
 	ActionTripReadyForDeparture        = "TRIP_READY_FOR_DEPARTURE"
 	ActionDeliveryRunPrepared          = "DELIVERY_RUN_PREPARED"
 	ActionDeliveryRunStarted           = "DELIVERY_RUN_STARTED"
