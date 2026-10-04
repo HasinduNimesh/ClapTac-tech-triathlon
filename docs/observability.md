@@ -19,6 +19,18 @@ Useful queries include `sum by (service) (rate(http_requests_total[5m]))`, `sum 
 
 Service dependency failures are visible in structured service logs and API error/latency metrics; no central log index is a submission dependency. Do not attach IDs, outlet names, arbitrary error text, or user values as metric labels.
 
+## Grafana on a server (private)
+
+Grafana and Prometheus are not started by the deploy workflow (they are in the `observability` profile). On the VM, once:
+
+1. Put a real admin password in the VM's `.env`: `printf 'GRAFANA_ADMIN_PASSWORD=%s\n' "$(openssl rand -base64 24)" >> .env`. Read it later with `grep GRAFANA_ADMIN_PASSWORD .env`; never reuse another password. Without one, Grafana's own `admin`/`admin` would apply, so `scripts/start-grafana.sh` refuses to start.
+2. Start it: `scripts/start-grafana.sh` (it starts `prometheus` and `grafana`).
+3. Open it through an SSH tunnel; nothing is exposed publicly: `ssh -L 3001:127.0.0.1:3001 azureuser@<vm>`, then <http://localhost:3001>, user `admin`.
+
+Grafana keeps its users and settings in the `grafana_data` volume, signs-up and anonymous access are off, and the *Waypoint Operations* dashboard and the Prometheus data source are provisioned from this repository.
+
+The business counters (orders created, plans, loading, delivery outcomes, receipts) are held in each service's memory and **start again from 0 whenever a service restarts**, for example at every deploy. The time-series panels show activity over time, and the two total panels are labelled "since last restart". They are not totals from the database; for those, look at the application itself.
+
 ## Driver offline queue monitoring
 
 When the authenticated Driver PWA is online, it best-effort reports the oldest queued-work age and queue size as bounded buckets, at most once every 15 minutes per page session. The report is skipped while offline or when sync is paused; failure never blocks delivery work. `POST /api/v1/delivery/telemetry/offline-queue` accepts only these two fields, rejects unknown fields, caps the body at 1 KiB, requires the assigned-driver sync permission, and returns no content. The service stores no per-report record. Prometheus labels are limited to the documented age and count buckets; the payload contains no user, device, trip, stop, operation, exact timestamp, or delivery content.
