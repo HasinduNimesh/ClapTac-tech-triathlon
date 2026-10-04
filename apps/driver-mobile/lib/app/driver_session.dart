@@ -65,8 +65,9 @@ class DriverSession extends ChangeNotifier {
       syncDetail = detail;
       // Each tick is a chance to start a trip that could not be started without a connection.
       if (tripStartState == TripStartState.waiting && !tripStarting && loadResolved) unawaited(startTrip());
-      // Showing the route saved on the phone: each tick is also a chance to get the live one.
-      if (showingSavedRoute && !tripsLoading && signedIn) unawaited(loadTrips());
+      // No live route yet (it could not be loaded, or the saved copy is on screen): each tick is another
+      // chance to load it, quietly, so the driver is not left on an error until they tap Try again.
+      if ((showingSavedRoute || (tripsError != null && !hasRoute)) && signedIn) unawaited(loadTrips(silent: true));
       if (signedIn) _refreshPending();
       notifyListeners();
     };
@@ -226,8 +227,18 @@ class DriverSession extends ChangeNotifier {
   /// Acknowledges the plan and starts the run on the server. Null in demo and test sessions.
   final TripStarter? starter;
 
+  bool _disposed = false;
+
+  /// Work that was still under way when the session was disposed (a retry waiting for Waypoint) finishes
+  /// quietly instead of notifying listeners that are gone.
+  @override
+  void notifyListeners() {
+    if (!_disposed) super.notifyListeners();
+  }
+
   @override
   void dispose() {
+    _disposed = true;
     unawaited(_connectivitySubscription?.cancel());
     _messageTimer?.cancel();
     worker?.onProgress = null;
@@ -389,15 +400,26 @@ class DriverSession extends ChangeNotifier {
     if (profile != null) await loadTrips();
   }
 
-  /// Loads today's route for the signed-in driver. Safe to call again to retry.
-  Future<void> loadTrips() async {
+  bool _tripLoadInFlight = false;
+
+  /// Loads today's route for the signed-in driver. Safe to call again to retry. A [silent] load, used for
+  /// the automatic retries, does not show the loading state or clear the error while it waits, so the
+  /// screen does not flicker every few seconds; the result is applied the same way.
+  Future<void> loadTrips({bool silent = false}) async {
     final source = trips;
-    if (source == null || tripsLoading || !signedIn) return;
-    tripsLoading = true;
-    tripsError = null;
-    notifyListeners();
+    if (source == null || _tripLoadInFlight || !signedIn) return;
+    _tripLoadInFlight = true;
+    if (!silent) {
+      tripsLoading = true;
+      tripsError = null;
+      notifyListeners();
+    }
     final result = await source.loadToday();
+    _tripLoadInFlight = false;
     tripsLoading = false;
+    // Waypoint answered (with a route, or with "no trip"): whatever failed before is over. A loud load
+    // clears the error up front, but a quiet retry leaves it in place until now.
+    if (result.failure == null) tripsError = null;
     if (!signedIn) {
       notifyListeners();
       return;

@@ -94,6 +94,7 @@ The route is kept on the phone (a JSON file per driver in the app's private stor
 - it is saved when the route loads, when the trip starts, and after each stop is recorded, so a copy shown later has the right progress
 - if Waypoint cannot be reached when the route is loaded (for example the app was reopened without signal), the saved route is shown with a "Saved route" note, **but only if it is for the same driver and the same Waypoint business day** (Asia/Colombo); a route from an earlier day is ignored and deleted
 - the live route replaces it as soon as it can be loaded: when the connection returns, and on each sync tick
+- a route that could not be loaded at all (no saved copy either, for example the radio was not ready when the app opened) is retried quietly on each sync tick, every 15 seconds, until Waypoint answers; the driver is not left on the error until they tap Try again, and the screen does not flicker between retries
 - if Waypoint answers that there is no open trip, the saved route is deleted: the server is authoritative
 - signing out, or a sign-in that is no longer accepted, deletes it
 
