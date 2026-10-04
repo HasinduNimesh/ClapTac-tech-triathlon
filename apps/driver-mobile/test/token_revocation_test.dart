@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:waypoint_driver/app/driver_session.dart';
 import 'package:waypoint_driver/auth/auth_config.dart';
+import 'package:waypoint_driver/auth/auth_failure.dart';
 import 'package:waypoint_driver/auth/auth_gateway.dart';
 import 'package:waypoint_driver/auth/auth_store.dart';
 import 'package:waypoint_driver/auth/oidc_client.dart';
@@ -80,7 +81,32 @@ class _ObservingStore extends MemoryAuthStore {
   }
 }
 
-({OidcAuthGateway gateway, MemoryAuthStore store, MemoryRevocationQueue pending, _Revoker revoker, _Client client}) _gateway({OidcTokens? stored, _Revoker? revoker, bool withRevoker = true, DriverProfile profile = _driver, MemoryAuthStore? store}) {
+/// A pending list whose storage is broken: every operation throws.
+class _BrokenQueue implements RevocationQueue {
+  int adds = 0;
+  @override
+  Future<List<String>> read() async => throw StateError('storage unavailable');
+  @override
+  Future<void> add(String token) async {
+    adds++;
+    throw StateError('storage unavailable');
+  }
+
+  @override
+  Future<void> remove(String token) async => throw StateError('storage unavailable');
+}
+
+({OidcAuthGateway gateway, MemoryAuthStore store, MemoryRevocationQueue pending, _Revoker revoker, _Client client}) _gateway({
+  OidcTokens? stored,
+  _Revoker? revoker,
+  bool withRevoker = true,
+  DriverProfile profile = _driver,
+  MemoryAuthStore? store,
+  int profileStatus = 200,
+  Object? profileError,
+  RevocationQueue? queue,
+  bool noQueue = false,
+}) {
   final theStore = store ?? MemoryAuthStore();
   if (stored != null) theStore.value = StoredAuth(tokens: stored, profile: _driver);
   final pending = MemoryRevocationQueue();
@@ -90,12 +116,16 @@ class _ObservingStore extends MemoryAuthStore {
     config: _config,
     client: client,
     profiles: ProfileApi(
-      client: MockClient((_) async => http.Response(jsonEncode({'profile': {'userId': profile.userId, 'subject': profile.subject, 'roles': profile.roles}}), 200)),
+      client: MockClient((_) async {
+        if (profileError != null) throw profileError;
+        if (profileStatus != 200) return http.Response('', profileStatus);
+        return http.Response(jsonEncode({'profile': {'userId': profile.userId, 'subject': profile.subject, 'roles': profile.roles}}), 200);
+      }),
       baseUrl: 'https://api.example.com',
     ),
     store: theStore,
     revoker: withRevoker ? theRevoker : null,
-    pendingRevocations: withRevoker ? pending : null,
+    pendingRevocations: noQueue ? null : (withRevoker ? (queue ?? pending) : null),
     clock: () => _now,
   );
   return (gateway: gateway, store: theStore, pending: pending, revoker: theRevoker, client: client);
@@ -359,6 +389,126 @@ void main() {
       expect(await h.store.read(), isNull);
       await _settle();
       expect(h.revoker.revoked, ['dispatcher-refresh']);
+    });
+  });
+
+  group('when the profile lookup fails after the provider has issued tokens', () {
+    // The provider accepted the sign-in and handed out tokens, then Waypoint could not say who this is.
+    // Nothing is kept, so the refresh token that was issued must be revoked, not left valid and unused.
+    test('an account Waypoint does not know (404) has its refresh token revoked', () async {
+      final h = _gateway(profileStatus: 404);
+      h.client.signInResult = _tokens(refresh: 'orphan-refresh');
+      final outcome = await h.gateway.signIn();
+      expect(outcome.profile, isNull);
+      expect(outcome.failure?.kind, AuthFailureKind.notProvisioned);
+      expect(await h.store.read(), isNull);
+      await _settle();
+      expect(h.revoker.revoked, ['orphan-refresh']);
+      expect(await h.pending.read(), isEmpty, reason: 'revoked, so nothing is left to retry');
+    });
+
+    test('a profile call Waypoint rejects (401) has its refresh token revoked', () async {
+      final h = _gateway(profileStatus: 401);
+      h.client.signInResult = _tokens(refresh: 'orphan-refresh');
+      final outcome = await h.gateway.signIn();
+      expect(outcome.failure?.kind, AuthFailureKind.unauthorized);
+      await _settle();
+      expect(h.revoker.revoked, ['orphan-refresh']);
+    });
+
+    test('a profile call that fails on the server (503) has its refresh token revoked, or queued if that fails', () async {
+      final h = _gateway(profileStatus: 503, revoker: _Revoker(RevokeOutcome.retryLater));
+      h.client.signInResult = _tokens(refresh: 'orphan-refresh');
+      final outcome = await h.gateway.signIn();
+      expect(outcome.failure?.kind, AuthFailureKind.unavailable);
+      expect(await h.store.read(), isNull);
+      await _settle();
+      expect(h.revoker.revoked, ['orphan-refresh']);
+      expect(await h.pending.read(), ['orphan-refresh'], reason: 'kept to try again, since the provider could not be reached');
+    });
+
+    test('a profile call that never connects has its refresh token revoked too', () async {
+      final h = _gateway(profileError: const SocketException('no signal'));
+      h.client.signInResult = _tokens(refresh: 'orphan-refresh');
+      final outcome = await h.gateway.signIn();
+      expect(outcome.failure?.kind, AuthFailureKind.unavailable);
+      await _settle();
+      expect(h.revoker.revoked, ['orphan-refresh']);
+    });
+
+    test('a sign-in that gave no tokens has nothing to revoke', () async {
+      final h = _gateway();
+      h.client.signInResult = null; // the driver backed out of the browser
+      final outcome = await h.gateway.signIn();
+      expect(outcome.failure?.kind, AuthFailureKind.cancelled);
+      await _settle();
+      expect(h.revoker.revoked, isEmpty);
+    });
+
+    test('a successful sign-in keeps its tokens and revokes nothing', () async {
+      final h = _gateway();
+      h.client.signInResult = _tokens(refresh: 'kept-refresh');
+      final outcome = await h.gateway.signIn();
+      expect(outcome.profile?.userId, 'USR006');
+      expect((await h.store.read())?.tokens.refreshToken, 'kept-refresh');
+      await _settle();
+      expect(h.revoker.revoked, isEmpty);
+    });
+
+    test('a non-driver account is revoked exactly once', () async {
+      final h = _gateway(profile: _dispatcher);
+      h.client.signInResult = _tokens(refresh: 'dispatcher-refresh');
+      await h.gateway.signIn();
+      await _settle();
+      expect(h.revoker.revoked, ['dispatcher-refresh']);
+    });
+
+    test('tokens with no refresh token have nothing to revoke', () async {
+      final h = _gateway(profileStatus: 404);
+      h.client.signInResult = _tokens(refresh: null);
+      await h.gateway.signIn();
+      await _settle();
+      expect(h.revoker.revoked, isEmpty);
+    });
+  });
+
+  group('when the pending list cannot be written', () {
+    test('sign-out still tries to revoke straight away, even though a retry cannot be guaranteed', () async {
+      final queue = _BrokenQueue();
+      final h = _gateway(stored: _tokens(), queue: queue);
+      await h.gateway.signOut();
+      await _settle();
+      expect(queue.adds, 1, reason: 'the write was attempted and failed');
+      expect(await h.store.read(), isNull, reason: 'the driver is signed out regardless');
+      expect(h.revoker.revoked, ['refresh-1'], reason: 'the provider was still asked while the network may be working');
+    });
+
+    test('a failed sign-in does the same', () async {
+      final h = _gateway(profileStatus: 404, queue: _BrokenQueue());
+      h.client.signInResult = _tokens(refresh: 'orphan-refresh');
+      await h.gateway.signIn();
+      await _settle();
+      expect(h.revoker.revoked, ['orphan-refresh']);
+    });
+
+    test('a list that cannot be updated after a successful revocation does no harm', () async {
+      final h = _gateway(stored: _tokens(), queue: _BrokenQueue());
+      await h.gateway.signOut();
+      await _settle();
+      expect(await h.store.read(), isNull);
+    });
+
+    test('with no pending list at all the provider is still asked', () async {
+      final h = _gateway(stored: _tokens(), noQueue: true);
+      await h.gateway.signOut();
+      await _settle();
+      expect(h.revoker.revoked, ['refresh-1']);
+    });
+
+    test('retrying with an unreadable list does not throw', () async {
+      final h = _gateway(queue: _BrokenQueue());
+      await h.gateway.retryPendingRevocations();
+      expect(h.revoker.revoked, isEmpty);
     });
   });
 

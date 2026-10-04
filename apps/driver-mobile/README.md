@@ -75,7 +75,8 @@ Signing out always signs the driver out on the phone at once, then asks the iden
 - the token is first written to a small pending list in secure storage, so if the phone has no signal, or the app is closed before the provider answers, the revocation is tried again when the app starts and when the connection returns; the list keeps only the newest 10 tokens
 - a token is dropped from the list once the provider has revoked it, refused it for good (a client error), or turned out not to offer revocation; it stays only while the provider could not be reached
 - the token is never sent over plain HTTP, except to a local identity server in a debug build
-- a sign-in by an account that is not a driver has its tokens discarded and revoked as well
+- a sign-in that does not end in a kept session has its refresh token revoked as well: an account that is not a driver, an account Waypoint does not know (404), a profile call that is rejected or cannot connect, or storage refusing the write; the provider has issued the tokens by then, and nothing would ever use them
+- if the pending list itself cannot be written (secure storage refusing it), the provider is still asked straight away, since the network may be fine; only the retry later cannot be promised
 
 Revocation ends the refresh token, not the person's session at the identity provider (ThunderID's own login cookie): the app always asks for the password at sign-in (`prompt=login`), so a shared phone does not sign the next person in.
 

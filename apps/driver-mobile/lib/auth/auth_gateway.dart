@@ -4,6 +4,7 @@ import 'auth_config.dart';
 import 'auth_failure.dart';
 import 'auth_store.dart';
 import 'oidc_client.dart';
+import 'oidc_tokens.dart';
 import 'profile_api.dart';
 import 'revocation_queue.dart';
 import 'token_revoker.dart';
@@ -86,24 +87,33 @@ class OidcAuthGateway implements AuthGateway, RevocationRetry {
   @override
   Future<AuthOutcome> signIn() async {
     if (!_config.isConfigured) return const AuthOutcome.failed(AuthFailure(AuthFailureKind.notConfigured));
+    // The tokens the provider handed out, until they have been kept. If anything after that point fails
+    // (Waypoint does not know this account, the profile call is rejected or cannot connect, a non-driver
+    // account, storage refusing the write) they are never used, so the refresh token is revoked instead of
+    // being left valid at the provider.
+    OidcTokens? issued;
+    var kept = false;
     try {
       final tokens = await _client.signIn();
       if (tokens == null) return const AuthOutcome.failed(AuthFailure(AuthFailureKind.cancelled));
+      issued = tokens;
 
       // The server decides who this person is and what they may do.
       final profile = await _profiles.fetchMe(tokens.accessToken);
       if (!profile.isDriver) {
-        // Not a driver: the tokens it was given are of no use here, so they are discarded and revoked.
         _sessionGeneration++;
-        await _discard(tokens.refreshToken);
         await _store.clear();
         return const AuthOutcome.failed(AuthFailure(AuthFailureKind.accessDenied));
       }
       _sessionGeneration++;
       await _store.write(StoredAuth(tokens: tokens, profile: profile));
+      kept = true;
       return AuthOutcome.signedIn(profile);
     } on AuthFailure catch (failure) {
       return AuthOutcome.failed(failure);
+    } finally {
+      final unused = issued;
+      if (unused != null && !kept) await _discard(unused.refreshToken);
     }
   }
 
@@ -180,27 +190,25 @@ class OidcAuthGateway implements AuthGateway, RevocationRetry {
 
   /// Queues [refreshToken] for revocation and starts trying, without waiting. Revocation is best effort.
   Future<void> _discard(String? refreshToken) async {
-    final revoker = _revoker;
-    final pending = _pendingRevocations;
-    if (revoker == null || pending == null || refreshToken == null || refreshToken.isEmpty) return;
+    if (_revoker == null || refreshToken == null || refreshToken.isEmpty) return;
     try {
-      await pending.add(refreshToken);
+      await _pendingRevocations?.add(refreshToken);
     } on Object {
-      return;
+      // Storage refused the write, so a retry later cannot be promised. The provider can still be asked
+      // right now, while the network may well be working, and that is the best that can be done.
     }
     unawaited(_revoke(refreshToken));
   }
 
   Future<void> _revoke(String refreshToken) async {
     final revoker = _revoker;
-    final pending = _pendingRevocations;
-    if (revoker == null || pending == null) return;
+    if (revoker == null) return;
     try {
       final outcome = await revoker.revokeRefreshToken(refreshToken);
       // Done, refused for good, or not offered by this provider: nothing more can be gained by keeping it.
-      if (outcome != RevokeOutcome.retryLater) await pending.remove(refreshToken);
+      if (outcome != RevokeOutcome.retryLater) await _pendingRevocations?.remove(refreshToken);
     } on Object {
-      // Left in the list for the next try.
+      // Left in the list (if it was written) for the next try.
     }
   }
 
