@@ -5,6 +5,7 @@ function isProfile(value, subject) {
   return value !== null && typeof value === "object"
     && value.subject === subject
     && typeof value.userId === "string" && value.userId.length > 0
+    && (value.displayName === undefined || typeof value.displayName === "string")
     && Array.isArray(value.roles)
     && value.roles.length > 0
     && value.roles.every((role) => typeof role === "string" && role.length > 0)

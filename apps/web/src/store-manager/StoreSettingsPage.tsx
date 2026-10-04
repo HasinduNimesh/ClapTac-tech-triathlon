@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Locale, useLocale } from "../i18n";
 import { CONTRAST_KEY, SIZE_KEY, TextSize, applyDisplayPreferences, readPreference, writePreference } from "../displayPreferences";
 import { StoreManagerHero } from "./StoreManagerHero";
+import { DisplayNameForm } from "../auth/DisplayNameForm";
 
 export function StoreSettingsPage() {
   const { t, locale, setLocale } = useLocale();
@@ -23,6 +24,10 @@ export function StoreSettingsPage() {
     <>
       <StoreManagerHero compact title={t("Language & display")} subtitle={t("Choose how Waypoint labels and notices appear for this account.")} />
       <div className="sm-page-body dp-stack">
+        <section className="dp-panel">
+          <div className="dp-panel-head"><h2 className="dp-panel-title">{t("Account name")}</h2></div>
+          <div className="dp-panel-body"><DisplayNameForm /></div>
+        </section>
         <div className="dp-grid-2 dp-grid-2--even">
           <section className="dp-panel" aria-labelledby="lang-heading">
             <div className="dp-panel-head"><div><h2 className="dp-panel-title" id="lang-heading">{t("Interface language")}</h2><p className="dp-panel-sub">{t("This changes labels, dates and system notices for your account.")}</p></div></div>

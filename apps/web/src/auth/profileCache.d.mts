@@ -3,6 +3,7 @@ export const PROFILE_CACHE_MAX_AGE_MS: number;
 type CachedProfile = {
   userId: string;
   subject: string;
+  displayName?: string;
   roles: string[];
   outletIds?: string[];
   depot?: string;
@@ -10,6 +11,7 @@ type CachedProfile = {
 };
 
 export function clearCachedProfile(storage: Storage | undefined): void;
+export function saveCachedProfile(storage: Storage | undefined, subject: string, profile: CachedProfile, now?: number): boolean;
 export function loadAuthenticatedProfile(args: {
   fetchImpl: typeof fetch;
   storage: Storage | undefined;
