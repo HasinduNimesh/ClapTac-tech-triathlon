@@ -18,7 +18,7 @@ export type Tracking = {
     deliveredUnits?: number;
   };
   receiptDue?: { reportBy: string; state: "open" | "due_tomorrow" | "due_today" | "overdue" };
-  receipt?: { id?: string; status: string; receivedUnits: number; expectedUnits: number; confirmedAt?: string; confirmedBy?: string };
+  receipt?: { id?: string; status: string; receivedUnits: number; expectedUnits: number; confirmedAt?: string; confirmedBy?: string; receivedTemperatureC?: number };
   receiptIssues?: { id: string; issueType: string; affectedUnits: number; note?: string; createdAt?: string; createdBy?: string }[];
   custody?: { id: string; stage: string; sealId: string; serialNumbers: string[]; condition: string; recordedBy: string; recordedAt: string; receiverName?: string }[];
 };

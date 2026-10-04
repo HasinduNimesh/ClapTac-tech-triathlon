@@ -428,7 +428,7 @@ func (p Postgres) ConfirmReceipt(order domain.Order, c domain.ReceiptConfirmatio
 		status = "confirmed_with_issue"
 	}
 	r := domain.Receipt{OrderID: order.ID, DeliveryRunID: c.DeliveryRunID, DeliveryStopID: c.DeliveryStopID, DeliveryOutcome: c.DeliveryOutcome, ExpectedUnits: c.ExpectedUnits, ReceivedUnits: c.ReceivedUnits, Status: status, ConfirmedBy: c.ConfirmedBy, Version: 1}
-	r, err = scanReceipt(tx.QueryRow(ctx, `INSERT INTO receipts(order_id,delivery_run_id,delivery_stop_id,delivery_outcome,expected_units,received_units,status,confirmed_by) VALUES($1::uuid,$2::uuid,$3::uuid,$4,$5,$6,$7,$8) RETURNING `+receiptColumns, r.OrderID, r.DeliveryRunID, r.DeliveryStopID, r.DeliveryOutcome, r.ExpectedUnits, r.ReceivedUnits, r.Status, r.ConfirmedBy))
+	r, err = scanReceipt(tx.QueryRow(ctx, `INSERT INTO receipts(order_id,delivery_run_id,delivery_stop_id,delivery_outcome,expected_units,received_units,status,confirmed_by,received_temperature_c) VALUES($1::uuid,$2::uuid,$3::uuid,$4,$5,$6,$7,$8,$9) RETURNING `+receiptColumns, r.OrderID, r.DeliveryRunID, r.DeliveryStopID, r.DeliveryOutcome, r.ExpectedUnits, r.ReceivedUnits, r.Status, r.ConfirmedBy, c.ReceivedTemperatureC))
 	if err != nil {
 		return domain.Receipt{}, nil, false, err
 	}
@@ -497,7 +497,7 @@ func (p Postgres) ListReceiptIssues() ([]domain.ReceiptIssueView, error) {
 	out := []domain.ReceiptIssueView{}
 	for rows.Next() {
 		var v domain.ReceiptIssueView
-		if err := rows.Scan(&v.OrderRef, &v.OutletID, &v.Receipt.ID, &v.Receipt.OrderID, &v.Receipt.DeliveryRunID, &v.Receipt.DeliveryStopID, &v.Receipt.DeliveryOutcome, &v.Receipt.ExpectedUnits, &v.Receipt.ReceivedUnits, &v.Receipt.Status, &v.Receipt.ConfirmedBy, &v.Receipt.ConfirmedAt, &v.Receipt.Version, &v.Issue.ID, &v.Issue.ReceiptID, &v.Issue.IssueType, &v.Issue.AffectedUnits, &v.Issue.Note, &v.Issue.IdempotencyKey, &v.Issue.CreatedBy, &v.Issue.CreatedAt); err != nil {
+		if err := rows.Scan(&v.OrderRef, &v.OutletID, &v.Receipt.ID, &v.Receipt.OrderID, &v.Receipt.DeliveryRunID, &v.Receipt.DeliveryStopID, &v.Receipt.DeliveryOutcome, &v.Receipt.ExpectedUnits, &v.Receipt.ReceivedUnits, &v.Receipt.Status, &v.Receipt.ConfirmedBy, &v.Receipt.ConfirmedAt, &v.Receipt.Version, &v.Receipt.ReceivedTemperatureC, &v.Issue.ID, &v.Issue.ReceiptID, &v.Issue.IssueType, &v.Issue.AffectedUnits, &v.Issue.Note, &v.Issue.IdempotencyKey, &v.Issue.CreatedBy, &v.Issue.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, v)
@@ -509,13 +509,13 @@ func (p Postgres) listReceiptIssues(receiptID string) ([]domain.ReceiptIssue, er
 	return listReceiptIssuesQuery(context.Background(), p.Pool, receiptID)
 }
 
-const receiptColumns = `id::text,order_id::text,delivery_run_id::text,delivery_stop_id::text,delivery_outcome,expected_units,received_units,status,confirmed_by,confirmed_at,version`
+const receiptColumns = `id::text,order_id::text,delivery_run_id::text,delivery_stop_id::text,delivery_outcome,expected_units,received_units,status,confirmed_by,confirmed_at,version,received_temperature_c::float8`
 const receiptSelect = `SELECT ` + receiptColumns + ` FROM receipts`
-const receiptColumnsQualified = `r.id::text,r.order_id::text,r.delivery_run_id::text,r.delivery_stop_id::text,r.delivery_outcome,r.expected_units,r.received_units,r.status,r.confirmed_by,r.confirmed_at,r.version`
+const receiptColumnsQualified = `r.id::text,r.order_id::text,r.delivery_run_id::text,r.delivery_stop_id::text,r.delivery_outcome,r.expected_units,r.received_units,r.status,r.confirmed_by,r.confirmed_at,r.version,r.received_temperature_c::float8`
 
 func scanReceipt(row scanner) (domain.Receipt, error) {
 	var r domain.Receipt
-	err := row.Scan(&r.ID, &r.OrderID, &r.DeliveryRunID, &r.DeliveryStopID, &r.DeliveryOutcome, &r.ExpectedUnits, &r.ReceivedUnits, &r.Status, &r.ConfirmedBy, &r.ConfirmedAt, &r.Version)
+	err := row.Scan(&r.ID, &r.OrderID, &r.DeliveryRunID, &r.DeliveryStopID, &r.DeliveryOutcome, &r.ExpectedUnits, &r.ReceivedUnits, &r.Status, &r.ConfirmedBy, &r.ConfirmedAt, &r.Version, &r.ReceivedTemperatureC)
 	if err == pgx.ErrNoRows {
 		return r, fmt.Errorf("not found")
 	}

@@ -20,6 +20,11 @@ export const auditGapLabels = {
     "Speech could not be turned into text without a connection. Type the order instead.": "සම්බන්ධතාවක් නොමැතිව කථනය පෙළට හැරවිය නොහැකි විය. ඒ වෙනුවට ඇණවුම ටයිප් කරන්න.",
     "This browser cannot listen in the chosen language. Switch to English or type the order.": "මෙම බ්‍රවුසරයට තෝරාගත් භාෂාවෙන් සවන් දිය නොහැක. ඉංග්‍රීසියට මාරු වන්න හෝ ඇණවුම ටයිප් කරන්න.",
     "Nothing was heard. Tap Speak and try again.": "කිසිවක් ඇසුණේ නැත. කියන්න ඔබා නැවත උත්සාහ කරන්න.",
+    "Temperature on arrival (°C, optional)": "පැමිණීමේදී උෂ්ණත්වය (°C, අත්‍යවශ්‍ය නොවේ)",
+    "e.g. 4.5": "උදා. 4.5",
+    "Enter a reading between -40 and 60 °C.": "-40 සහ 60 °C අතර කියවීමක් ඇතුළත් කරන්න.",
+    "Probe the chilled goods as they come off the truck.": "ට්‍රක් රථයෙන් බාන විට සිසිල් භාණ්ඩවල උෂ්ණත්වය මනින්න.",
+    "on arrival": "පැමිණීමේදී",
   },
   ta: {
     "Estimated order volume for the next ten weeks, by depot and brand, to plan vehicles, drivers and refrigerated capacity.": "வாகனங்கள், ஓட்டுநர்கள் மற்றும் குளிரூட்டல் திறனைத் திட்டமிட, கிடங்கு மற்றும் பிராண்ட் வாரியாக அடுத்த பத்து வாரங்களுக்கான மதிப்பிடப்பட்ட ஆர்டர் அளவு.",
@@ -41,5 +46,10 @@ export const auditGapLabels = {
     "Speech could not be turned into text without a connection. Type the order instead.": "இணைப்பு இல்லாமல் பேச்சை உரையாக மாற்ற முடியவில்லை. அதற்குப் பதிலாக ஆர்டரைத் தட்டச்சு செய்யவும்.",
     "This browser cannot listen in the chosen language. Switch to English or type the order.": "இந்த உலாவியால் தேர்ந்தெடுத்த மொழியில் கேட்க முடியாது. ஆங்கிலத்திற்கு மாறவும் அல்லது ஆர்டரைத் தட்டச்சு செய்யவும்.",
     "Nothing was heard. Tap Speak and try again.": "எதுவும் கேட்கவில்லை. சொல் என்பதைத் தட்டி மீண்டும் முயற்சிக்கவும்.",
+    "Temperature on arrival (°C, optional)": "வருகையின் போது வெப்பநிலை (°C, விருப்பத்தேர்வு)",
+    "e.g. 4.5": "எ.கா. 4.5",
+    "Enter a reading between -40 and 60 °C.": "-40 முதல் 60 °C வரையிலான அளவீட்டை உள்ளிடவும்.",
+    "Probe the chilled goods as they come off the truck.": "லாரியிலிருந்து இறக்கும்போது குளிரூட்டப்பட்ட பொருட்களின் வெப்பநிலையை அளவிடவும்.",
+    "on arrival": "வருகையின் போது",
   },
 };
