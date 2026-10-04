@@ -19,12 +19,16 @@ class RouteHomeScreen extends StatefulWidget {
     required this.onReportProblem,
     this.onTabSelected,
     this.offline = false,
+    this.savedCopy = false,
   });
 
   final TripInfo trip;
 
   /// No connection: shows that what the driver records is saved on the phone and sent later.
   final bool offline;
+
+  /// The route on screen is the copy saved on the phone, because the live one could not be loaded.
+  final bool savedCopy;
   final VoidCallback onViewStop;
   final VoidCallback onReportProblem;
   final ValueChanged<DriverTab>? onTabSelected;
@@ -58,7 +62,17 @@ class _RouteHomeScreenState extends State<RouteHomeScreen> {
             icon: SvgIcon(AppAssets.shieldRed, size: 20),
           ),
           const SizedBox(height: 15),
-          if (widget.offline) ...[
+          if (widget.savedCopy) ...[
+            Semantics(
+              liveRegion: true,
+              child: const NoteBanner(
+                title: 'Saved route',
+                text: 'Showing the route saved on this phone. It will refresh when you are back online.',
+                tone: NoteTone.offline,
+              ),
+            ),
+            const SizedBox(height: 15),
+          ] else if (widget.offline) ...[
             Semantics(
               liveRegion: true,
               child: const NoteBanner(

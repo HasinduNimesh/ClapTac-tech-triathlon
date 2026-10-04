@@ -87,6 +87,20 @@ Dispatch can send a message about the trip, or about one stop. The app reads the
 
 A missed refresh never removes what was already shown. **Acknowledging needs a connection:** offline, the message stays unread and the dialog says so; it is not queued for later like deliveries and proof are. Messages are not shown before the trip has a run on the server.
 
+## The route on the phone
+
+The route is kept on the phone (a JSON file per driver in the app's private storage, `lib/trips/route_store.dart`) so the app can still show it when it is opened without a connection:
+
+- it is saved when the route loads, when the trip starts, and after each stop is recorded, so a copy shown later has the right progress
+- if Waypoint cannot be reached when the route is loaded (for example the app was reopened without signal), the saved route is shown with a "Saved route" note, **but only if it is for the same driver and the same Waypoint business day** (Asia/Colombo); a route from an earlier day is ignored and deleted
+- the live route replaces it as soon as it can be loaded: when the connection returns, and on each sync tick
+- a route that could not be loaded at all (no saved copy either, for example the radio was not ready when the app opened) is retried quietly on each sync tick, every 15 seconds, until Waypoint answers; the driver is not left on the error until they tap Try again, and the screen does not flicker between retries. There is only ever one route load at a time: tapping Try again while a quiet retry is in flight joins it (the screen shows the loading state at once and then the result) instead of being ignored, and a load that fails in any way, including Waypoint sending a field of an unexpected type, ends with a visible error and never leaves the retries or the button stuck
+- if Waypoint answers that there is no open trip, the saved route is deleted: the server is authoritative
+- signing out, or a sign-in that is no longer accepted, deletes it
+- one phone, two drivers: a route load, message read, saved-route read or trip start that is still waiting for Waypoint when the driver signs out belongs to that driver. Every sign-in, sign-out or ended session starts a new session number, a request keeps the number it started under, and its answer is thrown away if the number has changed; so it is never shown to, applied to, or saved for whoever signs in next, and a new driver's route load never waits for (or is handed the answer to) the previous driver's
+
+A saved route does not make the trip startable offline: confirming the load still needs a connection to acknowledge the plan and start the run. It also cannot show changes dispatch made after it was saved (a changed plan, new messages) until the live route loads.
+
 ## Not built yet
 
 Sign-in, loading the route, starting the trip, recording deliveries with photo and signature proof, and sending them are real and have been run against the local backend. They have **not** been run against the real ThunderID or a production backend, so do not describe this build as production-ready.
