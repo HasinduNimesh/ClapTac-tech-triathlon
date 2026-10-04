@@ -132,7 +132,8 @@ paths:
     post:
       operationId: deferOrder
       security: [{ bearerAuth: [] }]
-      description: Requires order:defer. Structured reason codes only. reasonCode, a decider (the caller) and nextRunTarget (YYYY-MM-DD, after the plan delivery date) are all required or the deferral is rejected with 400. The store notice includes the reason and next run. The plan detail order carries priorityNextPlan=true when its outlet has been deferred on two consecutive runs (consecutive as for deferredLastRun: no delivery attempt between the deferrals). The flag is derived from persisted deferral history, not from the plan being viewed: it is true on the plan that records the second deferral and remains true on the plans that follow it until the outlet is next attempted. deferredLastRun alone (a single earlier deferral) does not set it.
+      description: >-
+        Requires order:defer. Structured reason codes only. reasonCode, a decider (the caller) and nextRunTarget (YYYY-MM-DD, after the plan delivery date) are all required or the deferral is rejected with 400. The store notice includes the reason and next run. The plan detail order carries priorityNextPlan=true when its outlet has been deferred on two consecutive runs (consecutive as for deferredLastRun: no delivery attempt between the deferrals). The flag is derived from persisted deferral history, not from the plan being viewed: it is true on the plan that records the second deferral and remains true on the plans that follow it until the outlet is next attempted. deferredLastRun alone (a single earlier deferral) does not set it.
       parameters:
         - $ref: "#/components/parameters/ID"
       requestBody:
