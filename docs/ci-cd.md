@@ -10,6 +10,23 @@ runs the complete check set regardless of changed paths. Production deployment
 runs only when **Actions → CI and
 production deployment → Run workflow** is started on `main` and all checks pass.
 
+## Images
+
+Every push to `main` that passes its checks builds all nine images (the eight
+Go services and the web app) on GitHub and pushes them to
+`ghcr.io/<owner>/<repo>/<service>`, tagged with the full commit SHA. There is no
+`latest` tag: a tag always names one commit. The VM never builds; it pulls the
+images for the commit being deployed.
+
+The web app bakes its sign-in addresses in at build time, so the published web
+image is for production. The defaults are `https://id.waypoint.claptac.dev`,
+client `waypoint-web` and `https://waypoint.claptac.dev/auth/callback`. If the
+production values differ, set the repository variables `PROD_OIDC_ISSUER`,
+`PROD_WEB_OIDC_CLIENT_ID` and `PROD_WEB_REDIRECT_URI` (Settings → Secrets and
+variables → Actions → Variables). They are public addresses, not secrets.
+Local `docker compose up --build` still builds development images tagged
+`waypoint/<service>:local`.
+
 ## Configure production access
 
 Create a GitHub environment named `production` and require a reviewer. Add
@@ -30,14 +47,31 @@ a self-hosted runner/VPN if the VM firewall does not permit GitHub runners.
 Verify the VM host key through an independent trusted channel before saving
 `AZURE_SSH_KNOWN_HOSTS`; do not accept `ssh-keyscan` output blindly.
 
+## Let the VM pull images (once)
+
+Packages pushed by Actions are private. Create a **classic** personal access
+token with only `read:packages` (fine-grained tokens cannot read packages), then
+on the VM, as the account the deploy uses `sudo docker` for:
+
+```
+echo '<token>' | sudo docker login ghcr.io -u <github-user> --password-stdin
+```
+
+The credential stays in root's Docker config on the VM; it is not stored in
+GitHub. The token's owner needs read access to the repository.
+
 ## VM assumptions and rollout
 
 The job expects `~/ClapTac-tech-triathlon`, an existing `.env`, Docker Compose,
 Caddy, and `NGINX_BIND=127.0.0.1:8080:80` in `.env`. It fetches `main` and
 fast-forwards the VM checkout to the *exact* commit checked by CI. A divergent
-branch or Compose conflict stops deployment. It validates Compose, saves a
-PostgreSQL custom-format dump in the VM user's home directory, rebuilds and
-starts Compose, then checks the public health endpoint. It does not remove
+branch or Compose conflict stops deployment. It validates Compose, pulls the
+images for that commit (stopping before anything changes if one is missing or
+the registry login is not set up), checks that the web image carries the
+production sign-in address, saves a PostgreSQL custom-format dump in the VM
+user's home directory, writes `WAYPOINT_IMAGE_PREFIX` and `WAYPOINT_TAG` into
+the VM `.env` (only those two lines), starts Compose without building, then
+checks the public health endpoint. It does not remove
 orphan containers: `waypoint-thunderid-prod` is managed separately.
 
 The VM's current local Compose edit will block this update to that file. Before
@@ -47,6 +81,12 @@ running port mapping. Review and preserve the VM's
 existing `.env` and database; never reset the repository or delete volumes to
 make a deployment pass. A successful health check is not a full user-flow
 check, and this workflow does not perform an automatic rollback.
+
+To roll back, set `WAYPOINT_TAG` in the VM `.env` to the previous commit SHA
+(a failed deploy prints it; earlier tags are still in the registry) and run
+`sudo docker compose up -d --no-build`. Database migrations only go forward and
+the backup is the way back for data, so check that the older images work with the
+current schema before rolling back across a migration.
 
 The deploy preflight requires the effective web issuer and redirect URI, plus
 the API issuer, JWKS URL, and token endpoint, to point to the production

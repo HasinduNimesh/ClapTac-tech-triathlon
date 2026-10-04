@@ -104,6 +104,7 @@ services:
       - "127.0.0.1:9001:9090"
 
   order-service:
+    image: ${WAYPOINT_IMAGE_PREFIX:-waypoint}/order-service:${WAYPOINT_TAG:-local}
     build: { context: ., dockerfile: Dockerfile, args: { SERVICE: order-service } }
     environment:
       <<: *svc-env
@@ -124,6 +125,7 @@ services:
       shared-service: { condition: service_healthy }
 
   planning-service:
+    image: ${WAYPOINT_IMAGE_PREFIX:-waypoint}/planning-service:${WAYPOINT_TAG:-local}
     build: { context: ., dockerfile: Dockerfile, args: { SERVICE: planning-service } }
     environment:
       <<: *svc-env
@@ -144,6 +146,7 @@ services:
       shared-service: { condition: service_healthy }
 
   fleet-service:
+    image: ${WAYPOINT_IMAGE_PREFIX:-waypoint}/fleet-service:${WAYPOINT_TAG:-local}
     build: { context: ., dockerfile: Dockerfile, args: { SERVICE: fleet-service } }
     environment:
       <<: *svc-env
@@ -158,6 +161,7 @@ services:
       shared-service: { condition: service_healthy }
 
   loading-service:
+    image: ${WAYPOINT_IMAGE_PREFIX:-waypoint}/loading-service:${WAYPOINT_TAG:-local}
     build: { context: ., dockerfile: Dockerfile, args: { SERVICE: loading-service } }
     environment:
       <<: *svc-env
@@ -177,6 +181,7 @@ services:
       shared-service: { condition: service_healthy }
 
   delivery-service:
+    image: ${WAYPOINT_IMAGE_PREFIX:-waypoint}/delivery-service:${WAYPOINT_TAG:-local}
     build: { context: ., dockerfile: Dockerfile, args: { SERVICE: delivery-service } }
     environment:
       <<: *svc-env
@@ -199,6 +204,7 @@ services:
       minio: { condition: service_started }
 
   shared-service:
+    image: ${WAYPOINT_IMAGE_PREFIX:-waypoint}/shared-service:${WAYPOINT_TAG:-local}
     build: { context: ., dockerfile: Dockerfile, args: { SERVICE: shared-service } }
     environment:
       <<: *svc-env
@@ -214,6 +220,7 @@ services:
       integration-service: { condition: service_healthy }
 
   integration-service:
+    image: ${WAYPOINT_IMAGE_PREFIX:-waypoint}/integration-service:${WAYPOINT_TAG:-local}
     build: { context: ., dockerfile: Dockerfile, args: { SERVICE: integration-service } }
     environment:
       <<: *svc-env
@@ -230,6 +237,7 @@ services:
     healthcheck: *backend-healthcheck
 
   agent-orchestrator:
+    image: ${WAYPOINT_IMAGE_PREFIX:-waypoint}/agent-orchestrator:${WAYPOINT_TAG:-local}
     build: { context: ., dockerfile: Dockerfile, args: { SERVICE: agent-orchestrator } }
     environment:
       <<: *svc-env
@@ -252,6 +260,7 @@ services:
       shared-service: { condition: service_healthy }
 
   web:
+    image: ${WAYPOINT_IMAGE_PREFIX:-waypoint}/web:${WAYPOINT_TAG:-local}
     build:
       context: ./apps/web
       args:
