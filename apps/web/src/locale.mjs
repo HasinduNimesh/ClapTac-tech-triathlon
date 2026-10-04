@@ -984,7 +984,65 @@ Object.assign(labels.ta, {
   "Rejected delivery": "நிராகரிக்கப்பட்ட விநியோகம்",
 });
 
-function lookupTranslation(locale, source) { return automationLabels[locale]?.[source] ?? labels[locale]?.[source] ?? disruptionLabels[locale]?.[source] ?? driverPrivacyLabels[locale]?.[source] ?? loaderLabels[locale]?.[source] ?? loaderOfflineLabels[locale]?.[source] ?? loaderStatusLabels[locale]?.[source] ?? loaderScannerLabels[locale]?.[source] ?? storeLabels[locale]?.[source] ?? storeTrackingLabels[locale]?.[source] ?? dispatcherLabels[locale]?.[source] ?? planningLabels[locale]?.[source] ?? breakdownLabels[locale]?.[source] ?? auditLabels[locale]?.[source] ?? masterDataLabels[locale]?.[source] ?? liveOpsLabels[locale]?.[source] ?? loadingOpsLabels[locale]?.[source] ?? operationalValueLabels[locale]?.[source] ?? masterNoticeLabels[locale]?.[source] ?? policyConflictLabels[locale]?.[source] ?? followUpLabels[locale]?.[source] ?? forecastLabels[locale]?.[source] ?? serviceTimeLabels[locale]?.[source] ?? etaLabels[locale]?.[source] ?? latenessLabels[locale]?.[source] ?? notificationLabels[locale]?.[source] ?? coldChainLabels[locale]?.[source] ?? custodyLabels[locale]?.[source] ?? deferralLabels[locale]?.[source] ?? storeManagerDashboardLabels[locale]?.[source] ?? dispatcherWorkspaceLabels[locale]?.[source] ?? storeWorkspaceLabels[locale]?.[source]; }
+
+const workflowEnhancementLabels = {
+  si: {
+    Cooling: "ශීතකරණය",
+    Chilled: "ශීත කළ",
+    Ambient: "සාමාන්‍ය",
+    Access: "ප්‍රවේශය",
+    "Van only": "වෑන් රථ පමණි",
+    Standard: "සම්මත",
+    "Delivery date": "බෙදාහැරීමේ දිනය",
+    "Scheduled for the next eligible run (placed after 4:00 PM cutoff).": "ඊළඟ සුදුසු ධාවනයට නියමිතයි (ප.ව. 4:00 සීමාවෙන් පසු ඉදිරිපත් කළ බැවින්).",
+    "Next steps: Your order is queued for dispatch planning (Request acknowledged). Dispatch will assign it to a vehicle and notify you of the delivery window.": "මීළඟ පියවර: ඔබගේ ඇණවුම සැලසුම් කිරීම සඳහා යොමු කරන ලදී (ඉල්ලීම පිළිගන්නා ලදී). වාහනයක් වෙන් කර බෙදාහැරීමේ කාලය දැනුම් දෙනු ඇත.",
+    "Field Acknowledgement Tracker (LO-9)": "ක්ෂේත්‍ර පිළිගැනීම් නිරීක්ෂකය (LO-9)",
+    "All assigned field team members have acknowledged this version.": "පැවරුම් ලද සියලුම ක්ෂේත්‍ර සාමාජිකයින් මෙම අනුවාදය පිළිගෙන ඇත.",
+    "Attention: Unacknowledged by field crew for over 15 minutes.": "අවධානයට: ක්ෂේත්‍ර කණ්ඩායම විනාඩි 15කට වැඩි කාලයක් තිස්සේ පිළිගෙන නොමැත.",
+    "Send Reminder": "සිහිපත් කිරීමක් යවන්න",
+    "Reminder sent to assigned crew": "පැවරුම් ලද කණ්ඩායමට සිහිපත් කිරීම යවන ලදී",
+    "Plan changed · Review updated route and instructions before departure": "සැලැස්ම වෙනස් විය · පිටත්වීමට පෙර යාවත්කාලීන මාර්ගය සහ උපදෙස් පරීක්ෂා කරන්න",
+    "Plan changed · Review updated load list before departure": "සැලැස්ම වෙනස් විය · පිටත්වීමට පෙර යාවත්කාලීන පැටවුම් ලැයිස්තුව පරීක්ෂා කරන්න",
+    "Published at": "ප්‍රකාශ කළ වේලාව",
+    "Unacknowledged > 15m": "පිළිගෙන නැත > විනාඩි 15",
+    Pending: "බලාපොරොත්තු වෙමින්",
+    "Auto-refreshing queue": "පෝලිම ස්වයංක්‍රීයව යාවත්කාලීන වේ",
+    "Live queue active": "සජීවී පෝලිම ක්‍රියාත්මකයි",
+    "Plan changed": "සැලැස්ම වෙනස් කර ඇත",
+    "Load list saved for offline use": "නොබැඳි භාවිතය සඳහා පැටවුම් ලැයිස්තුව සුරකින ලදී",
+    "Review updated load list before departure": "පිටත්වීමට පෙර යාවත්කාලීන පැටවුම් ලැයිස්තුව පරීක්ෂා කරන්න",
+    "Review updated route and instructions before departure": "පිටත්වීමට පෙර යාවත්කාලීන මාර්ගය සහ උපදෙස් පරීක්ෂා කරන්න",
+  },
+  ta: {
+    Cooling: "குளிரூட்டல்",
+    Chilled: "குளிரூட்டப்பட்டது",
+    Ambient: "சாதாரண",
+    Access: "அணுகல்",
+    "Van only": "வேன் மட்டும்",
+    Standard: "நிலையான",
+    "Delivery date": "விநியோக தேதி",
+    "Scheduled for the next eligible run (placed after 4:00 PM cutoff).": "அடுத்த தகுதியான இயக்கத்திற்கு திட்டமிடப்பட்டது (மாலை 4:00 கடைசி நேரத்திற்குப் பிறகு சமர்ப்பிக்கப்பட்டது).",
+    "Next steps: Your order is queued for dispatch planning (Request acknowledged). Dispatch will assign it to a vehicle and notify you of the delivery window.": "அடுத்த படிகள்: உங்கள் ஆர்டர் அனுப்பல் திட்டமிடலுக்கு வரிசைப்படுத்தப்பட்டது (கோரிக்கை ஏற்கப்பட்டது). அனுப்பல் குழு வாகனத்தை ஒதுக்கி விநியோக நேரத்தை அறிவிக்கும்.",
+    "Field Acknowledgement Tracker (LO-9)": "கள ஒப்புதல் கண்காணிப்பாளர் (LO-9)",
+    "All assigned field team members have acknowledged this version.": "ஒதுக்கப்பட்ட அனைத்து களக் குழு உறுப்பினர்களும் இந்த பதிப்பை ஏற்றுக்கொண்டனர்.",
+    "Attention: Unacknowledged by field crew for over 15 minutes.": "கவனம்: களக் குழுவினர் 15 நிமிடங்களுக்கும் மேலாக ஒப்புதல் அளிக்கவில்லை.",
+    "Send Reminder": "நினைவூட்டலை அனுப்பு",
+    "Reminder sent to assigned crew": "ஒதுக்கப்பட்ட குழுவிற்கு நினைவூட்டல் அனுப்பப்பட்டது",
+    "Plan changed · Review updated route and instructions before departure": "திட்டம் மாறியுள்ளது · புறப்படுவதற்கு முன் புதுப்பிக்கப்பட்ட வழி மற்றும் வழிமுறைகளை மதிப்பாய்வு செய்யவும்",
+    "Plan changed · Review updated load list before departure": "திட்டம் மாறியுள்ளது · புறப்படுவதற்கு முன் புதுப்பிக்கப்பட்ட ஏற்றுதல் பட்டியலை மதிப்பாய்வு செய்யவும்",
+    "Published at": "வெளியிடப்பட்ட நேரம்",
+    "Unacknowledged > 15m": "ஒப்புக்கொள்ளப்படவில்லை > 15 நிமி",
+    Pending: "நிலுவையில்",
+    "Auto-refreshing queue": "வரிசை தானாக புதுப்பிக்கப்படுகிறது",
+    "Live queue active": "நேரடி வரிசை செயலில் உள்ளது",
+    "Plan changed": "திட்டம் மாற்றப்பட்டது",
+    "Load list saved for offline use": "இணையமில்லா பயன்பாட்டிற்காக ஏற்றுதல் பட்டியல் சேமிக்கப்பட்டது",
+    "Review updated load list before departure": "புறப்படுவதற்கு முன் புதுப்பிக்கப்பட்ட ஏற்றுதல் பட்டியலை மதிப்பாய்வு செய்யவும்",
+    "Review updated route and instructions before departure": "புறப்படுவதற்கு முன் புதுப்பிக்கப்பட்ட வழி மற்றும் வழிமுறைகளை மதிப்பாய்வு செய்யவும்",
+  },
+};
+
+function lookupTranslation(locale, source) { return automationLabels[locale]?.[source] ?? labels[locale]?.[source] ?? workflowEnhancementLabels[locale]?.[source] ?? disruptionLabels[locale]?.[source] ?? driverPrivacyLabels[locale]?.[source] ?? loaderLabels[locale]?.[source] ?? loaderOfflineLabels[locale]?.[source] ?? loaderStatusLabels[locale]?.[source] ?? loaderScannerLabels[locale]?.[source] ?? storeLabels[locale]?.[source] ?? storeTrackingLabels[locale]?.[source] ?? dispatcherLabels[locale]?.[source] ?? planningLabels[locale]?.[source] ?? breakdownLabels[locale]?.[source] ?? auditLabels[locale]?.[source] ?? masterDataLabels[locale]?.[source] ?? liveOpsLabels[locale]?.[source] ?? loadingOpsLabels[locale]?.[source] ?? operationalValueLabels[locale]?.[source] ?? masterNoticeLabels[locale]?.[source] ?? policyConflictLabels[locale]?.[source] ?? followUpLabels[locale]?.[source] ?? forecastLabels[locale]?.[source] ?? serviceTimeLabels[locale]?.[source] ?? etaLabels[locale]?.[source] ?? latenessLabels[locale]?.[source] ?? notificationLabels[locale]?.[source] ?? coldChainLabels[locale]?.[source] ?? custodyLabels[locale]?.[source] ?? deferralLabels[locale]?.[source] ?? storeManagerDashboardLabels[locale]?.[source] ?? dispatcherWorkspaceLabels[locale]?.[source] ?? storeWorkspaceLabels[locale]?.[source]; }
 
 const countMessages = [
   [/^Sync paused \(401\)\. (\d+) kept in IndexedDB\.$/, "Sync paused (401). {count} kept in IndexedDB."],

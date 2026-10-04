@@ -117,6 +117,11 @@ export function NewOrderPage() {
               <img src={iconCheck} alt="" aria-hidden="true" width={24} height={24} />
               {t("Request")} {created.orderRef} {t("received")}
             </h2>
+            {created.requestedDeliveryDate !== date && (
+              <p className="status-bad sm-cutoff-warning" role="note">
+                {t("Scheduled for the next eligible run (placed after 4:00 PM cutoff).")}
+              </p>
+            )}
             <dl className="sm-summary-list">
               <div><dt>{t("Outlet")}</dt><dd>{created.outletId || outlet || "—"}</dd></div>
               <div><dt>{t("Needed on")}</dt><dd>{formatDay(created.requestedDeliveryDate)}</dd></div>
@@ -124,6 +129,9 @@ export function NewOrderPage() {
               <div><dt>{t("Items")}</dt><dd>{created.orderUnits} {t("units")}</dd></div>
               <div><dt>{t("Status")}</dt><dd>{t("Awaiting dispatch planning")}</dd></div>
             </dl>
+            <p className="muted sm-next-steps">
+              {t("Next steps: Your order is queued for dispatch planning (Request acknowledged). Dispatch will assign it to a vehicle and notify you of the delivery window.")}
+            </p>
             <div className="sm-confirm-actions">
               <Link to={`/store-manager/orders?order=${encodeURIComponent(created.id)}`} className="sm-btn-secondary">{t("View Your Orders")}</Link>
               <button type="button" className="sm-btn-secondary" onClick={reset}>{t("Place Another Order")}</button>

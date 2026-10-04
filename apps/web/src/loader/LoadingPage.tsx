@@ -360,8 +360,22 @@ export function LoadingPage() {
           <h3>
             {detail.planRef} · {detail.vehicleId}
           </h3>
+          {!currentPlanAcknowledged && Boolean(detail.planVersion) && (
+            <div className="status-bad plan-changed-banner" role="alert" style={{ margin: "1rem 0", padding: "0.85rem 1rem", borderRadius: "6px" }}>
+              <strong>⚠️ {t("Plan changed")}</strong>
+              <p>{t("Plan changed · Review updated load list before departure")}</p>
+              <button type="button" className="tap primary" onClick={acknowledgePlan} disabled={!online}>
+                {t("Acknowledge current plan")}
+              </button>
+            </div>
+          )}
           <p className="muted">{t("Plan version")} {detail.planVersion || t("unavailable")} · {currentPlanAcknowledged ? t("Acknowledged") : t("Acknowledgement required before departure")}</p>
-          {!currentPlanAcknowledged && <button type="button" className="tap" onClick={acknowledgePlan} disabled={!online || !detail.planVersion}>{t("Acknowledge current plan")}</button>}
+          <p className="muted">{t("Load list saved for offline use")}</p>
+          {!currentPlanAcknowledged && !detail.planVersion && (
+            <button type="button" className="tap" onClick={acknowledgePlan} disabled={!online || !detail.planVersion}>
+              {t("Acknowledge current plan")}
+            </button>
+          )}
           <p>
             {depotLabel(detail.depot)} · {t(detail.status || detail.loadingStatus || "pending")} · {detail.loadedCount ?? 0} {t("loaded")} ·{" "}
             {detail.shortfallCount ?? 0} {t("short")} · {detail.pendingCount ?? 0} {t("pending")}

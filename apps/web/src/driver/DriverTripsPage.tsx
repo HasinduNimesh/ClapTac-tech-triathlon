@@ -657,10 +657,25 @@ export function DriverTripsPage() {
           <h3>
             {detail.run?.planRef} · {detail.run?.vehicleId}
           </h3>
-          {!completed && <>
-            <p className="muted">{t("Plan version")} {detail.currentPlanVersion || detail.run?.planVersion || t("unavailable")} · {driverAcknowledged ? t("Acknowledged") : t("Acknowledge before starting this route")}</p>
-            {detail.currentPlanVersion !== detail.run?.planVersion ? <p className="status-bad">{t("This prepared route is stale. Dispatch must refresh its trip instructions.")}</p> : !driverAcknowledged && <button type="button" className="tap" onClick={acknowledgePlan}>{t("Acknowledge current plan")}</button>}
-          </>}
+          {!completed && (
+            <>
+              {!driverAcknowledged && (
+                <div className="card plan-update-card status-bad" role="alert" style={{ margin: "0.75rem 0", padding: "0.85rem 1rem", border: "1px solid #d9534f" }}>
+                  <strong>⚠️ {t("Plan changed")}</strong>
+                  <p>{t("Plan changed · Review updated route and instructions before departure")}</p>
+                  {detail.currentPlanVersion === detail.run?.planVersion && (
+                    <button type="button" className="tap primary" onClick={acknowledgePlan}>
+                      {t("Acknowledge current plan")}
+                    </button>
+                  )}
+                </div>
+              )}
+              <p className="muted">{t("Plan version")} {detail.currentPlanVersion || detail.run?.planVersion || t("unavailable")} · {driverAcknowledged ? t("Acknowledged") : t("Acknowledge before starting this route")}</p>
+              {detail.currentPlanVersion !== detail.run?.planVersion && (
+                <p className="status-bad">{t("This prepared route is stale. Dispatch must refresh its trip instructions.")}</p>
+              )}
+            </>
+          )}
           <p>
             {depotLabel(detail.run?.depot)} · {t(detail.status || "")}
           </p>
