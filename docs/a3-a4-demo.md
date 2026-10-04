@@ -113,9 +113,8 @@ Additional manual checks:
 
 ## PR recording checklist
 
-### Recorded walkthrough
+### Screenshots
 
-[Watch the A3/A4 demo (6 minutes 16 seconds)](media/a3-a4/a3-a4-demo.mp4). This is a compressed MP4 copy of the supplied `vid.mov`; the original recording is unchanged. The walkthrough uses the labelled synthetic demo history described above.
 
 | A3 habit suggestion | A4 historical preview | A4 execution evidence |
 | --- | --- | --- |
