@@ -2,10 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import ts from "typescript";
 
-const sourceRoot = new URL("../src/", import.meta.url);
-const rootPath = new URL(sourceRoot).pathname;
+const rootPath = fileURLToPath(new URL("../src/", import.meta.url));
 const files = [];
 function visit(directory) {
   for (const name of readdirSync(directory)) {

@@ -14,6 +14,20 @@ export function OrderQueuePage() {
   const [importStatus, setImportStatus] = useState("");
   const [exportUrl, setExportUrl] = useState("");
   const [importing, setImporting] = useState(false);
+  const [outletMap, setOutletMap] = useState<Map<string, string>>(new Map());
+
+  useEffect(() => {
+    if (!user?.access_token) return;
+    apiJSON<{ items: Array<{ id: string; parkingConstraint: string }> }>("/shared/outlets", user.access_token)
+      .then((data) => {
+        const m = new Map<string, string>();
+        for (const item of data.items || []) {
+          m.set(item.id, item.parkingConstraint);
+        }
+        setOutletMap(m);
+      })
+      .catch(() => {});
+  }, [user]);
 
   useEffect(() => {
     if (!user?.access_token) return;
@@ -21,9 +35,16 @@ export function OrderQueuePage() {
     if (brand) q.set("brand", brand);
     if (outlet) q.set("outlet_id", outlet);
     const suffix = q.toString() ? `?${q.toString()}` : "";
-    apiJSON<{ items: Order[] }>(`/orders${suffix}`, user.access_token)
-      .then((b) => setItems(b.items || []))
-      .catch((e) => setError(String(e)));
+
+    function fetchOrders() {
+      apiJSON<{ items: Order[] }>(`/orders${suffix}`, user!.access_token)
+        .then((b) => setItems(b.items || []))
+        .catch((e) => setError(String(e)));
+    }
+
+    fetchOrders();
+    const interval = setInterval(fetchOrders, 4000);
+    return () => clearInterval(interval);
   }, [user, brand, outlet]);
 
   useEffect(() => () => {
@@ -51,7 +72,12 @@ export function OrderQueuePage() {
 
   return (
     <section className="card">
-      <h2>{t("Confirmed Orders")}</h2>
+      <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+        <h2>{t("Confirmed Orders")}</h2>
+        <span className="chip status-badge" style={{ background: "#ecfdf5", color: "#065f46", fontSize: "0.85rem" }}>
+          ● {t("Live queue active")}
+        </span>
+      </div>
       {error && <p className="status-bad" role="alert">{error}</p>}
       {importStatus && <p role="status" className="status-ok">{importStatus}</p>}
       <section className="row" aria-label={t("ERP and WMS data exchange")}>
@@ -71,20 +97,44 @@ export function OrderQueuePage() {
             <th>{t("Order")}</th>
             <th>{t("Outlet")}</th>
             <th>{t("Brand")}</th>
-            <th>{t("Temp")}</th>
+            <th>{t("Cooling")}</th>
+            <th>{t("Access")}</th>
+            <th>{t("Delivery date")}</th>
             <th>{t("Volume")}</th>
           </tr>
         </thead>
         <tbody>
-          {items.map((o) => (
-            <tr key={o.id}>
-              <td>{o.orderRef}</td>
-              <td>{o.outletId}</td>
-              <td>{o.brand}</td>
-              <td>{o.temperatureRequirement}</td>
-              <td>{o.orderVolumeM3} m³</td>
-            </tr>
-          ))}
+          {items.map((o) => {
+            const isChilled = o.temperatureRequirement === "chilled";
+            const isVanOnly = outletMap.get(o.outletId) === "van_only";
+            return (
+              <tr key={o.id}>
+                <td><strong>{o.orderRef}</strong></td>
+                <td>{o.outletId}</td>
+                <td>{o.brand}</td>
+                <td>
+                  {isChilled ? (
+                    <span className="chip" style={{ background: "#e0f2fe", color: "#0369a1", fontWeight: 600 }}>
+                      ❄️ {t("Chilled")}
+                    </span>
+                  ) : (
+                    <span className="muted">{t("Ambient")}</span>
+                  )}
+                </td>
+                <td>
+                  {isVanOnly ? (
+                    <span className="chip" style={{ background: "#fef3c7", color: "#92400e", fontWeight: 600 }}>
+                      🚐 {t("Van only")}
+                    </span>
+                  ) : (
+                    <span className="muted">{t("Standard")}</span>
+                  )}
+                </td>
+                <td>{o.requestedDeliveryDate}</td>
+                <td>{o.orderUnits} {t("units")} · {o.orderVolumeM3} m³</td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </section>

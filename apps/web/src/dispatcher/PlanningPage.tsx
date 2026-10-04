@@ -77,6 +77,7 @@ export function PlanningPage() {
   const [fuelSubmitting, setFuelSubmitting] = useState(false);
   const [fuelAttempt, setFuelAttempt] = useState<{signature:string;operationId:string}|null>(null);
   const [incidents,setIncidents]=useState<FleetIncident[]>([]);const [incidentVehicle,setIncidentVehicle]=useState("");const [breakdown,setBreakdown]=useState<BreakdownProposal|null>(null);const [noticeDraft,setNoticeDraft]=useState("");const [confirmedNoticeDrafts,setConfirmedNoticeDrafts]=useState<string[]>([]);
+  const [reminderNotice, setReminderNotice] = useState("");
 
   async function loadIncidents(){try{const data=await apiJSON<{items:FleetIncident[]}>("/fleet/incidents?openOnly=true",token);setIncidents(data.items||[]);setIncidentVehicle(current=>current||data.items?.[0]?.vehicleId||"");}catch{/* Fleet incident feed is supplementary to the plan view. */}}
 
@@ -239,7 +240,64 @@ export function PlanningPage() {
             {detail.plan.planRef} · {detail.plan.deliveryDate} · {detail.plan.status}
             {detail.plan.generatedAt ? " · generated" : ""}
           </p>
-          {detail.publication?.version ? <p className="muted">{t("Published version")} {detail.publication.version} · {detail.publication.acknowledgements.length} {t("field acknowledgement(s) recorded")}</p> : null}
+          {detail.publication?.version ? (
+            <article className="card" style={{ marginTop: "0.5rem" }} aria-labelledby="lo9-tracker-heading">
+              <h3 id="lo9-tracker-heading">{t("Field Acknowledgement Tracker (LO-9)")}</h3>
+              <p className="muted">
+                {t("Published version")} {detail.publication.version} · {t("Published at")} {planTime(detail.publication.publishedAt)} · {detail.publication.acknowledgements.length} {t("field acknowledgement(s) recorded")}
+              </p>
+              {(() => {
+                const pubMs = detail.publication.publishedAt ? new Date(detail.publication.publishedAt).getTime() : 0;
+                const elapsedMin = pubMs ? Math.floor((Date.now() - pubMs) / 60000) : 0;
+                const isOver15 = elapsedMin >= 15;
+                const unackedCount = Math.max(0, detail.trips.length - detail.publication.acknowledgements.length);
+                return (
+                  <>
+                    {unackedCount > 0 && isOver15 && (
+                      <div className="status-bad" style={{ padding: "0.5rem 0.75rem", borderRadius: "6px", marginBottom: "0.5rem" }} role="alert">
+                        <p>{t("Attention: Unacknowledged by field crew for over 15 minutes.")}</p>
+                        <button type="button" className="tap" onClick={() => setReminderNotice(t("Reminder sent to assigned crew"))}>
+                          {t("Send Reminder")}
+                        </button>
+                      </div>
+                    )}
+                    {reminderNotice && <p className="status-ok" role="status">{reminderNotice}</p>}
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>{t("Trip")}</th>
+                          <th>{t("Vehicle")}</th>
+                          <th>{t("Plan version")}</th>
+                          <th>{t("Status")}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {detail.trips.map((tr) => {
+                          const ack = detail.publication?.acknowledgements.find((a) => a.actorId === tr.vehicleId || a.actorRole === "DRIVER");
+                          return (
+                            <tr key={tr.id}>
+                              <td>{tr.tripNumber}</td>
+                              <td>{tr.vehicleId}</td>
+                              <td>v{detail.publication?.version}</td>
+                              <td>
+                                {ack ? (
+                                  <span className="status-ok">✅ {t("Acknowledged")} ({planTime(ack.acknowledgedAt)})</span>
+                                ) : isOver15 ? (
+                                  <span className="status-bad">⚠️ {t("Unacknowledged > 15m")}</span>
+                                ) : (
+                                  <span className="muted">⏳ {t("Pending")}</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </>
+                );
+              })()}
+            </article>
+          ) : null}
           <p className={detail.fairness?.signalAvailable ? "muted" : "status-bad"}>
             {t("Fairness policy")}: {detail.fairness?.policy || t("Delivery history unavailable; review before generating.")}
           </p>
