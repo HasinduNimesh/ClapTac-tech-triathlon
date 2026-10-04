@@ -1299,11 +1299,11 @@ Object.assign(labels.ta, { "Sync conflict settled": "ஒத்திசைவு
 // W3 deferral rules
 Object.assign(labels.si, {
   "Required. The store is told this date in its deferral notice.": "අවශ්‍යයි. කල් දැමීම් දැනුම්දීමේදී මෙම දිනය වෙළඳසැලට දැනුම් දෙනු ලැබේ.",
-  "Priority for next plan": "ඊළඟ සැලසුමට ප්‍රමුඛතාව",
+  "Priority for next plan": "ඊළඟ සැලසුමට ප්‍රමුඛතාව", "Priority outlet": "ප්‍රමුඛතා අලෙවිසැල",
 });
 Object.assign(labels.ta, {
   "Required. The store is told this date in its deferral notice.": "கட்டாயம். ஒத்திவைப்பு அறிவிப்பில் இந்தத் தேதி கடைக்குத் தெரிவிக்கப்படும்.",
-  "Priority for next plan": "அடுத்த திட்டத்திற்கு முன்னுரிமை",
+  "Priority for next plan": "அடுத்த திட்டத்திற்கு முன்னுரிமை", "Priority outlet": "முன்னுரிமை கடை",
 });
 
 // W4: chilled load exceptions rank first in dispatcher notifications.

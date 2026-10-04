@@ -584,6 +584,38 @@ func (p Postgres) LatestDeferralsByOutlet(ctx context.Context, beforeDate string
 	return out, rows.Err()
 }
 
+// EarlierDeferralsByOutlet returns, for every outlet deferred on at least two
+// distinct plan delivery dates strictly before beforeDate, the second most
+// recent of those dates (the deferral that preceded LatestDeferralsByOutlet's).
+// Together the two dates are the persisted history from which an outlet's
+// priorityNextPlan flag is derived on any later plan.
+func (p Postgres) EarlierDeferralsByOutlet(ctx context.Context, beforeDate string) (map[string]string, error) {
+	rows, err := p.Pool.Query(ctx, `
+		SELECT outlet_id, delivery_date::text FROM (
+			SELECT d.outlet_id, pl.delivery_date,
+			       dense_rank() OVER (PARTITION BY d.outlet_id ORDER BY pl.delivery_date DESC) AS rk
+			FROM deferrals d
+			JOIN planning.plans pl ON pl.id = d.plan_id
+			WHERE d.outlet_id IS NOT NULL AND d.outlet_id <> '' AND pl.delivery_date < $1::date
+		) ranked
+		WHERE rk = 2
+		GROUP BY outlet_id, delivery_date
+	`, beforeDate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]string{}
+	for rows.Next() {
+		var outletID, date string
+		if err := rows.Scan(&outletID, &date); err != nil {
+			return nil, err
+		}
+		out[outletID] = date
+	}
+	return out, rows.Err()
+}
+
 func (p Postgres) OutletDeferralCounts(ctx context.Context) (map[string]int, error) {
 	rows, err := p.Pool.Query(ctx, `SELECT outlet_id, count(*) FROM deferrals WHERE outlet_id IS NOT NULL AND outlet_id <> '' GROUP BY outlet_id`)
 	if err != nil {

@@ -935,6 +935,13 @@ func (s Service) loadWorld(ctx context.Context, pl domain.Plan) (allocate.Input,
 			s.Peers.Logger.Warn("repeat_deferral_signal_unavailable", "error", lastDeferralErr)
 		}
 	}
+	earlierDeferralByOutlet, earlierDeferralErr := s.Repo.EarlierDeferralsByOutlet(ctx, pl.DeliveryDate)
+	if earlierDeferralErr != nil {
+		earlierDeferralByOutlet = map[string]string{}
+		if s.Peers.Logger != nil {
+			s.Peers.Logger.Warn("repeat_deferral_history_unavailable", "error", earlierDeferralErr)
+		}
+	}
 	policy, policyErr := s.Peers.PlanningPolicy(ctx)
 	policySignalAvailable := policyErr == nil
 	if policyErr != nil {
@@ -943,7 +950,7 @@ func (s Service) loadWorld(ctx context.Context, pl domain.Plan) (allocate.Input,
 			s.Peers.Logger.Warn("planning_policy_unavailable_using_safe_defaults", "error", policyErr)
 		}
 	}
-	fairnessSignalAvailable, err := applyFairnessHistory(orders, counts, countsErr, lastServed, lastServedErr, schedule.PlanDate(pl.DeliveryDate), policy, lastDeferralByOutlet, lastAttempted)
+	fairnessSignalAvailable, err := applyFairnessHistory(orders, counts, countsErr, lastServed, lastServedErr, schedule.PlanDate(pl.DeliveryDate), policy, lastDeferralByOutlet, earlierDeferralByOutlet, lastAttempted)
 	if err != nil {
 		return allocate.Input{}, err
 	}
