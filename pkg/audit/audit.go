@@ -18,6 +18,7 @@ const (
 	ActionOrderReallocated             = "ORDER_REALLOCATED"
 	ActionAllocationRemoved            = "ALLOCATION_REMOVED"
 	ActionPlanConfirmed                = "PLAN_CONFIRMED"
+	ActionPlanAckReminderSent          = "PLAN_ACK_REMINDER_SENT"
 	ActionDisruptionRiskCreated        = "DISRUPTION_RISK_CREATED"
 	ActionDisruptionRiskOverridden     = "DISRUPTION_RISK_OVERRIDDEN"
 	ActionVehicleReassigned            = "vehicle.reassigned"

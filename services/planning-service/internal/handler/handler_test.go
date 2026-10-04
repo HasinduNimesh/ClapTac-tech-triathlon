@@ -54,10 +54,22 @@ type stubPlanner struct {
 	breakdownSourceVehicleID      string
 	breakdownReplacementVehicleID string
 	breakdownTripNumber           int
+	ackTripID                     string
+	remindTripID                  string
+	remindAudience                string
+	remindErr                     error
 }
 
-func (s *stubPlanner) Acknowledge(context.Context, *authorization.Profile, string, int) error {
+func (s *stubPlanner) Acknowledge(_ context.Context, _ *authorization.Profile, _ string, _ int, tripID string) error {
+	s.ackTripID = tripID
 	return nil
+}
+func (s *stubPlanner) Remind(_ context.Context, _ *authorization.Profile, _, tripID, audience string) (domain.ReminderResult, error) {
+	s.remindTripID, s.remindAudience = tripID, audience
+	return domain.ReminderResult{Reminder: domain.PlanReminder{TripID: tripID, Audience: audience, Version: 1}}, s.remindErr
+}
+func (s *stubPlanner) Reminders(context.Context, *authorization.Profile, string, string) ([]domain.PlanReminder, error) {
+	return []domain.PlanReminder{}, nil
 }
 func (s *stubPlanner) Revise(context.Context, *authorization.Profile, string) error { return nil }
 func (s *stubPlanner) BreakdownProposals(_ context.Context, planID, vehicleID string) (map[string]any, error) {
@@ -242,6 +254,48 @@ func TestPlanAcknowledgementRolePermissions(t *testing.T) {
 	testRouter("usr-dispatcher", &stubPlanner{}).ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/planning/plans/p1/acknowledgements", bytes.NewBufferString(`{"version":1}`)))
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("dispatcher should not acknowledge as a field actor: %d", rec.Code)
+	}
+}
+
+func TestPlanAcknowledgementCarriesTripIdentity(t *testing.T) {
+	stub := &stubPlanner{}
+	rec := httptest.NewRecorder()
+	testRouter("usr-driver", stub).ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/planning/plans/p1/acknowledgements", bytes.NewBufferString(`{"version":2,"tripId":"trip-9"}`)))
+	if rec.Code != http.StatusOK || stub.ackTripID != "trip-9" {
+		t.Fatalf("trip identity was dropped: %d %s tripID=%q", rec.Code, rec.Body.String(), stub.ackTripID)
+	}
+}
+
+func TestPlanReminderRequiresPlanUpdatePermission(t *testing.T) {
+	for _, subject := range []string{"usr-driver", "usr-loader", "usr-store-manager"} {
+		stub := &stubPlanner{}
+		rec := httptest.NewRecorder()
+		testRouter(subject, stub).ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/planning/plans/p1/reminders", bytes.NewBufferString(`{"tripId":"t1","audience":"DRIVER"}`)))
+		if rec.Code != http.StatusForbidden || stub.remindTripID != "" {
+			t.Fatalf("%s must not send reminders: %d", subject, rec.Code)
+		}
+	}
+	stub := &stubPlanner{}
+	rec := httptest.NewRecorder()
+	testRouter("usr-dispatcher", stub).ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/planning/plans/p1/reminders", bytes.NewBufferString(`{"tripId":"t1","audience":"LOADER"}`)))
+	if rec.Code != http.StatusOK || stub.remindTripID != "t1" || stub.remindAudience != "LOADER" {
+		t.Fatalf("dispatcher reminder failed: %d %s", rec.Code, rec.Body.String())
+	}
+	rec = httptest.NewRecorder()
+	stub = &stubPlanner{remindErr: fmt.Errorf("conflict: driver already acknowledged this trip")}
+	testRouter("usr-dispatcher", stub).ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/planning/plans/p1/reminders", bytes.NewBufferString(`{"tripId":"t1","audience":"DRIVER"}`)))
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("service conflict must surface as 409, got %d", rec.Code)
+	}
+}
+
+func TestPlanRemindersReadableByFieldRolesOnly(t *testing.T) {
+	for subject, want := range map[string]int{"usr-driver": http.StatusOK, "usr-loader": http.StatusOK, "usr-dispatcher": http.StatusForbidden} {
+		rec := httptest.NewRecorder()
+		testRouter(subject, &stubPlanner{}).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/planning/plans/p1/reminders?tripId=t1", nil))
+		if rec.Code != want {
+			t.Fatalf("%s reminders status %d want %d", subject, rec.Code, want)
+		}
 	}
 }
 

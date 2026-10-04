@@ -285,18 +285,16 @@ test("W2-4: Dispatcher page features Field Acknowledgement Tracker (LO-9)", () =
   assert.match(planningSrc, /<th>\{t\("Trip"\)\}<\/th>/, "Tracker table must include Trip column");
   assert.match(planningSrc, /<th>\{t\("Vehicle"\)\}<\/th>/, "Tracker table must include Vehicle column");
   assert.match(planningSrc, /<th>\{t\("Plan version"\)\}<\/th>/, "Tracker table must include Plan version column");
-  assert.match(planningSrc, /<th>\{t\("Status"\)\}<\/th>/, "Tracker table must include Status column");
-  console.log("  ✔ Tracker table contains Trip, Vehicle, Plan version, and Status headers");
+  assert.match(planningSrc, /<th>\{t\("Driver"\)\}<\/th><th>\{t\("Loader"\)\}<\/th>/, "Tracker table must show a separate Driver and Loader status column per trip");
+  console.log("  ✔ Tracker table contains Trip, Vehicle, Plan version, Driver and Loader headers");
 
   // Per-crew status matching
+  assert.match(planningSrc, /trackerRows\(\{ trips: detail\.trips, acks,/, "Tracker rows must come from the tested per-trip matching module");
+  assert.doesNotMatch(planningSrc, /const ackFor = /, "The role-only ackFor lookup (one driver ack marked every trip) must be gone");
+  assert.doesNotMatch(planningSrc, /a\.actorRole === "DRIVER"\)/, "Tracker must not match an acknowledgement by role alone");
   assert.match(
     planningSrc,
-    /const ackFor = [^\n]*acks\.find\(/,
-    "Tracker must look up acknowledgement matching vehicle/driver role for each trip",
-  );
-  assert.match(
-    planningSrc,
-    /<Tag tone="green">\{t\("Acknowledged"\)\} \(\{clock\(ack\.acknowledgedAt\)\}\)<\/Tag>/,
+    /<Tag tone="green">\{t\("Acknowledged"\)\} \(\{clock\(c\.acknowledgedAt\)\}\)<\/Tag>/,
     "Tracker must display green '✅ Acknowledged (time)' when acknowledged",
   );
   assert.match(
@@ -345,14 +343,14 @@ test("W2-5: 15-minute unacknowledged timer alerts dispatcher and allows reminder
   // Reminder button to prompt field crew
   assert.match(
     planningSrc,
-    /<button[^>]*onClick=\{\(\) => setReminderNotice\(t\("Reminder sent to assigned crew"\)\)\}>[\s\S]*?\{t\("Send Reminder"\)\}[\s\S]*?<\/button>/,
-    "Alert banner must provide 'Send Reminder' button that sets confirmation notice",
+    /\/planning\/plans\/\$\{detail\.plan\.id\}\/reminders`, token, \{ method: "POST"/,
+    "Send Reminder must call the real reminders API, not just change local text",
   );
-  assert.match(
-    planningSrc,
-    /\{reminderNotice && <p className="dp-note dp-note--green" role="status">\{reminderNotice\}<\/p>\}/,
-    "Reminder confirmation notice must be displayed with role='status'",
-  );
+  assert.doesNotMatch(planningSrc, /setReminderNotice\(t\("Reminder sent to assigned crew"\)\)/, "Reminder must not claim success without calling the API");
+  assert.match(planningSrc, /sendReminders\(unackedTargets\.map/, "The attention banner reminds every unacknowledged recipient");
+  assert.match(planningSrc, /sendReminders\(\[\{ tripId, audience: c\.audience \}\]\)/, "Each unacknowledged recipient has its own Send Reminder button");
+  assert.match(planningSrc, /role=\{reminderNotice\.tone === "red" \? "alert" : "status"\}>\{reminderNotice\.text\}/, "Reminder outcome (success or failure) must be shown");
+  assert.match(planningSrc, /\{t\("Reminder sent"\)\} \{clock\(c\.remindedAt\)\}/, "The persisted reminder time is shown in the tracker");
   console.log("  ✔ 'Send Reminder' button and confirmation feedback implemented");
 
   // Table row badge reflects > 15m escalation
@@ -388,7 +386,7 @@ test("W2 done-when: publishing v4 updates loader banner, driver card, and dispat
   // Dispatcher tracker renders all assigned trips with version and status
   assert.match(
     planningSrc,
-    /detail\.trips\.map\(\(tr\)\s*=>/,
+    /rows\.map\(\(row\)\s*=>/,
     "Dispatcher tracker iterates through all trips and displays acknowledgement status per trip",
   );
 
@@ -462,4 +460,26 @@ test("W2 SUMMARY: all 5 specification steps verified", () => {
   console.log("  i18n:   All keys in Sinhala and Tamil               ✔");
   console.log("══════════════════════════════════════════════════════════\n");
   assert.ok(true);
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+//  W2 — acknowledgements carry the trip they cover; reminders are persisted
+// ───────────────────────────────────────────────────────────────────────────
+
+test("W2: driver and loader apps send the trip identity when acknowledging", () => {
+  assert.match(driverTripsSrc, /acknowledgements`,token,\{method:"POST",body:JSON\.stringify\(\{version:detail\.currentPlanVersion,tripId:detail\.tripId\}\)\}/, "Driver acknowledgement must carry the trip of the run");
+  assert.match(loadingSrc, /acknowledgements`,token,\{method:"POST",body:JSON\.stringify\(\{version:detail\.planVersion,tripId:detail\.tripId\}\)\}/, "Loader acknowledgement must carry the trip of the load list");
+  assert.match(driverTripsSrc, /acknowledgedForTrip\(detail\.planAcknowledgements, \{ actorId: profile\?\.userId, role: "DRIVER", tripId: detail\.tripId \}\)/, "Driver app must only treat this trip's receipt as acknowledged");
+  assert.match(driverTripsSrc, /\/reminders\?tripId=/, "Driver app must show the dispatcher's reminder for the trip");
+  assert.match(loadingSrc, /\/reminders\?tripId=/, "Loader app must show the dispatcher's reminder for the load list");
+});
+
+test("W2: migration 0073 adds trip identity to receipts and persists reminders idempotently", () => {
+  const m = readRepo("database/migrations/0073_planning_ack_trip_identity.sql");
+  assert.match(m, /ADD COLUMN IF NOT EXISTS trip_id UUID/);
+  assert.match(m, /ADD COLUMN IF NOT EXISTS vehicle_id TEXT/);
+  assert.match(m, /DROP CONSTRAINT IF EXISTS plan_acknowledgements_pkey/);
+  assert.match(m, /CREATE UNIQUE INDEX IF NOT EXISTS plan_acknowledgements_identity_idx/);
+  assert.match(m, /CREATE TABLE IF NOT EXISTS planning\.plan_ack_reminders/);
+  assert.match(m, /audience TEXT NOT NULL CHECK \(audience IN \('DRIVER', 'LOADER'\)\)/);
 });

@@ -37,6 +37,22 @@ func TestPendingDetailIncludesPublishedVersionAndLoaderAcknowledgement(t *testin
 	}
 }
 
+func TestLoaderAcknowledgementIsTrackedPerLoadList(t *testing.T) {
+	profile := &authorization.Profile{UserID: "USR004", Roles: []string{authorization.RoleLoader}}
+	acks := []domain.PlanAcknowledgement{{ActorID: "USR004", ActorRole: authorization.RoleLoader, TripID: "trip-1"}}
+	one := domain.PlanningTrip{TripID: "trip-1", PlanVersion: 3, PlanAcknowledgements: acks}
+	two := domain.PlanningTrip{TripID: "trip-2", PlanVersion: 3, PlanAcknowledgements: acks}
+	if got := acknowledgedVersion(one, profile); got != 3 {
+		t.Fatalf("trip-1 acknowledgedVersion = %d, want 3", got)
+	}
+	if got := acknowledgedVersion(two, profile); got != 0 {
+		t.Fatalf("trip-2 must not inherit trip-1's acknowledgement, got %d", got)
+	}
+	if acknowledgedAt(two, profile) != nil {
+		t.Fatal("trip-2 must not report trip-1's acknowledgement time")
+	}
+}
+
 func TestPlannedArrivalByAllocationPreservesOnlyPublishedETAs(t *testing.T) {
 	planned := time.Date(2026, 10, 1, 8, 30, 0, 0, time.FixedZone("Sri Lanka", 5*60*60+30*60))
 	got := plannedArrivalByAllocation([]domain.PlanningAlloc{
