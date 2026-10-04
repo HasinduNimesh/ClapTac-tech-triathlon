@@ -266,6 +266,7 @@ services:
   agent-assistants:
     # A1 order assistant and A2 dashboard assistant (Python/LangGraph). Agent
     # tier: no DATABASE_URL; reads business services with the caller's token.
+    image: ${WAYPOINT_IMAGE_PREFIX:-waypoint}/agent-assistants:${WAYPOINT_TAG:-local}
     build: { context: ./services/agent-assistants }
     environment:
       ENVIRONMENT: ${ENVIRONMENT:-local}

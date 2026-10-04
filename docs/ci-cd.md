@@ -102,6 +102,13 @@ a way back:
 This has not been tried on the VM; do it before the first run and tell the
 workflow's author what differed.
 
+## Checks before the deploy changes anything
+
+The deploy stops, before any pull, backup, migration or restart, when:
+
+- **a service would have to be started that has no image.** Every service built from source must be in the images job and the deploy's service list (or already have an image on the VM). One service that was in neither stopped a rollout half way: the database was migrated, some services were recreated but not started, and the site returned 502 until they were started by hand.
+- **a service asks ThunderID for a scope that ThunderID does not define.** ThunderID refuses a token request containing an unknown scope. The deploy compares the scopes requested in the code at the new revision with the Waypoint API resource on the VM (`resource_servers/waypoint-api.yaml`) and lists any that are missing. Add them there and restart ThunderID first.
+
 ## VM assumptions and rollout
 
 The job expects `~/ClapTac-tech-triathlon`, an existing `.env`, Docker Compose,
