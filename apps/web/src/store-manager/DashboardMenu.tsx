@@ -10,10 +10,16 @@ export function DashboardMenu({ dashboards, current }: { dashboards: Dashboard[]
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
   const active = dashboards.find((d) => d.id === current);
   useEffect(() => {
     if (!open) return;
-    const close = (e: MouseEvent | KeyboardEvent) => { if (e instanceof KeyboardEvent ? e.key === "Escape" : !ref.current?.contains(e.target as Node)) setOpen(false); };
+    const close = (e: MouseEvent | KeyboardEvent) => {
+      if (e instanceof KeyboardEvent) {
+        // Escape closes the menu and hands focus back to the button that opened it.
+        if (e.key === "Escape") { setOpen(false); trigger.current?.focus(); }
+      } else if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
     document.addEventListener("mousedown", close); document.addEventListener("keydown", close);
     return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", close); };
   }, [open]);
@@ -21,7 +27,7 @@ export function DashboardMenu({ dashboards, current }: { dashboards: Dashboard[]
   const fresh = (d: Dashboard) => Date.now() - new Date(d.createdAt).getTime() < 3 * 86_400_000;
   return (
     <div className="sm-dash-menu" ref={ref}>
-      <button type="button" className="sm-dash-trigger" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
+      <button ref={trigger} type="button" className="sm-dash-trigger" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
         <span className="sm-dash-label">{t("Dashboard")}</span>
         <span className="sm-dash-name">{active ? active.name : t("Store overview")}</span>
         <span aria-hidden="true">▾</span>

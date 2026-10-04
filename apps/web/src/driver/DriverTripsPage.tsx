@@ -7,12 +7,15 @@ import { useAuth } from "../auth/AuthContext";
 import { shouldUseCachedDriverData } from "./cacheFallback.mjs";
 import { installSafeStopLock } from "./safeStopLifecycle.mjs";
 import { useLocale } from "../i18n";
-import { bindDriverOwner, clearCompletedDriverCache, enqueue, getCachedDetail, getCachedTrips, isPaused, listQueue, putCachedTrips, readDriverDataForExport, setPaused } from "../offline/db";
+import { bindDriverOwner, clearCompletedDriverCache, dismissSyncConflictNotice, enqueue, getCachedDetail, getCachedTrips, isPaused, listQueue, listSyncConflictNotices, putCachedTrips, QueueItem, readDriverDataForExport, setPaused } from "../offline/db";
 import { createDriverDataExport } from "../offline/driverDataPrivacy.mjs";
 import { offlineQueueHealth } from "../offline/queueHealth.mjs";
 import { queueRetentionWarning } from "../offline/queueRetention.mjs";
 import { hasQueuedRouteCompletion } from "../offline/routeCompletion.mjs";
-import { cacheDetail, drainQueue, resumeSync, SyncBanner } from "../offline/sync";
+import { cacheDetail, drainQueue, resumeSync, retryItem, SyncBanner, syncProgress } from "../offline/sync";
+import { conflictsForStop, deriveStopSyncStatus, stampPlanVersion, waitingCounts } from "../offline/syncQueue.mjs";
+import type { SyncConflictNotice } from "../offline/syncQueue.mjs";
+import { StopSyncStatus } from "./StopSyncStatus";
 import { createSingleFlightAction } from "./singleFlightAction.mjs";
 import { navigationTarget } from "./navigation.mjs";
 
@@ -34,7 +37,11 @@ export function DriverTripsPage() {
   const [error, setError] = useState("");
   const [banner, setBanner] = useState<SyncBanner>({ kind: "ok", text: "" });
   const [reason, setReason] = useState("");
+  const [onboard, setOnboard] = useState<Record<string, "yes" | "no">>({});
   const [note, setNote] = useState("");
+  const [returnGoods, setReturnGoods] = useState("");
+  const [returnUnits, setReturnUnits] = useState("");
+  const [returnResolution, setReturnResolution] = useState<"NEXT_RUN" | "REQUEST_DEFERRAL">("NEXT_RUN");
   const [temperatureC, setTemperatureC] = useState("");
   const [techCustody, setTechCustody] = useState<Record<string,{sealId:string;serials:string;condition:string}>>({});
   const [proofIds, setProofIds] = useState<Record<string, string>>({});
@@ -43,6 +50,9 @@ export function DriverTripsPage() {
   const [incidentCategory, setIncidentCategory] = useState("VEHICLE");
   const [incidentDescription, setIncidentDescription] = useState("");
   const [queueCount, setQueueCount] = useState(0);
+  const [queueItems, setQueueItems] = useState<QueueItem[]>([]);
+  const [progress, setProgress] = useState(syncProgress.snapshot());
+  const [conflictNotices, setConflictNotices] = useState<SyncConflictNotice[]>([]);
   const [privacyNotice, setPrivacyNotice] = useState("");
   const [queueRetention, setQueueRetention] = useState<ReturnType<typeof queueRetentionWarning>>(null);
   const [showSummary, setShowSummary] = useState(false);
@@ -57,6 +67,56 @@ export function DriverTripsPage() {
   const detailRef = useRef<DeliveryTripDetail | null>(detail);
   const queueHealthReport = useRef({ ownerId: "", attemptedAt: 0, inFlight: false });
   detailRef.current = detail;
+
+  // Every record is stamped with the plan version this screen was showing, so the
+  // server can tell when it was made on an older plan.
+  function enqueueRecord(item: QueueItem) {
+    return enqueue(ownerId, stampPlanVersion(item, detailRef.current));
+  }
+
+  useEffect(() => syncProgress.subscribe(setProgress), []);
+
+  // Reload what is waiting (and any plan-version notices) whenever the queue
+  // size or the sending/failed state changes.
+  useEffect(() => {
+    if (ownerState !== "ready" || !ownerId) return;
+    let active = true;
+    void Promise.all([listQueue(ownerId), listSyncConflictNotices(ownerId)]).then(([items, notices]) => {
+      if (!active) return;
+      setQueueItems(items);
+      setConflictNotices(notices);
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, [ownerState, ownerId, queueCount, progress]);
+
+  async function retrySend(operationId: string) {
+    if (!token) return;
+    setBanner({ kind: "syncing", text: "Syncing saved work…" });
+    const result = await retryItem(token, ownerId, operationId);
+    setBanner(result);
+    const remaining = await listQueue(ownerId);
+    setQueueCount(remaining.length);
+    setQueueRetention(queueRetentionWarning(remaining));
+    const currentDetail = detailRef.current;
+    if (result.kind === "ok" && remaining.length === 0 && currentDetail) await refreshTripFromServer(currentDetail.tripId);
+  }
+
+  async function dismissNotice(operationId: string) {
+    await dismissSyncConflictNotice(ownerId, operationId);
+    setConflictNotices((items) => items.filter((item) => item.operationId !== operationId));
+  }
+
+  function stopSyncView(s: DeliveryStop) {
+    const tripId = detail?.tripId || "";
+    return (
+      <StopSyncStatus
+        status={deriveStopSyncStatus({ stopId: s.id, stopStatus: s.status, queue: queueItems, sendingIds: progress.sendingIds, failed: progress.failed })}
+        notices={conflictsForStop(conflictNotices, tripId, s.id)}
+        onRetry={(operationId) => void retrySend(operationId)}
+        onDismiss={(operationId) => void dismissNotice(operationId)}
+      />
+    );
+  }
 
   // FR-25 review fix: receiverName is proof metadata for whichever stop is
   // currently open. Without this, switching stops after typing a name for
@@ -215,6 +275,7 @@ export function DriverTripsPage() {
   }
 
   async function openTrip(tripId: string) {
+    setOnboard({});
     await run(async () => {
       try {
         const body = await apiJSON<DeliveryTripDetail>(`/delivery/trips/${tripId}`, token);
@@ -268,8 +329,25 @@ export function DriverTripsPage() {
     } catch(e) { setError(e instanceof ApiError ? `${e.status}: ${t(e.message)}` : t("Update failed. Please try again.")); }
   }
 
+  async function checkOutTruck() {
+    if (!detail?.run?.planVersion || !detail.loadList?.length || detail.currentPlanVersion !== detail.run.planVersion) return;
+    const items = detail.loadList;
+    if (!items.every(item => onboard[item.orderId])) return;
+    await run(async () => {
+      const result = await apiJSON<{ checkout: NonNullable<DeliveryTripDetail["checkout"]> }>(
+        "/delivery/trips/" + encodeURIComponent(detail.tripId) + "/checkout", token, {
+          method: "POST",
+          body: JSON.stringify({
+            planVersion: detail.run.planVersion,
+            confirmedOrderIds: items.filter(item => onboard[item.orderId] === "yes").map(item => item.orderId),
+          }),
+        });
+      setDetail(current => current?.tripId === detail.tripId ? { ...current, checkout: result.checkout } : current);
+    });
+  }
+
   async function startRun() {
-    if (!detail) return;
+    if (!detail || detail.checkout?.status !== "confirmed" || detail.checkout.planVersion !== detail.run.planVersion) return;
     await run(async () => {
       const operationId = newOperationId();
       try {
@@ -285,7 +363,7 @@ export function DriverTripsPage() {
           if (e.status === 401) { await setPaused(ownerId, true); setBanner({ kind: "paused", text: "Sync paused (401). Queue kept." }); return; }
           else if (e.status < 500) { setError(`${e.status}: ${t(e.message)}`); return; }
         }
-        await enqueue(ownerId, { operationId, type: "START", tripId: detail.tripId, createdAt: new Date().toISOString() });
+        await enqueueRecord({ operationId, type: "START", tripId: detail.tripId, createdAt: new Date().toISOString() });
         const started = { ...detail, status: "in_progress", run: { ...detail.run, status: "in_progress" } };
         setDetail(started);
         setSummarySource("device");
@@ -303,7 +381,7 @@ export function DriverTripsPage() {
         if(!await queueTechCustody("DISPATCHED"))return;
         const operationId = newOperationId();
         const occurredAt = new Date().toISOString();
-        await enqueue(ownerId, {
+        await enqueueRecord({
           operationId,
           type: "ARRIVED",
           tripId: detail.tripId,
@@ -330,7 +408,7 @@ export function DriverTripsPage() {
     if(!fields.sealId.trim()||!serialNumbers.length||!fields.condition.trim()) { setError(t("Tech custody requires a seal ID, serial number, and condition.")); return false; }
     if(stage==="DELIVERED"&&!evidenceRef){setError(t("A condition photo is required for high-value Tech delivery."));return false;}
     const operationId=newOperationId();const createdAt=new Date().toISOString();
-    await enqueue(ownerId,{operationId,type:"CUSTODY_RECORD",tripId:detail?.tripId||"",stopId:stop.id,orderId:stop.orderId,payload:{stage,sealId:fields.sealId.trim(),serialNumbers,condition:fields.condition.trim(),evidenceRef},createdAt});
+    await enqueueRecord({operationId,type:"CUSTODY_RECORD",tripId:detail?.tripId||"",stopId:stop.id,orderId:stop.orderId,payload:{stage,sealId:fields.sealId.trim(),serialNumbers,condition:fields.condition.trim(),evidenceRef},createdAt});
     await refreshBanner();
     return true;
   }
@@ -338,7 +416,7 @@ export function DriverTripsPage() {
   async function queueProof(blob: Blob, mimeType: string, proofType: "SIGNATURE" | "PHOTO") {
     if (!detail || !stop) return;
     const operationId = newOperationId();
-    await enqueue(ownerId, {
+    await enqueueRecord({
       operationId,
       type: "PROOF_UPLOAD",
       tripId: detail.tripId,
@@ -375,7 +453,7 @@ export function DriverTripsPage() {
     if(valueC < -40 || valueC > 100) { setError(t("Temperature must be between -40 and 100 °C.")); return; }
     const operationId=newOperationId(); const occurredAt=new Date().toISOString();
     const reading={operationId,valueC,unit:"C" as const,occurredAt,actorId:profile?.userId||"",source:"manual" as const,evaluation:"PENDING_SYNC" as const};
-    await enqueue(ownerId,{operationId,type:"TEMPERATURE_READING",tripId:detail.tripId,stopId:stop.id,payload:{valueC,occurredAt},createdAt:occurredAt});
+    await enqueueRecord({operationId,type:"TEMPERATURE_READING",tripId:detail.tripId,stopId:stop.id,payload:{valueC,occurredAt},createdAt:occurredAt});
     const updated={...detail,stops:detail.stops.map((s)=>s.id===stop.id?{...s,temperatureReadings:[...(s.temperatureReadings||[]),reading]}:s)};
     setDetail(updated);setStop(updated.stops.find((s)=>s.id===stop.id)||null);setTemperatureC("");setSummarySource("device");await cacheDetail(updated,ownerId);await refreshBanner();
   }
@@ -385,7 +463,7 @@ export function DriverTripsPage() {
     if (!detail || incidentDescription.trim() === "") { setError(t("Describe the incident before reporting it.")); return; }
     const operationId = newOperationId();
     const occurredAt = new Date().toISOString();
-    await enqueue(ownerId, {
+    await enqueueRecord({
       operationId,
       type: "INCIDENT_REPORT",
       tripId: detail.tripId,
@@ -407,6 +485,15 @@ export function DriverTripsPage() {
           setError(t("Choose a reason for the unsuccessful delivery."));
           return;
         }
+        if (code === "REFUSED" && (!returnGoods.trim() || !Number.isInteger(Number(returnUnits)) || Number(returnUnits) < 1)) {
+          setError(t("Enter the returned goods and quantity."));
+          return;
+        }
+        const plannedUnits = detail.loadList?.find(item => item.orderId === stop.orderId)?.expectedUnits;
+        if (code === "REFUSED" && plannedUnits !== undefined && Number(returnUnits) > plannedUnits) {
+          setError(`${t("Quantity returning")}: 1-${plannedUnits}`);
+          return;
+        }
         const queued = await listQueue(ownerId);
         const proof = [...queued].reverse().find((q) => q.type === "PROOF_UPLOAD" && q.stopId === stop.id);
         const depends = proofIds[stop.id] || proof?.operationId;
@@ -421,13 +508,13 @@ export function DriverTripsPage() {
           if(!await queueTechCustody("DELIVERED",photoReference))return;
         }
         const operationId = newOperationId();
-        await enqueue(ownerId, {
+        await enqueueRecord({
           operationId,
           type: "STOP_OUTCOME",
           tripId: detail.tripId,
           stopId: stop.id,
           dependsOnOperationId: depends,
-          payload: { code, reason, note, occurredAt: new Date().toISOString() },
+          payload: { code, reason, note, occurredAt: new Date().toISOString(), ...(code === "REFUSED" ? { returnedGoods: { goods: returnGoods.trim(), units: Number(returnUnits), resolution: returnResolution } } : {}) },
           createdAt: new Date().toISOString(),
         });
         setStop({ ...stop, status: "completed", outcomeCode: code });
@@ -437,6 +524,8 @@ export function DriverTripsPage() {
         await cacheDetail(updated, ownerId);
         setReason("");
         setNote("");
+        setReturnGoods("");
+        setReturnUnits("");
         await refreshBanner();
       } finally {
         setTransitionBusy(false);
@@ -452,7 +541,7 @@ export function DriverTripsPage() {
       setShowSummary(true);
       return;
     }
-    await enqueue(ownerId, {
+    await enqueueRecord({
       operationId: newOperationId(),
       type: "ROUTE_COMPLETED",
       tripId: detail.tripId,
@@ -552,6 +641,7 @@ export function DriverTripsPage() {
           {t("Retry sync")}
         </button>
       )}
+      {queueItems.length > 0 && (() => { const waiting = waitingCounts(queueItems); return <p className="sync-waiting status-syncing" role="status">{t(`${waiting.total} waiting`)}{waiting.photos > 0 ? ` · ${t(`${waiting.photos} photo(s) waiting`)}` : ""} · {t("Saved records are sent first, then photos.")}</p>; })()}
       {privacyNotice && <p className="status-ok" role="status">{privacyNotice}</p>}
       <div className="row">
         <button type="button" className="tap" onClick={() => void exportSavedData()}>{t("Export saved driver data")}</button>
@@ -602,6 +692,7 @@ export function DriverTripsPage() {
             <p className="muted">{t("Plan version")} {detail.currentPlanVersion || detail.run?.planVersion || t("unavailable")} · {driverAcknowledged ? t("Acknowledged") : t("Acknowledge before starting this route")}</p>
             {detail.currentPlanVersion !== detail.run?.planVersion ? <p className="status-bad">{t("This prepared route is stale. Dispatch must refresh its trip instructions.")}</p> : !driverAcknowledged && <button type="button" className="tap" onClick={acknowledgePlan}>{t("Acknowledge current plan")}</button>}
           </>}
+          {conflictsForStop(conflictNotices, detail.tripId, undefined).length > 0 && <StopSyncStatus status={{ state: "none", waiting: 0, failedItems: [] }} notices={conflictsForStop(conflictNotices, detail.tripId, undefined)} onRetry={() => undefined} onDismiss={(operationId) => void dismissNotice(operationId)} />}
           <p>
             {depotLabel(detail.run?.depot)} · {t(detail.status || "")}
           </p>
@@ -650,8 +741,20 @@ export function DriverTripsPage() {
             <strong>{t("Next stop ·")} {nextStop.stopSequence}. {stopLabel(nextStop)}</strong>
             <span>{nextStop.plannedWindowOpen ? `${t("Window")} ${nextStop.plannedWindowOpen}–${nextStop.plannedWindowClose || ""} · ` : ""}{t("Tap only when safely stopped")}</span>
           </button>}
+          {!inProgress && !completed && <section className="card" aria-label={t("Truck check-out")}>
+            <h4>{t("Truck check-out")}</h4>
+            {!detail.loadList?.length || detail.currentPlanVersion !== detail.run.planVersion ? <p role="alert">{t("Current load list unavailable. Refresh the trip before departure.")}</p> :
+              <ul>{detail.loadList.map(item => <li key={item.orderId}>
+                <span>{item.stopSequence}. {item.orderRef || item.orderId} - {item.expectedUnits} {t("units")}</span>
+                <label><input type="radio" name={"onboard-" + item.orderId} checked={onboard[item.orderId] === "yes"} onChange={() => setOnboard(current => ({ ...current, [item.orderId]: "yes" }))} />{t("On board")}</label>
+                <label><input type="radio" name={"onboard-" + item.orderId} checked={onboard[item.orderId] === "no"} onChange={() => setOnboard(current => ({ ...current, [item.orderId]: "no" }))} />{t("Missing")}</label>
+              </li>)}</ul>}
+            {detail.checkout?.status === "blocked" && <p role="alert" className="status-bad">{t("Check-out blocked. Loader and dispatcher alerted.")}</p>}
+            {detail.checkout?.status === "confirmed" && detail.checkout.planVersion === detail.run.planVersion && <p role="status" className="status-ok">{t("Check-out recorded")} - {new Date(detail.checkout.checkedAt).toLocaleString()}</p>}
+            {detail.checkout?.status !== "confirmed" && <button type="button" className="tap" onClick={checkOutTruck} disabled={!navigator.onLine || !driverAcknowledged || !detail.loadList?.length || !detail.loadList.every(item => onboard[item.orderId]) || detail.currentPlanVersion !== detail.run.planVersion}>{t("Confirm check-out")}</button>}
+          </section>}
           {!inProgress && !completed && (
-            <button type="button" className="tap primary" onClick={startRun} disabled={!driverAcknowledged}>
+            <button type="button" className="tap primary" onClick={startRun} disabled={!driverAcknowledged || detail.checkout?.status !== "confirmed" || detail.checkout.planVersion !== detail.run.planVersion}>
               {t("Start run")}
             </button>
           )}
@@ -673,6 +776,7 @@ export function DriverTripsPage() {
                       <span className="muted">{t("Loading shortfall on board")}</span>
                     )}
                   </button>
+                  {stopSyncView(s)}
                 </li>
               ))}
           </ul>
@@ -697,6 +801,7 @@ export function DriverTripsPage() {
             {t(stop.status)}
             {stop.outcomeCode ? ` · ${t(stop.outcomeCode)}` : ""}
           </p>
+          {stopSyncView(stop)}
           <dl className="stop-guidance">
             {stop.plannedWindowOpen && <><dt>{t("Delivery window")}</dt><dd>{stop.plannedWindowOpen}–{stop.plannedWindowClose || ""}</dd></>}
             {stop.district && <><dt>{t("District")}</dt><dd>{stop.district}</dd></>}
@@ -770,6 +875,17 @@ export function DriverTripsPage() {
                 {t("Optional note")}
                 <input value={note} onChange={(e) => setNote(e.target.value)} />
               </label>
+              <fieldset>
+                <legend>{t("Rejected goods / take-back")}</legend>
+                <label>{t("Goods or items being returned")}<input value={returnGoods} onChange={(e) => setReturnGoods(e.target.value)} maxLength={200} /></label>
+                <label>{t("Quantity returning")}<input type="number" min="1" max={detail.loadList?.find(item => item.orderId === stop.orderId)?.expectedUnits} step="1" value={returnUnits} onChange={(e) => setReturnUnits(e.target.value)} /></label>
+                <label>{t("Follow-up choice")}
+                  <select value={returnResolution} onChange={(e) => setReturnResolution(e.target.value as "NEXT_RUN" | "REQUEST_DEFERRAL")}>
+                    <option value="NEXT_RUN">{t("Re-attempt on next run")}</option>
+                    <option value="REQUEST_DEFERRAL">{t("Request dispatcher deferral")}</option>
+                  </select>
+                </label>
+              </fieldset>
               <div className="row">
                 <button type="button" className="tap" disabled={transitionBusy} onClick={() => outcome("DELIVERED")}>
                   {t("Delivered")}

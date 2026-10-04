@@ -29,6 +29,11 @@ var validReasons = map[string]bool{
 	domain.ReasonVehicleUnavailable: true, domain.ReasonManualDeferral: true,
 }
 
+// ErrCodeWorkshopPending prefixes the error ConfirmBreakdown returns when the
+// broken vehicle could not be moved to the workshop. The handler turns it into
+// a 502 with the same stable code; it is never reported as a confirmed recovery.
+const ErrCodeWorkshopPending = "workshop_pending"
+
 type planVersionStore interface {
 	Publish(context.Context, string, string, string) (domain.Publication, error)
 	Publication(context.Context, string) (domain.Publication, error)
@@ -202,7 +207,9 @@ func (s Service) Generate(ctx context.Context, profile *authorization.Profile, i
 		return domain.GenerateResult{}, err
 	}
 	start := time.Now()
-	out := allocate.Generate(world)
+	allocWorld, deferralRequests := holdDispatcherDeferrals(world)
+	out := allocate.Generate(allocWorld)
+	out.Unallocated = append(out.Unallocated, deferralRequests...)
 	telemetry.AllocationDuration.Observe(time.Since(start).Seconds())
 	for _, as := range out.Assignments {
 		if err := s.persistAssignment(ctx, pl.ID, as); err != nil {
@@ -235,7 +242,9 @@ func (s Service) Simulate(ctx context.Context, id string) (domain.GenerateResult
 	if err != nil {
 		return domain.GenerateResult{}, err
 	}
-	out := allocate.Generate(world)
+	allocWorld, deferralRequests := holdDispatcherDeferrals(world)
+	out := allocate.Generate(allocWorld)
+	out.Unallocated = append(out.Unallocated, deferralRequests...)
 	return domain.GenerateResult{Allocated: len(out.Assignments), Unallocated: len(out.Unallocated), Failures: out.Unallocated, FairnessSignalAvailable: world.FairnessSignalAvailable, FairnessPolicy: allocate.FairnessPolicyWithPolicy(world.FairnessSignalAvailable, world.Policy)}, nil
 }
 
@@ -373,18 +382,10 @@ func (s Service) Defer(ctx context.Context, profile *authorization.Profile, plan
 	if !validReasons[code] {
 		return fmt.Errorf("invalid: reasonCode")
 	}
-	// FR-53: the next-run target is optional (not every deferral has a known
-	// retry date yet), but when given it must be a real date after this plan's
-	// own delivery date - a "next run" that is today or earlier is meaningless.
-	if nextRunTarget != "" {
-		target, parseErr := time.Parse("2006-01-02", nextRunTarget)
-		if parseErr != nil {
-			return fmt.Errorf("invalid: nextRunTarget")
-		}
-		planDate, _ := time.Parse("2006-01-02", pl.DeliveryDate)
-		if !target.After(planDate) {
-			return fmt.Errorf("invalid: nextRunTarget")
-		}
+	// W3: a deferral will not save without a reason, a decider and a next run.
+	var vErr error
+	if nextRunTarget, vErr = validateDeferral(actorID(profile), code, nextRunTarget, pl.DeliveryDate); vErr != nil {
+		return vErr
 	}
 	allocs, _ := s.Repo.ListAllocations(ctx, pl.ID)
 	for _, a := range allocs {
@@ -418,8 +419,8 @@ func (s Service) Defer(ctx context.Context, profile *authorization.Profile, plan
 		return err
 	}
 	telemetry.OrdersDeferred.Inc()
-	s.Peers.Publish(ctx, audit.ActionOrderDeferred, actorID(profile), "ORDER", orderID, map[string]any{"reasonCode": code})
-	if err := s.Peers.QueueNotification(ctx, "deferral:"+pl.ID+":"+orderID, outletID, "DEFERRAL", orderRef, code, 0); err != nil && s.Peers.Logger != nil {
+	s.Peers.Publish(ctx, audit.ActionOrderDeferred, actorID(profile), "ORDER", orderID, map[string]any{"reasonCode": code, "nextRunTarget": nextRunTarget})
+	if err := s.Peers.QueueNotification(ctx, "deferral:"+pl.ID+":"+orderID, outletID, "DEFERRAL", orderRef, code, 0, nextRunTarget); err != nil && s.Peers.Logger != nil {
 		s.Peers.Logger.Error("notification_enqueue_failed", "event", "deferral", "order_id", orderID, "error", err)
 	}
 	return nil
@@ -553,6 +554,7 @@ func (s Service) BreakdownProposals(ctx context.Context, planID, vehicleID strin
 		}
 	}
 	var proposals []map[string]any
+	critical := false
 	for _, tn := range tripNos {
 		moving := groups[tn]
 		for i := 0; i < len(moving); i++ {
@@ -603,14 +605,23 @@ func (s Service) BreakdownProposals(ctx context.Context, planID, vehicleID strin
 			}
 			options = append(options, map[string]any{"vehicleId": candidate.ID, "valid": len(failures) == 0, "failures": failures, "projectedStops": len(state.Stops)})
 		}
-		ordersOut := make([]map[string]any, 0, len(moving))
-		for _, a := range moving {
-			o := orders[a.OrderID]
-			ordersOut = append(ordersOut, map[string]any{"allocationId": a.ID, "orderId": a.OrderID, "orderRef": o.OrderRef, "outletId": o.OutletID, "stopSequence": a.Sequence})
+		ranked := rankStrandedStops(moving, orders, world.Outlets)
+		ordersOut := make([]map[string]any, 0, len(ranked))
+		tripChilled := false
+		for i, r := range ranked {
+			tripChilled = tripChilled || r.Chilled
+			ordersOut = append(ordersOut, map[string]any{"allocationId": r.Alloc.ID, "orderId": r.Alloc.OrderID, "orderRef": r.Order.OrderRef, "outletId": r.Order.OutletID, "stopSequence": r.Alloc.Sequence, "urgencyRank": i + 1, "chilled": r.Chilled, "windowClose": r.WindowClose})
 		}
-		proposals = append(proposals, map[string]any{"tripNumber": tn, "stops": ordersOut, "options": options})
+		if tripChilled {
+			critical = true
+		}
+		proposals = append(proposals, map[string]any{"tripNumber": tn, "stops": ordersOut, "options": options, "chilledOnBoard": tripChilled})
 	}
-	return map[string]any{"planId": pl.ID, "vehicleId": vehicleID, "items": proposals, "confirmed": false}, nil
+	severity := "high"
+	if critical {
+		severity = "critical"
+	}
+	return map[string]any{"planId": pl.ID, "vehicleId": vehicleID, "items": proposals, "confirmed": false, "critical": critical, "severity": severity}, nil
 }
 
 func (s Service) ConfirmBreakdown(ctx context.Context, profile *authorization.Profile, planID, sourceVehicle, targetVehicle string, tripNo int) (map[string]any, error) {
@@ -650,13 +661,9 @@ func (s Service) ConfirmBreakdown(ctx context.Context, profile *authorization.Pr
 	if !feasible {
 		return nil, fmt.Errorf("conflict: replacement vehicle failed one or more hard constraints")
 	}
-	// Keep the published plan intact until a replacement has passed the same
-	// feasibility checks shown to the dispatcher.
-	if pl.Status == domain.StatusConfirmed {
-		if err := versionStore.Revise(ctx, pl.ID); err != nil {
-			return nil, err
-		}
-	}
+	// The published plan stays untouched until the replacement has passed the
+	// same feasibility checks shown to the dispatcher and every in-memory step
+	// below has succeeded.
 	world, err := s.loadWorld(ctx, pl)
 	if err != nil {
 		return nil, err
@@ -714,6 +721,24 @@ func (s Service) ConfirmBreakdown(ctx context.Context, profile *authorization.Pr
 	if len(moved) == 0 {
 		return nil, fmt.Errorf("not found: affected trip")
 	}
+	// The broken vehicle must be out of the planning pool before the revision is
+	// committed, and the recovery is not complete without it. The fleet update
+	// is an upsert, so repeating it on a retry is harmless. If fleet-service is
+	// unreachable nothing has been committed yet, so the dispatcher can retry
+	// the same request without a half-applied plan version or duplicate audit.
+	if err := s.Peers.SetVehicleWorkshop(ctx, sourceVehicle, pl.DeliveryDate, "breakdown recovery for plan "+pl.PlanRef); err != nil {
+		if s.Peers.Logger != nil {
+			s.Peers.Logger.Error("breakdown_workshop_failed", "vehicle_id", sourceVehicle, "error", err)
+		}
+		return nil, fmt.Errorf("%s: vehicle %s could not be marked in the workshop, so the recovery is not complete and the plan was not changed; retry the same request", ErrCodeWorkshopPending, sourceVehicle)
+	}
+	// Keep the published plan intact until the replacement is feasible and the
+	// vehicle is in the workshop.
+	if pl.Status == domain.StatusConfirmed {
+		if err := versionStore.Revise(ctx, pl.ID); err != nil {
+			return nil, err
+		}
+	}
 	if err := versionStore.MoveTripAllocations(ctx, pl.ID, sourceVehicle, targetVehicle, tripNo, moved); err != nil {
 		return nil, err
 	}
@@ -721,6 +746,7 @@ func (s Service) ConfirmBreakdown(ctx context.Context, profile *authorization.Pr
 		return map[string]any{"status": "reassignment_saved_plan_not_published", "noticeDrafts": notices}, err
 	}
 	updated, _ := s.Repo.Get(ctx, pl.ID)
+	s.Peers.Publish(ctx, audit.ActionBreakdownRecoveryConfirmed, actorID(profile), "PLAN", pl.PlanRef, map[string]any{"decidedBy": actorID(profile), "sourceVehicleId": sourceVehicle, "replacementVehicleId": targetVehicle, "tripNumber": tripNo, "version": updated.CurrentVersion, "movedStops": len(moved), "vehicleInWorkshop": true})
 	s.Peers.Publish(ctx, audit.ActionPlanConfirmed, actorID(profile), "PLAN", pl.PlanRef, map[string]any{"reason": "vehicle_breakdown", "sourceVehicleId": sourceVehicle, "replacementVehicleId": targetVehicle, "tripNumber": tripNo, "version": updated.CurrentVersion})
 	oldByOrder := make(map[string]domain.Allocation, len(allocs))
 	for _, a := range allocs {
@@ -736,11 +762,11 @@ func (s Service) ConfirmBreakdown(ctx context.Context, profile *authorization.Pr
 			continue
 		}
 		o := orders[a.OrderID]
-		if err := s.Peers.QueueNotification(ctx, fmt.Sprintf("breakdown:%s:%d:%s", pl.ID, updated.CurrentVersion, a.OrderID), o.OutletID, "MAJOR_DELAY", o.OrderRef, "", delay); err != nil && s.Peers.Logger != nil {
+		if err := s.Peers.QueueNotification(ctx, fmt.Sprintf("breakdown:%s:%d:%s", pl.ID, updated.CurrentVersion, a.OrderID), o.OutletID, "MAJOR_DELAY", o.OrderRef, "", delay, ""); err != nil && s.Peers.Logger != nil {
 			s.Peers.Logger.Error("notification_enqueue_failed", "event", "major_delay", "order_id", a.OrderID, "error", err)
 		}
 	}
-	return map[string]any{"status": "confirmed", "planVersion": updated.CurrentVersion, "sourceVehicleId": sourceVehicle, "replacementVehicleId": targetVehicle, "tripNumber": tripNo, "movedStops": len(moved), "noticeDrafts": notices}, nil
+	return map[string]any{"status": "confirmed", "planVersion": updated.CurrentVersion, "sourceVehicleId": sourceVehicle, "replacementVehicleId": targetVehicle, "tripNumber": tripNo, "movedStops": len(moved), "noticeDrafts": notices, "vehicleInWorkshop": true, "decidedBy": actorID(profile)}, nil
 }
 
 func majorDelayMinutes(previous, next *time.Time) int {
@@ -909,6 +935,13 @@ func (s Service) loadWorld(ctx context.Context, pl domain.Plan) (allocate.Input,
 			s.Peers.Logger.Warn("repeat_deferral_signal_unavailable", "error", lastDeferralErr)
 		}
 	}
+	earlierDeferralByOutlet, earlierDeferralErr := s.Repo.EarlierDeferralsByOutlet(ctx, pl.DeliveryDate)
+	if earlierDeferralErr != nil {
+		earlierDeferralByOutlet = map[string]string{}
+		if s.Peers.Logger != nil {
+			s.Peers.Logger.Warn("repeat_deferral_history_unavailable", "error", earlierDeferralErr)
+		}
+	}
 	policy, policyErr := s.Peers.PlanningPolicy(ctx)
 	policySignalAvailable := policyErr == nil
 	if policyErr != nil {
@@ -917,7 +950,7 @@ func (s Service) loadWorld(ctx context.Context, pl domain.Plan) (allocate.Input,
 			s.Peers.Logger.Warn("planning_policy_unavailable_using_safe_defaults", "error", policyErr)
 		}
 	}
-	fairnessSignalAvailable, err := applyFairnessHistory(orders, counts, countsErr, lastServed, lastServedErr, schedule.PlanDate(pl.DeliveryDate), policy, lastDeferralByOutlet, lastAttempted)
+	fairnessSignalAvailable, err := applyFairnessHistory(orders, counts, countsErr, lastServed, lastServedErr, schedule.PlanDate(pl.DeliveryDate), policy, lastDeferralByOutlet, earlierDeferralByOutlet, lastAttempted)
 	if err != nil {
 		return allocate.Input{}, err
 	}
@@ -1113,6 +1146,7 @@ func (s Service) detail(ctx context.Context, pl domain.Plan) (map[string]any, er
 	for _, d := range deferred {
 		deferredIDs[d.OrderID] = true
 	}
+	markPriorityNextPlan(world.Orders, deferredIDs)
 	reasons, reasonsErr := s.Repo.ListUnallocatedReasons(ctx, pl.ID)
 	reasonsAvailable := reasonsErr == nil
 	if !reasonsAvailable && s.Peers.Logger != nil {
@@ -1303,4 +1337,46 @@ func actorID(p *authorization.Profile) string {
 		return ""
 	}
 	return p.UserID
+}
+
+// validateDeferral enforces the three required parts of a deferral: a known
+// reason code, a decider, and a next-run date after the plan's delivery date.
+// It returns the normalised next-run date.
+func validateDeferral(decider, code, nextRunTarget, planDeliveryDate string) (string, error) {
+	if !validReasons[code] {
+		return "", fmt.Errorf("invalid: reasonCode")
+	}
+	if strings.TrimSpace(decider) == "" {
+		return "", fmt.Errorf("invalid: decider required")
+	}
+	nextRunTarget = strings.TrimSpace(nextRunTarget)
+	if nextRunTarget == "" {
+		return "", fmt.Errorf("invalid: nextRunTarget is required")
+	}
+	target, err := time.Parse("2006-01-02", nextRunTarget)
+	if err != nil {
+		return "", fmt.Errorf("invalid: nextRunTarget")
+	}
+	planDate, _ := time.Parse("2006-01-02", planDeliveryDate)
+	if !target.After(planDate) {
+		return "", fmt.Errorf("invalid: nextRunTarget")
+	}
+	return nextRunTarget, nil
+}
+
+// The driver's deferral choice is a request. W3 remains the only action that
+// records an actual plan deferral; generation leaves these orders for review.
+func holdDispatcherDeferrals(world allocate.Input) (allocate.Input, []domain.ConstraintFailure) {
+	candidates := make([]domain.Order, 0, len(world.Orders))
+	pending := []domain.ConstraintFailure{}
+	for _, order := range world.Orders {
+		if order.SourceSystem == "delivery-deferral-request" {
+			pending = append(pending, domain.ConstraintFailure{OrderID: order.ID, ReasonCode: domain.ReasonManualDeferral})
+		} else {
+			candidates = append(candidates, order)
+		}
+	}
+	world.Orders = candidates
+	return world, pending
+
 }

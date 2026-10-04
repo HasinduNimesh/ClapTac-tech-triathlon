@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { AutomationInbox } from "../automations/AutomationInbox";
+
 import { Link } from "react-router-dom";
 import { apiJSON } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
@@ -141,6 +143,7 @@ export function StoreManagerNotificationsPage() {
       </StoreManagerHero>
 
       <div className="sm-page-body">
+        <AutomationInbox />
         {loadFailed && (
           <div className="sm-load-error" role="alert">
             <span>{t("Orders could not be loaded. Check your connection and try again.")}</span>
@@ -162,7 +165,7 @@ export function StoreManagerNotificationsPage() {
               <div className="sm-notification-meta"><span className="sm-notif-badge sm-notif-badge--receipt">{t("RECEIPT")}</span></div>
               <div className="sm-notification-body">
                 <h3 className="sm-notification-title">{row.order.orderRef} · {t("delivery needs receipt confirmation")}</h3>
-                <p className="sm-notification-desc muted">{t("Driver has recorded delivery. Confirm the count and report shortage or damage.")}</p>
+                <p className="sm-notification-desc muted">{t("Driver has recorded delivery. Confirm the count and report shortage or damage.")}{row.receiptDue && row.receiptDue.state !== "open" && <> <strong>{row.receiptDue.state === "overdue" ? t("Report-by deadline passed.") : row.receiptDue.state === "due_today" ? t("Report-by deadline is today.") : t("Report-by deadline is tomorrow.")}</strong></>}</p>
               </div>
               <Link to={`/store-manager/receipts?order=${encodeURIComponent(row.order.id)}`} className="sm-notif-action sm-notif-action--solid">{t("Confirm receipt")}</Link>
             </div>

@@ -16,3 +16,4 @@ scrape_configs:
           - shared-service:8080
           - integration-service:8080
           - agent-orchestrator:8080
+          - agent-assistants:8080

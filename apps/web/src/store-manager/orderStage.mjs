@@ -19,7 +19,7 @@ export const isDeferred = (stage) => stage === "DEFERRED";
 export const isActiveRun = (stage) => stage === "READY_FOR_DEPARTURE" || stage === "OUT_FOR_DELIVERY";
 export const needsReceipt = (stage) => stage === "DELIVERED" || stage === "PARTIAL";
 export const isReceiptConfirmed = (stage) => stage === "RECEIPT_CONFIRMED" || stage === "RECEIPT_CONFIRMED_WITH_ISSUE";
-export const isNotDelivered = (stage) => stage === "NOT_DELIVERED" || stage === "FAILED";
+export const isNotDelivered = (stage) => stage === "NOT_DELIVERED" || stage === "FAILED" || stage === "REFUSED";
 
 export function statusLabel(stage) {
   switch (stage) {
@@ -30,6 +30,7 @@ export function statusLabel(stage) {
     case "OUT_FOR_DELIVERY": return "On route";
     case "DELIVERED": return "Delivered";
     case "PARTIAL": return "Partially delivered";
+    case "REFUSED": return "Rejected delivery";
     case "NOT_DELIVERED":
     case "FAILED": return "Not delivered";
     case "RECEIPT_CONFIRMED": return "Receipt confirmed";
@@ -40,7 +41,7 @@ export function statusLabel(stage) {
 
 export function statusTone(stage) {
   if (stage === "OUT_FOR_DELIVERY" || stage === "READY_FOR_DEPARTURE") return "on-route";
-  if (stage === "DEFERRED" || stage === "NOT_DELIVERED" || stage === "FAILED" || stage === "PARTIAL" || stage === "RECEIPT_CONFIRMED_WITH_ISSUE") return "deferred";
+  if (stage === "DEFERRED" || stage === "NOT_DELIVERED" || stage === "FAILED" || stage === "REFUSED" || stage === "PARTIAL" || stage === "RECEIPT_CONFIRMED_WITH_ISSUE") return "deferred";
   if (stage === "DELIVERED" || stage === "RECEIPT_CONFIRMED") return "delivered";
   return "default";
 }
@@ -69,6 +70,7 @@ const LEVEL = {
   PARTIAL: 4,
   NOT_DELIVERED: 4,
   FAILED: 4,
+  REFUSED: 4,
   RECEIPT_CONFIRMED: 5,
   RECEIPT_CONFIRMED_WITH_ISSUE: 5,
 };
@@ -93,7 +95,7 @@ export function timelineSteps(tracking) {
     },
     {
       key: "delivered",
-      label: notDelivered ? "Not delivered" : stage === "PARTIAL" ? "Partially delivered" : "Delivered",
+      label: stage === "REFUSED" ? "Rejected delivery" : notDelivered ? "Not delivered" : stage === "PARTIAL" ? "Partially delivered" : "Delivered",
       detail: notDelivered ? "The driver could not complete this delivery" : "Driver recorded the delivery outcome",
       warn: notDelivered || stage === "PARTIAL",
     },

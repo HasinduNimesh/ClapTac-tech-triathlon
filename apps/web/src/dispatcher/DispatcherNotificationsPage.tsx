@@ -11,6 +11,7 @@ import { failedSourceCount } from "./sourceFailures.mjs";
 import { dateTime, errorText, useApi, useToken } from "./useApi";
 
 type Alert = { key: string; tone: "red" | "amber" | "cool" | "primary"; tag: string; title: string; text: string; action: string; onOpen?: () => void; to?: string };
+type SyncConflict = { id: string; runId: string; tripId?: string; vehicleId?: string; stopId?: string; operationId: string; recordedPlanVersion: number; currentPlanVersion: number; detail: string; createdAt: string; settledBy?: string; settledAt?: string };
 type Decision = "partial" | "hold" | "move";
 
 export function DispatcherNotificationsPage() {
@@ -26,7 +27,15 @@ export function DispatcherNotificationsPage() {
   const availability = useApi<{ items: Availability[] }>(`/fleet/availability?date=${date}`);
   const loading = useApi<{ items: LoadingTripSummary[] }>(`/loading/trips?date=${date}`);
   const receipts = useApi<{ items: ReceiptIssue[] }>("/orders/receipt-issues");
-  const conflicts = useApi<{ items: AuditEvent[] }>("/shared/audit/events?action=DELIVERY_SYNC_CONFLICT&limit=20");
+  const conflicts = useApi<{ items: SyncConflict[] }>(`/delivery/sync-conflicts?date=${date}`);
+  const openConflicts = (conflicts.data?.items || []).filter((c) => !c.settledAt);
+  async function settleConflict(c: SyncConflict) {
+    try {
+      await apiJSON(`/delivery/sync-conflicts/${c.id}/settle`, token, { method: "POST" });
+      setToast(t("Sync conflict settled"));
+      void conflicts.reload();
+    } catch (e) { setToast(errorText(e)); }
+  }
   const temperature = useApi<{ items: AuditEvent[] }>("/shared/audit/events?action=DELIVERY_TEMPERATURE_EXCEPTION&limit=20");
   const dockAlerts = useApi<{ items: DockAlert[] }>(`/loading/alerts?date=${date}`);
 
@@ -52,7 +61,7 @@ export function DispatcherNotificationsPage() {
   }
   const repeat = (plan.data?.orders || []).filter((o) => (o.outletDeferralCount || 0) >= 2 && (plan.data!.unallocated || []).some((u) => u.orderId === o.id));
   for (const order of repeat) alerts.push({ key: `rep-${order.id}`, tone: "cool", tag: t("Repeat deferral"), title: `${order.orderRef} · ${order.outletId} · ${t("deferred")} ${order.outletDeferralCount} ${t("times")}`, text: `${order.lastServedAt ? `${t("Last served")} ${dateTime(order.lastServedAt)} · ` : ""}${t("fairness review required before another deferral")}`, action: t("Review priority and next-run plan"), to: "/dispatcher/planning" });
-  if ((conflicts.data?.items?.length || 0) + (receipts.data?.items?.length || 0) > 0) alerts.push({ key: "loop", tone: "primary", tag: t("After plan change"), title: `${conflicts.data?.items?.length || 0} ${t("sync conflict(s)")} · ${receipts.data?.items?.length || 0} ${t("store receipt issue(s)")}`, text: t("Who has the new plan, what came back from the road, and what the store confirmed."), action: t("Review acknowledgements and receipts"), onOpen: () => setConflictsOpen(true) });
+  if (openConflicts.length + (receipts.data?.items?.length || 0) > 0) alerts.push({ key: "loop", tone: "primary", tag: t("After plan change"), title: `${openConflicts.length} ${t("sync conflict(s)")} · ${receipts.data?.items?.length || 0} ${t("store receipt issue(s)")}`, text: t("Who has the new plan, what came back from the road, and what the store confirmed."), action: t("Review acknowledgements and receipts"), onOpen: () => setConflictsOpen(true) });
 
   return (
     <>
@@ -104,8 +113,8 @@ export function DispatcherNotificationsPage() {
         footer={<button type="button" className="dp-btn dp-btn--secondary" onClick={() => setConflictsOpen(false)}>{t("Back to alerts")}</button>}>
         <p className="dp-section-label">{t("Plan acknowledgement")} · {plan.data?.publication ? `v${plan.data.publication.version} ${t("published")} ${dateTime(plan.data.publication.publishedAt)}` : t("Not published yet")}</p>
         {(plan.data?.publication?.acknowledgements || []).length === 0 ? <p className="muted" style={{ margin: 0 }}>{t("No field acknowledgements yet.")}</p> : <dl className="dp-kv-rows">{plan.data!.publication!.acknowledgements.map((a) => <div key={`${a.actorId}-${a.acknowledgedAt}`}><dt>{t(a.actorRole)} · {a.actorId}</dt><dd className="dp-cell-sub--green">{t("Acknowledged")} {dateTime(a.acknowledgedAt)}</dd></div>)}</dl>}
-        <p className="dp-section-label">{t("Sync conflicts")} ({conflicts.data?.items?.length || 0})</p>
-        {(conflicts.data?.items || []).map((ev) => <Note key={ev.event_id} tone="amber" title={`${ev.resource_type} ${ev.resource_id} · ${dateTime(ev.timestamp)}`}>{ev.reason || t("The driver's offline record clashed with a newer plan version. Both records are kept.")}</Note>)}
+        <p className="dp-section-label">{t("Sync conflicts")} ({openConflicts.length})</p>
+        {(conflicts.data?.items || []).map((c) => <Note key={c.id} tone={c.settledAt ? "green" : "amber"} title={`${c.vehicleId || c.runId}${c.stopId ? ` · ${t("Stop")} ${c.stopId.slice(0, 8)}` : ""} · ${t("Recorded on plan")} v${c.recordedPlanVersion} · ${t("current plan")} v${c.currentPlanVersion} · ${dateTime(c.createdAt)}`}>{c.detail || t("The driver's offline record clashed with a newer plan version. Both records are kept.")}{c.settledAt ? <> · {t("Settled by")} {c.settledBy}</> : <> <button type="button" className="dp-btn dp-btn--secondary" onClick={() => void settleConflict(c)}>{t("Settle")}</button></>}</Note>)}
         {(conflicts.data?.items || []).length === 0 && <p className="muted" style={{ margin: 0 }}>{t("No sync conflicts recorded.")}</p>}
         <p className="dp-section-label">{t("Store receipts")} ({receipts.data?.items?.length || 0})</p>
         {(receipts.data?.items || []).length === 0 ? <p className="muted" style={{ margin: 0 }}>{t("No receipt issues reported.")}</p> : <dl className="dp-kv-rows">{receipts.data!.items.map((item, i) => <div key={`${item.orderRef}-${i}`}><dt>{item.outletId} · {item.orderRef} · {t(item.issue.issueType)}{item.issue.note ? ` · ${item.issue.note}` : ""}</dt><dd className="dp-cell-sub--amber">{item.receipt.receivedUnits} {t("of")} {item.receipt.expectedUnits} · {item.issue.affectedUnits} {t("short")}</dd></div>)}</dl>}

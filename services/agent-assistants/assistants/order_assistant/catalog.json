@@ -1,0 +1,34 @@
+{
+  "version": "2026-10-03.1",
+  "note": "Reference product list per brand used only to turn order text into lines. Orders still store totals (units = packs, weight, volume) until order lines exist in order-service.",
+  "brands": {
+    "Fresh": [
+      { "id": "FR-RICE-5KG", "family": "rice", "name": "Samba rice 5 kg", "size": "5 kg", "pack": "bag", "unitsPerPack": 1, "packWeightKg": 5.1, "packVolumeM3": 0.009, "temperature": "ambient", "aliases": ["rice", "samba"] },
+      { "id": "FR-OIL-1L", "family": "oil", "name": "Coconut oil 1 L", "size": "1 L", "pack": "case", "unitsPerPack": 12, "packWeightKg": 11.6, "packVolumeM3": 0.016, "temperature": "ambient", "aliases": ["oil", "coconut oil", "bottle of oil"] },
+      { "id": "FR-SUGAR-1KG", "family": "sugar", "name": "White sugar 1 kg", "size": "1 kg", "pack": "bale", "unitsPerPack": 20, "packWeightKg": 20.3, "packVolumeM3": 0.026, "temperature": "ambient", "aliases": ["sugar"] },
+      { "id": "FR-DHAL-1KG", "family": "dhal", "name": "Red dhal 1 kg", "size": "1 kg", "pack": "bale", "unitsPerPack": 20, "packWeightKg": 20.3, "packVolumeM3": 0.026, "temperature": "ambient", "aliases": ["dhal", "dal", "lentils", "parippu"] },
+      { "id": "FR-BREAD-450G", "family": "bread", "name": "Sandwich bread 450 g", "size": "450 g", "pack": "tray", "unitsPerPack": 10, "packWeightKg": 4.8, "packVolumeM3": 0.042, "temperature": "ambient", "aliases": ["bread", "loaf"] },
+      { "id": "FR-EGGS-30", "family": "eggs", "name": "Eggs", "size": "30 eggs", "pack": "tray", "unitsPerPack": 30, "packWeightKg": 1.9, "packVolumeM3": 0.012, "temperature": "ambient", "aliases": ["eggs", "egg"] },
+      { "id": "FR-WATER-1500ML", "family": "water", "name": "Bottled water 1.5 L", "size": "1.5 L", "pack": "pack", "unitsPerPack": 12, "packWeightKg": 18.4, "packVolumeM3": 0.024, "temperature": "ambient", "aliases": ["water", "bottled water"] },
+      { "id": "FR-MILK-1L", "family": "milk", "name": "Fresh milk 1 L", "size": "1 L", "pack": "crate", "unitsPerPack": 12, "packWeightKg": 12.9, "packVolumeM3": 0.017, "temperature": "chilled", "aliases": ["milk", "fresh milk"] },
+      { "id": "FR-MILK-500ML", "family": "milk", "name": "Fresh milk 500 ml", "size": "500 ml", "pack": "crate", "unitsPerPack": 24, "packWeightKg": 13.0, "packVolumeM3": 0.018, "temperature": "chilled", "aliases": ["milk", "fresh milk"] },
+      { "id": "FR-YOGHURT-80G", "family": "yoghurt", "name": "Yoghurt cup 80 g", "size": "80 g", "pack": "crate", "unitsPerPack": 48, "packWeightKg": 4.6, "packVolumeM3": 0.018, "temperature": "chilled", "aliases": ["yoghurt", "yogurt", "curd cups"] },
+      { "id": "FR-BUTTER-200G", "family": "butter", "name": "Butter 200 g", "size": "200 g", "pack": "case", "unitsPerPack": 24, "packWeightKg": 5.2, "packVolumeM3": 0.008, "temperature": "chilled", "aliases": ["butter"] },
+      { "id": "FR-CHEESE-200G", "family": "cheese", "name": "Cheese slices 200 g", "size": "200 g", "pack": "case", "unitsPerPack": 24, "packWeightKg": 5.2, "packVolumeM3": 0.009, "temperature": "chilled", "aliases": ["cheese", "cheese slices"] }
+    ],
+    "Style": [
+      { "id": "ST-TSHIRT", "family": "t-shirts", "name": "T-shirts", "size": "", "pack": "carton", "unitsPerPack": 40, "packWeightKg": 9.5, "packVolumeM3": 0.06, "temperature": "ambient", "aliases": ["t-shirt", "tshirts", "tees"] },
+      { "id": "ST-DENIM", "family": "denim", "name": "Denim jeans", "size": "", "pack": "carton", "unitsPerPack": 20, "packWeightKg": 13.0, "packVolumeM3": 0.07, "temperature": "ambient", "aliases": ["jeans", "denim"] },
+      { "id": "ST-SHOES", "family": "shoes", "name": "Shoes", "size": "", "pack": "carton", "unitsPerPack": 12, "packWeightKg": 10.5, "packVolumeM3": 0.09, "temperature": "ambient", "aliases": ["shoes", "footwear"] },
+      { "id": "ST-HANGERS", "family": "hangers", "name": "Hangers", "size": "", "pack": "bundle", "unitsPerPack": 100, "packWeightKg": 6.0, "packVolumeM3": 0.04, "temperature": "ambient", "aliases": ["hangers"] },
+      { "id": "ST-BAGS", "family": "shopping bags", "name": "Shopping bags", "size": "", "pack": "bundle", "unitsPerPack": 500, "packWeightKg": 7.5, "packVolumeM3": 0.03, "temperature": "ambient", "aliases": ["bags", "carrier bags"] }
+    ],
+    "Tech": [
+      { "id": "TC-PHONE", "family": "smartphones", "name": "Smartphones", "size": "", "pack": "carton", "unitsPerPack": 10, "packWeightKg": 4.5, "packVolumeM3": 0.02, "temperature": "ambient", "aliases": ["phones", "mobiles"] },
+      { "id": "TC-LAPTOP", "family": "laptops", "name": "Laptops", "size": "", "pack": "carton", "unitsPerPack": 4, "packWeightKg": 11.0, "packVolumeM3": 0.05, "temperature": "ambient", "aliases": ["laptops", "notebooks"] },
+      { "id": "TC-CHARGER", "family": "chargers", "name": "Phone chargers", "size": "", "pack": "carton", "unitsPerPack": 50, "packWeightKg": 6.0, "packVolumeM3": 0.03, "temperature": "ambient", "aliases": ["chargers", "adapters"] },
+      { "id": "TC-EARPHONES", "family": "earphones", "name": "Earphones", "size": "", "pack": "carton", "unitsPerPack": 100, "packWeightKg": 5.0, "packVolumeM3": 0.03, "temperature": "ambient", "aliases": ["earphones", "headphones", "earbuds"] },
+      { "id": "TC-CABLE", "family": "cables", "name": "USB cables", "size": "", "pack": "carton", "unitsPerPack": 100, "packWeightKg": 4.0, "packVolumeM3": 0.02, "temperature": "ambient", "aliases": ["cables", "usb"] }
+    ]
+  }
+}

@@ -124,6 +124,65 @@ paths:
         "202": { description: Ingested }
         "401": { description: Unauthenticated }
         "403": { description: Missing audit:write }
+
+  /shared/audit/export.csv:
+    get:
+      operationId: exportAuditEventsCsv
+      security: [{ bearerAuth: [] }]
+      description: Requires audit:read. Same filters as audit search; capped at 5000 rows (X-Export-Truncated header says if more matched). Cells starting with = + - @ are prefixed with an apostrophe.
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+        - { name: action, in: query, schema: { type: string } }
+        - { name: resourceType, in: query, schema: { type: string } }
+        - { name: resourceId, in: query, schema: { type: string } }
+        - { name: actorId, in: query, schema: { type: string } }
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+      responses:
+        "200":
+          description: CSV attachment
+          content: { text/csv: { schema: { type: string } } }
+        "400": { description: Invalid filter }
+        "403": { description: Missing audit:read }
+
+  /shared/dashboards:
+    get:
+      operationId: listMyDashboards
+      security: [{ bearerAuth: [] }]
+      description: Saved dashboards owned by the signed-in user (dashboard:manage-own). Specs use the card vocabulary in assistants.yaml.
+      responses:
+        "200": { description: "{ items: [{ id, spec, version, createdAt, updatedAt }] }" }
+        "403": { description: Role without dashboard:manage-own }
+    post:
+      operationId: createDashboard
+      security: [{ bearerAuth: [] }]
+      description: Saves a dashboard for the signed-in user only (body { spec }; unknown fields rejected; at most 12 per user). Audited as USER_DASHBOARD_CREATED.
+      responses:
+        "201": { description: Saved dashboard }
+        "400": { description: Spec outside the fixed card vocabulary }
+        "409": { description: Dashboard limit reached }
+  /shared/dashboards/{id}:
+    put:
+      operationId: updateDashboard
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      description: Body { spec, version }. Optimistic concurrency on version. Audited as USER_DASHBOARD_UPDATED.
+      responses:
+        "200": { description: Updated dashboard }
+        "400": { description: Invalid spec }
+        "404": { description: Not found or not owned by the caller }
+        "409": { description: Stale version }
+    delete:
+      operationId: deleteDashboard
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      description: Audited as USER_DASHBOARD_DELETED.
+      responses:
+        "204": { description: Deleted }
+        "404": { description: Not found or not owned by the caller }
+
 components:
   securitySchemes:
     bearerAuth:
