@@ -822,6 +822,7 @@ func (s Service) guardVehicle(profile *authorization.Profile, vehicleID string) 
 
 func (s Service) detail(ctx context.Context, run domain.Run) (map[string]any, error) {
 	stops, _ := s.Repo.ListStops(ctx, run.ID)
+	stops = s.withLocations(ctx, stops)
 	currentVersion := run.PlanVersion
 	var acknowledgements []domain.PlanAcknowledgement
 	if trip, err := s.Peers.ReadyTrip(ctx, run.TripID); err == nil {
@@ -832,6 +833,27 @@ func (s Service) detail(ctx context.Context, run domain.Run) (map[string]any, er
 		acknowledgements = []domain.PlanAcknowledgement{}
 	}
 	return map[string]any{"tripId": run.TripID, "run": run, "stops": stops, "status": run.Status, "currentPlanVersion": currentVersion, "planAcknowledgements": acknowledgements}, nil
+}
+
+// withLocations adds each stop's position from its outlet. It is best effort: if shared-service cannot
+// be reached the trip is still served, just without positions, and a driver app falls back to searching
+// by outlet name.
+func (s Service) withLocations(ctx context.Context, stops []domain.Stop) []domain.Stop {
+	if len(stops) == 0 {
+		return stops
+	}
+	outlets, err := s.Peers.Outlets(ctx)
+	if err != nil {
+		return stops
+	}
+	located := make([]domain.Stop, len(stops))
+	copy(located, stops)
+	for i := range located {
+		if o, ok := outlets[located[i].OutletID]; ok && o.Latitude != nil && o.Longitude != nil {
+			located[i].Latitude, located[i].Longitude, located[i].LocationApproximate = o.Latitude, o.Longitude, o.LocationApproximate
+		}
+	}
+	return located
 }
 
 func loadingPreview(trip domain.LoadingTrip) map[string]any {

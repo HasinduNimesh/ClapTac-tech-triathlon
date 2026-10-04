@@ -215,6 +215,33 @@ void main() {
     });
   });
 
+  group('what goes back after a rejected delivery', () {
+    const stop = StopInfo(sequence: 1, outletCode: 'OUT061', name: 'Nugegoda', windowStart: '', windowEnd: '', accessNote: '', contactNote: '', goods: 'Ambient', orderRef: 'AM-77', units: 8, unitLabel: 'units');
+
+    test('is the stop\'s own order and quantity, never a product list the server does not have', () {
+      final item = TakeBackItem.forStop(stop);
+      expect(item.title, 'Order AM-77 · taking back 8 units');
+      expect(item.note, 'Goes back on this vehicle');
+    });
+
+    test('says so when the quantity is not known, and has a name when there is no order reference', () {
+      const unknown = StopInfo(sequence: 1, outletCode: '', name: 'X', windowStart: '', windowEnd: '', accessNote: '', contactNote: '', goods: 'Chilled', units: null);
+      final item = TakeBackItem.forStop(unknown);
+      expect(item.title, 'This order · taking back all of it');
+      expect(item.note, 'Keep in the chilled zone');
+    });
+
+    test('every reason code the app can send has words, and an unknown one is not blamed on the outlet', () {
+      expect(takeBackReasonText('OUTLET_CLOSED'), 'the outlet was closed');
+      expect(takeBackReasonText('ACCESS_BLOCKED'), 'the driver could not get access');
+      expect(takeBackReasonText('RECEIVER_UNAVAILABLE'), 'nobody was available to receive it');
+      expect(takeBackReasonText('GOODS_REJECTED'), 'the goods were rejected');
+      expect(takeBackReasonText('VEHICLE_ISSUE'), 'a vehicle problem');
+      expect(takeBackReasonText('OTHER'), 'another reason');
+      expect(takeBackReasonText(null), 'another reason');
+    });
+  });
+
   group('showTakeBackSheet', () {
     Future<void> open(WidgetTester tester, ValueChanged<bool> onSave) async {
       await pumpScreen(
@@ -223,7 +250,7 @@ void main() {
           builder: (context) => Scaffold(
             body: Center(
               child: TextButton(
-                onPressed: () => showTakeBackSheet(context, stop: sampleStops.last, orderRef: 'FR-4821', onSave: onSave),
+                onPressed: () => showTakeBackSheet(context, stop: sampleStops.last, orderRef: 'FR-4821', reason: takeBackReasonText('OUTLET_CLOSED'), onSave: onSave),
                 child: const Text('open sheet'),
               ),
             ),
@@ -239,8 +266,10 @@ void main() {
       await open(tester, (value) => choice = value);
       expect(find.text('Rejected: record what goes back'), findsOneWidget);
       expect(find.text('Stop 3 · Kirulapone · FR-4821'), findsOneWidget);
-      expect(find.text('Yoghurt cup 80g · taking back 96'), findsOneWidget);
-      expect(find.text('Fresh milk 1L · taking back 24'), findsOneWidget);
+      expect(find.text('Order FR-4821 · taking back 120 units'), findsOneWidget);
+      expect(find.text('Keep in the chilled zone'), findsOneWidget);
+      expect(find.text('Reason: the outlet was closed'), findsOneWidget);
+      expect(find.textContaining('Yoghurt'), findsNothing);
 
       await tester.tap(find.text('Save take-back offline'));
       await tester.pumpAndSettle();
