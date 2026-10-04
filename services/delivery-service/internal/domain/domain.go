@@ -313,6 +313,7 @@ type LoadingOrder struct {
 	Brand                  string     `json:"brand"`
 	StopSequence           int        `json:"stopSequence"`
 	PlannedArrivalAt       *time.Time `json:"plannedArrivalAt,omitempty"`
+	PlannedDepartureAt     *time.Time `json:"plannedDepartureAt,omitempty"`
 	LoadingStatus          string     `json:"loadingStatus"`
 	TemperatureRequirement string     `json:"temperatureRequirement"`
 	ExpectedUnits          int        `json:"expectedUnits"`

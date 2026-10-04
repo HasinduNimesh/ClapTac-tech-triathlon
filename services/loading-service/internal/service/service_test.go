@@ -49,6 +49,18 @@ func TestPlannedArrivalByAllocationPreservesOnlyPublishedETAs(t *testing.T) {
 	}
 }
 
+func TestPlannedDepartureByAllocationPreservesOnlyPublishedTimes(t *testing.T) {
+	planned := time.Date(2026, 10, 1, 8, 50, 0, 0, time.FixedZone("Sri Lanka", 5*60*60+30*60))
+	got := plannedDepartureByAllocation([]domain.PlanningAlloc{
+		{AllocationID: "alloc-1", PlannedDepartureAt: &planned},
+		{AllocationID: "alloc-2"},
+		{PlannedDepartureAt: &planned},
+	})
+	if len(got) != 1 || got["alloc-1"] == nil || !got["alloc-1"].Equal(planned) {
+		t.Fatalf("planned departure mapping = %#v, want only alloc-1 at %s", got, planned)
+	}
+}
+
 func TestPendingDetailRequiresThisLoaderToAcknowledge(t *testing.T) {
 	profile := &authorization.Profile{UserID: "USR005", Roles: []string{authorization.RoleLoader}}
 	trip := domain.PlanningTrip{

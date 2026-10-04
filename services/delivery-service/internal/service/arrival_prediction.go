@@ -43,6 +43,15 @@ func (s Service) PublishArrivalPrediction(ctx context.Context, profile *authoriz
 	}
 	if stop == nil { return domain.ArrivalPrediction{}, fmt.Errorf("not found: stop") }
 	if stop.Status != domain.StopPending { return domain.ArrivalPrediction{}, fmt.Errorf("conflict: stop already reported") }
+	return s.recordArrivalPrediction(ctx, *stop, planVersion, sourceAt, eta, lower, upper, risk)
+}
+
+// recordArrivalPrediction persists a stop's predicted arrival and, when it differs from what the store was
+// last told by 30 minutes or more, queues the ARRIVAL_CHANGE notice. It is shared by the dispatcher
+// endpoint and the event-driven refresh in arrival_updates.go; callers have already checked that the run
+// and plan version are current and that the stop is still pending.
+func (s Service) recordArrivalPrediction(ctx context.Context, stop domain.Stop, planVersion int, sourceAt *time.Time, eta time.Time, lower, upper *time.Time, risk string) (domain.ArrivalPrediction, error) {
+	stopID := stop.ID
 	prediction, pending, err := s.Repo.SaveArrivalPrediction(ctx, stopID, planVersion, sourceAt, eta, lower, upper, risk)
 	if err != nil { return domain.ArrivalPrediction{}, err }
 	prediction.StopID = stopID
