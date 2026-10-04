@@ -29,7 +29,7 @@ type Driver interface {
 	Checkout(ctx context.Context, profile *authorization.Profile, tripID string, planVersion int, confirmed []string) (domain.Checkout, error)
 	CheckoutStatus(ctx context.Context, profile *authorization.Profile, tripID string) (*domain.Checkout, error)
 	Arrive(ctx context.Context, profile *authorization.Profile, tripID, stopID, opID, occurred string) (map[string]any, error)
-	Outcome(ctx context.Context, profile *authorization.Profile, tripID, stopID, opID, depends, code, reason, note, occurred string, returned domain.ReturnDetails) (map[string]any, error)
+	Outcome(ctx context.Context, profile *authorization.Profile, tripID, stopID, opID, depends, code, reason, note, occurred string, deliveredUnits *int, returned domain.ReturnDetails) (map[string]any, error)
 	UploadProof(ctx context.Context, profile *authorization.Profile, tripID, stopID, opID, proofType, mime string, body []byte, captured, receiverName string) (domain.Proof, error)
 	Complete(ctx context.Context, profile *authorization.Profile, tripID, opID, occurred string) (map[string]any, error)
 	Sync(ctx context.Context, profile *authorization.Profile, req domain.SyncRequest) []map[string]any
@@ -299,6 +299,7 @@ func (h Handler) outcome(w http.ResponseWriter, r *http.Request) {
 		Code                 string `json:"code"`
 		Reason               string `json:"reason"`
 		Note                 string `json:"note"`
+		DeliveredUnits       *int   `json:"deliveredUnits"`
 		OccurredAt           string `json:"occurredAt"`
 		OperationID          string `json:"operationId"`
 		DependsOnOperationID string `json:"dependsOnOperationId"`
@@ -309,7 +310,7 @@ func (h Handler) outcome(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	opID := first(r.Header.Get("Idempotency-Key"), body.OperationID)
-	detail, err := h.Service.Outcome(r.Context(), h.profile(r), chi.URLParam(r, "tripId"), chi.URLParam(r, "stopId"), opID, body.DependsOnOperationID, body.Code, body.Reason, body.Note, body.OccurredAt, body.ReturnedGoods)
+	detail, err := h.Service.Outcome(r.Context(), h.profile(r), chi.URLParam(r, "tripId"), chi.URLParam(r, "stopId"), opID, body.DependsOnOperationID, body.Code, body.Reason, body.Note, body.OccurredAt, body.DeliveredUnits, body.ReturnedGoods)
 	if writeErr(w, err) {
 		return
 	}
@@ -317,31 +318,9 @@ func (h Handler) outcome(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h Handler) proof(w http.ResponseWriter, r *http.Request) {
-	const multipartOverheadLimit = 256 << 10
-	r.Body = http.MaxBytesReader(w, r.Body, domain.MaxPhotoBytes+multipartOverheadLimit)
-	if err := r.ParseMultipartForm(1 << 20); err != nil {
-		var maxErr *http.MaxBytesError
-		if errors.As(err, &maxErr) {
-			apierrors.RequestEntityTooLarge(w, "proof upload exceeds the request size limit")
-			return
-		}
-		apierrors.BadRequest(w, "multipart proof required")
+	body, mime, ok := httpx.ReadImageUpload(w, r, domain.MaxPhotoBytes)
+	if !ok {
 		return
-	}
-	file, hdr, err := r.FormFile("file")
-	if err != nil {
-		apierrors.BadRequest(w, "file is required")
-		return
-	}
-	defer file.Close()
-	body, err := io.ReadAll(io.LimitReader(file, domain.MaxPhotoBytes+1))
-	if err != nil {
-		apierrors.BadRequest(w, "unable to read file")
-		return
-	}
-	mime := hdr.Header.Get("Content-Type")
-	if mime == "" || mime == "application/octet-stream" {
-		mime = r.FormValue("mimeType")
 	}
 	opID := first(r.Header.Get("Idempotency-Key"), r.FormValue("operationId"))
 	pr, err := h.Service.UploadProof(r.Context(), h.profile(r), chi.URLParam(r, "tripId"), chi.URLParam(r, "stopId"), opID, r.FormValue("type"), mime, body, r.FormValue("capturedAt"), r.FormValue("receiverName"))

@@ -33,6 +33,8 @@ type Result struct {
 type Outlet struct {
 	ID                string `json:"id"`
 	Brand             string `json:"brand"`
+	Name              string `json:"name,omitempty"`
+	DockType          string `json:"dockType,omitempty"`
 	District          string `json:"district"`
 	Depot             string `json:"depot"`
 	ParkingConstraint string `json:"parkingConstraint"`
@@ -204,12 +206,25 @@ type GenerateResult struct {
 }
 
 type InternalAllocation struct {
-	AllocationID     string     `json:"allocationId"`
-	OrderID          string     `json:"orderId"`
-	OrderRef         string     `json:"orderRef"`
-	OutletID         string     `json:"outletId"`
-	StopSequence     int        `json:"stopSequence"`
-	PlannedArrivalAt *time.Time `json:"plannedArrivalAt,omitempty"`
+	AllocationID       string     `json:"allocationId"`
+	OrderID            string     `json:"orderId"`
+	OrderRef           string     `json:"orderRef"`
+	OutletID           string     `json:"outletId"`
+	StopSequence       int        `json:"stopSequence"`
+	PlannedArrivalAt   *time.Time `json:"plannedArrivalAt,omitempty"`
+	PlannedDepartureAt *time.Time `json:"plannedDepartureAt,omitempty"`
+	// Load and access details the loader needs at the dock.
+	Brand             string  `json:"brand,omitempty"`
+	WeightKg          float64 `json:"weightKg"`
+	VolumeM3          float64 `json:"volumeM3"`
+	Temperature       string  `json:"temperatureRequirement,omitempty"`
+	OutletName        string  `json:"outletName,omitempty"`
+	DockType          string  `json:"dockType,omitempty"`
+	District          string  `json:"district,omitempty"`
+	WindowOpen        string  `json:"windowOpen,omitempty"`
+	WindowClose       string  `json:"windowClose,omitempty"`
+	ParkingConstraint string  `json:"parkingConstraint,omitempty"`
+	MallWindow        bool    `json:"mallWindow,omitempty"`
 }
 
 type InternalTrip struct {
@@ -226,7 +241,14 @@ type InternalTrip struct {
 	VehicleType                  string                `json:"vehicleType"`
 	VehicleTemperatureCapability string                `json:"vehicleTemperatureCapability"`
 	VehicleDepot                 string                `json:"vehicleDepot"`
-	Allocations                  []InternalAllocation  `json:"allocations"`
+	VehicleWeightCapacityKg      float64               `json:"vehicleWeightCapacityKg"`
+	VehicleVolumeCapacityM3      float64               `json:"vehicleVolumeCapacityM3"`
+	PlanPublishedBy              string                `json:"planPublishedBy,omitempty"`
+	// PlannedDepartureAt is when the trip leaves the depot and PlannedReturnAt
+	// when it is back, from the same travel estimate the plan was built with.
+	PlannedDepartureAt *time.Time           `json:"plannedDepartureAt,omitempty"`
+	PlannedReturnAt    *time.Time           `json:"plannedReturnAt,omitempty"`
+	Allocations        []InternalAllocation `json:"allocations"`
 }
 
 type OrderTracking struct {

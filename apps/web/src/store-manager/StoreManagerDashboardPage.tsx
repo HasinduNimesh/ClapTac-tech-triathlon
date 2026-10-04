@@ -1,4 +1,8 @@
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
+import { useAuth } from "../auth/AuthContext";
+import { DashboardGrid } from "./DashboardCards";
+import { DashboardMenu } from "./DashboardMenu";
+import { loadDashboards } from "./dashboards";
 import { useLocale } from "../i18n";
 import iconHistory from "../assets/store-manager/icon-history.svg";
 import iconTruck from "../assets/store-manager/icon-truck.svg";
@@ -17,7 +21,7 @@ function Chevron() {
 }
 
 function nextStep(row: Tracking, t: (key: string) => string) {
-  if (needsReceipt(row.stage)) return <Link to="/store-manager/receipts" className="sm-track-link">{t("Confirm receipt")}</Link>;
+  if (needsReceipt(row.stage)) return <Link to={`/store-manager/receipts?order=${encodeURIComponent(row.order.id)}`} className="sm-track-link">{t("Confirm receipt")}</Link>;
   if (isDeferred(row.stage)) return t("Awaiting a new run");
   if (row.planning.plannedArrivalAt && (row.stage === "PLANNED" || row.stage === "READY_FOR_DEPARTURE" || row.stage === "OUT_FOR_DELIVERY")) {
     return `${t("ETA")} ${colomboTime(row.delivery?.arrivalPrediction?.estimatedArrivalAt || row.planning.plannedArrivalAt)}`;
@@ -28,7 +32,46 @@ function nextStep(row: Tracking, t: (key: string) => string) {
 
 export function StoreManagerDashboardPage() {
   const { t } = useLocale();
+  const { profile } = useAuth();
+  const [params, setParams] = useSearchParams();
   const { rows, loading, loadFailed, skipped, reload } = useOrderTrackings();
+  const userId = profile?.userId || "anonymous";
+  const outletId = profile?.outletIds?.[0] || "outlet";
+  const dashboards = loadDashboards(userId, outletId);
+  const selected = dashboards.find((d) => d.id === params.get("dashboard"));
+  const heroActions = (
+    <>
+      <DashboardMenu dashboards={dashboards} current={selected?.id || ""} />
+      <Link to="/store-manager/dashboards/new" className="sm-btn-secondary sm-btn-create-dash">+ {t("Create new dashboard")}</Link>
+      <Link to="/store-manager/orders/new" className="sm-btn-place-order">
+        <img src={iconPlus} alt="" aria-hidden="true" width={24} height={24} />
+        {t("Place Order")}
+      </Link>
+    </>
+  );
+
+  if (selected) {
+    return (
+      <>
+        <StoreManagerHero title={selected.name} subtitle={`${t("Made with the dashboard assistant")} · ${t("updated")} ${colomboTime(selected.updatedAt)}`} compact>{heroActions}</StoreManagerHero>
+        <div className="sm-page-body dp-stack">
+          {params.get("saved") && (
+            <div className="dp-note dp-note--green dp-row dp-row--between" role="status">
+              <span>✓ {t("Dashboard saved. Switch between your dashboards from the Dashboard menu.")}</span>
+              <span className="dp-row">
+                <Link to={`/store-manager/dashboards/new?edit=${encodeURIComponent(selected.id)}`} className="dp-btn dp-btn--secondary dp-btn--sm">{t("Edit with chat")}</Link>
+                <button type="button" className="dp-link" onClick={() => { params.delete("saved"); setParams(params); }}>{t("Dismiss")}</button>
+              </span>
+            </div>
+          )}
+          {!params.get("saved") && <div className="dp-row" style={{ justifyContent: "flex-end" }}><Link to={`/store-manager/dashboards/new?edit=${encodeURIComponent(selected.id)}`} className="dp-btn dp-btn--secondary dp-btn--sm">{t("Edit with chat")}</Link></div>}
+          {loadFailed && <div className="sm-load-error" role="alert"><span>{t("Orders could not be loaded. Check your connection and try again.")}</span><button type="button" className="tap" onClick={() => void reload()}>{t("Retry")}</button></div>}
+          {loading ? <p className="muted" role="status">{t("Loading your orders…")}</p> : <DashboardGrid dashboard={selected} rows={rows} />}
+          <p className="muted" style={{ fontSize: "0.8125rem", margin: 0 }}>{t("This dashboard reads only your outlet's orders, deliveries and receipts. It never changes them.")}</p>
+        </div>
+      </>
+    );
+  }
 
   const today = colomboDate(Date.now());
   const arriving = rows.filter((row) => arrivesOn(row, today)).sort(sortByArrival);
@@ -41,10 +84,7 @@ export function StoreManagerDashboardPage() {
   return (
     <>
       <StoreManagerHero title={t("Your Deliveries")} subtitle={t("See what is arriving, what needs attention and when to order next.")}>
-        <Link to="/store-manager/orders/new" className="sm-btn-place-order">
-          <img src={iconPlus} alt="" aria-hidden="true" width={24} height={24} />
-          {t("Place Order")}
-        </Link>
+        {heroActions}
       </StoreManagerHero>
 
       <div className="sm-stat-row">
@@ -110,7 +150,7 @@ export function StoreManagerDashboardPage() {
                   <span className="muted">{t("Expected arrival:")} </span>
                   <strong>{(row.delivery?.arrivalPrediction?.estimatedArrivalAt || row.planning.plannedArrivalAt) ? colomboTime(row.delivery?.arrivalPrediction?.estimatedArrivalAt || row.planning.plannedArrivalAt!) : "—"}</strong>
                 </p>
-                <Link to={`/store-manager/orders?order=${encodeURIComponent(row.order.id)}`} className="sm-track-link">{t("Track order")}<Chevron /></Link>
+                <Link to={`/store-manager/orders/${encodeURIComponent(row.order.id)}/track`} className="sm-track-link">{t("Track order")}<Chevron /></Link>
               </div>
             </div>
           ))}

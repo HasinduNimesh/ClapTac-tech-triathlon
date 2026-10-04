@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -1247,8 +1248,9 @@ func (s Service) internalForPlan(ctx context.Context, pl domain.Plan, depot stri
 			PlanID: pl.ID, PlanRef: pl.PlanRef, DeliveryDate: pl.DeliveryDate, PlanStatus: pl.Status,
 			TripID: tr.ID, TripNumber: tr.TripNumber, VehicleID: tr.VehicleID,
 			VehicleType: v.Type, VehicleTemperatureCapability: v.Temp, VehicleDepot: v.HomeDepot,
+			VehicleWeightCapacityKg: v.WeightCap, VehicleVolumeCapacityM3: v.VolumeCap,
 			Allocations: []domain.InternalAllocation{},
-			PlanVersion: pl.CurrentVersion, PlanPublishedAt: pl.PublishedAt,
+			PlanVersion: pl.CurrentVersion, PlanPublishedAt: pl.PublishedAt, PlanPublishedBy: publication.PublishedBy,
 			PlanAcknowledgements: publication.Acknowledgements,
 		}
 		for _, a := range allocs {
@@ -1258,12 +1260,46 @@ func (s Service) internalForPlan(ctx context.Context, pl domain.Plan, depot stri
 			o := orderByID[a.OrderID]
 			it.Allocations = append(it.Allocations, domain.InternalAllocation{
 				AllocationID: a.ID, OrderID: a.OrderID, OrderRef: o.OrderRef, OutletID: o.OutletID, StopSequence: a.Sequence,
-				PlannedArrivalAt: a.PlannedArrivalAt,
+				PlannedArrivalAt: a.PlannedArrivalAt, PlannedDepartureAt: a.PlannedDepartureAt,
+				Brand: o.Brand, WeightKg: o.WeightKg, VolumeM3: o.VolumeM3, Temperature: o.Temp,
+				OutletName: o.Outlet.Name, DockType: o.Outlet.DockType,
+				District: o.Outlet.District, WindowOpen: o.Outlet.WindowOpen, WindowClose: o.Outlet.WindowClose,
+				ParkingConstraint: o.Outlet.ParkingConstraint, MallWindow: o.Outlet.MallWindow,
 			})
 		}
+		sort.Slice(it.Allocations, func(i, j int) bool { return it.Allocations[i].StopSequence < it.Allocations[j].StopSequence })
+		it.PlannedDepartureAt, it.PlannedReturnAt = tripDepotTimes(it.Allocations, v.HomeDepot, world.Est)
 		out = append(out, it)
 	}
 	return out, nil
+}
+
+// tripDepotTimes estimates when a trip leaves and returns to its depot: the
+// first planned arrival minus the depot leg, and the last planned departure
+// plus the leg home.
+func tripDepotTimes(allocs []domain.InternalAllocation, depot string, est travel.Estimator) (*time.Time, *time.Time) {
+	if len(allocs) == 0 {
+		return nil, nil
+	}
+	var leave, back *time.Time
+	if first := allocs[0]; first.PlannedArrivalAt != nil {
+		_, minutes := est.Estimate(depot, firstNonEmpty(first.District, first.OutletID))
+		t := first.PlannedArrivalAt.Add(-time.Duration(minutes) * time.Minute)
+		leave = &t
+	}
+	if last := allocs[len(allocs)-1]; last.PlannedDepartureAt != nil {
+		_, minutes := est.Estimate(firstNonEmpty(last.District, last.OutletID), depot)
+		t := last.PlannedDepartureAt.Add(time.Duration(minutes) * time.Minute)
+		back = &t
+	}
+	return leave, back
+}
+
+func firstNonEmpty(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
 }
 
 func actorID(p *authorization.Profile) string {

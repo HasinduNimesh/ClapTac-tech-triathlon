@@ -152,6 +152,10 @@ type Outlet struct {
 	ChilledTemperatureMinC        *float64   `json:"chilledTemperatureMinC,omitempty"`
 	ChilledTemperatureMaxC        *float64   `json:"chilledTemperatureMaxC,omitempty"`
 	Version                       int        `json:"version"`
+	// Latitude/Longitude are approximate (district centre + offset) unless set exactly.
+	Latitude            *float64 `json:"latitude,omitempty"`
+	Longitude           *float64 `json:"longitude,omitempty"`
+	LocationApproximate bool     `json:"locationApproximate"`
 }
 
 // NotificationPreferences keeps an outlet's SMS number private from ordinary
@@ -656,7 +660,7 @@ func (s Store) UpdateCalendar(ctx context.Context, day CalendarDay, expected int
 }
 
 func (s Store) Outlet(ctx context.Context, id string) (Outlet, error) {
-	o, err := scanOutlet(s.Pool.QueryRow(ctx, outletSelect+" WHERE id = $1", id))
+	o, err := scanOutlet(s.Pool.QueryRow(ctx, outletReadSelect+" WHERE id = $1", id))
 	if err == pgx.ErrNoRows {
 		return Outlet{}, fmt.Errorf("not found")
 	}
@@ -664,7 +668,7 @@ func (s Store) Outlet(ctx context.Context, id string) (Outlet, error) {
 }
 
 func (s Store) ListOutlets(ctx context.Context) ([]Outlet, error) {
-	rows, err := s.Pool.Query(ctx, outletSelect+" ORDER BY id")
+	rows, err := s.Pool.Query(ctx, outletReadSelect+" ORDER BY id")
 	if err != nil {
 		return nil, err
 	}
@@ -720,13 +724,23 @@ const outletSelect = `
 		COALESCE(access_instructions_confirmed_by,''), access_instructions_confirmed_at, chilled_temperature_min_c, chilled_temperature_max_c, version
 FROM outlets`
 
+// outletReadSelect adds the map position to outlet reads. Updates keep using
+// outletSelect, which their positional scans depend on.
+var outletReadSelect = strings.Replace(outletSelect, "\nFROM outlets", `,
+		COALESCE(latitude, (SELECT dl.latitude FROM district_locations dl WHERE dl.district = outlets.district)
+			+ ((('x' || substr(md5(id), 1, 4))::bit(16)::int / 65535.0) - 0.5) * 0.04),
+		COALESCE(longitude, (SELECT dl.longitude FROM district_locations dl WHERE dl.district = outlets.district)
+			+ ((('x' || substr(md5(id), 5, 4))::bit(16)::int / 65535.0) - 0.5) * 0.04),
+		latitude IS NULL OR longitude IS NULL
+FROM outlets`, 1)
+
 type scanner interface {
 	Scan(dest ...any) error
 }
 
 func scanOutlet(row scanner) (Outlet, error) {
 	var o Outlet
-	err := row.Scan(&o.ID, &o.Brand, &o.Name, &o.District, &o.Depot, &o.DockType, &o.ParkingConstraint, &o.MallWindow, &o.WindowOpenTime, &o.WindowCloseTime, &o.AccessInstructions, &o.AccessInstructionsUpdatedBy, &o.AccessInstructionsUpdatedAt, &o.AccessInstructionsConfirmedBy, &o.AccessInstructionsConfirmedAt, &o.ChilledTemperatureMinC, &o.ChilledTemperatureMaxC, &o.Version)
+	err := row.Scan(&o.ID, &o.Brand, &o.Name, &o.District, &o.Depot, &o.DockType, &o.ParkingConstraint, &o.MallWindow, &o.WindowOpenTime, &o.WindowCloseTime, &o.AccessInstructions, &o.AccessInstructionsUpdatedBy, &o.AccessInstructionsUpdatedAt, &o.AccessInstructionsConfirmedBy, &o.AccessInstructionsConfirmedAt, &o.ChilledTemperatureMinC, &o.ChilledTemperatureMaxC, &o.Version, &o.Latitude, &o.Longitude, &o.LocationApproximate)
 	return o, err
 }
 

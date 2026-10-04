@@ -13,9 +13,15 @@ Kubernetes manifests describe the intended NGINX/TLS edge → kGateway → servi
 - Docker Engine and Docker Compose v2 (`docker compose version`)
 - Go 1.22+ and Node.js 20+ for local builds/tests outside Docker
 - Python 3 for the standard-library seed validator
-- Flutter 3.x only if separately developing the optional driver shell
+- Flutter 3.x only to develop the loader app outside Docker (`apps/loader-web`)
+- Windows: WSL 2 for Docker Desktop (`wsl --install`)
 
 ## Local setup
+
+Step-by-step guides, including demo data and troubleshooting:
+
+- **Web (Dispatcher, Store Manager) and the backend:** [docs/run-locally.md](docs/run-locally.md)
+- **Loader workspace (Flutter web, served at `/loader-app/`):** [docs/run-dispatcher-and-loader.md](docs/run-dispatcher-and-loader.md) and [apps/loader-web/README.md](apps/loader-web/README.md)
 
 ```bash
 cp .env.example .env
@@ -100,7 +106,7 @@ The Hackathon build follows the Designathon workflow (order → plan/allocate/de
 
 - `database/seeds/` CSVs are converted from the official `Tech-Triathlon 2026 - Datasets/` release via `scripts/convert-official-dataset.py`; the converted district-travel and service-allowance tables are documented lossy approximations (see `database/seeds/README.md`), not the official reference model exactly. `validate-seeds.py` checks structural consistency, not semantic fidelity to the official model.
 - The local identity service implements the ThunderID contract for development; replace it with the official identity provider before external deployment.
-- The Flutter driver shell is optional; the responsive React PWA is the supported required client. Maps and Datathon forecast imports are outside current implementation scope.
+- The Flutter driver shell is optional; the responsive React PWA is the supported required client. Maps use approximate outlet positions (district centre; no GPS). Datathon forecast imports are outside current implementation scope.
 - A public URL, DNS zone, TLS certificate, production cluster, durable DB/object storage, and production secret store have not been supplied. Kubernetes files are deployment inputs and need target-specific release configuration.
 - Assistant provider is optional and not configured by default. Planning feasibility remains deterministic; sensitive assistant writes require explicit human approval and service-side reauthorization.
 - See [known deployment requirements](docs/architecture.md), [AI disclosure](docs/ai-disclosure.md), and the [submission runbook](docs/submission.md).
