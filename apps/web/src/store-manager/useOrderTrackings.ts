@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { apiJSON, Order } from "../api/client";
 import { LiveLocation } from "../api/delivery";
 import { useAuth } from "../auth/AuthContext";
+import { splitTrackingResults } from "./trackingResults.mjs";
 
 export type Tracking = {
   stage: string;
@@ -23,7 +24,7 @@ export function useOrderTrackings() {
   const [rows, setRows] = useState<Tracking[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
-  const [skipped, setSkipped] = useState(0);
+  const [unavailable, setUnavailable] = useState<Order[]>([]);
   const latest = useRef(0);
 
   const reload = useCallback(async () => {
@@ -37,10 +38,9 @@ export function useOrderTrackings() {
         (body.items || []).map(async (order) => (await apiJSON<{ tracking: Tracking }>(`/orders/${order.id}/tracking`, token)).tracking),
       );
       if (request !== latest.current) return;
-      const ok = settled.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
-      ok.sort((a, b) => b.order.requestedDeliveryDate.localeCompare(a.order.requestedDeliveryDate) || b.order.orderRef.localeCompare(a.order.orderRef));
-      setRows(ok);
-      setSkipped(settled.length - ok.length);
+      const split = splitTrackingResults(body.items || [], settled);
+      setRows(split.rows);
+      setUnavailable(split.unavailable);
     } catch {
       if (request === latest.current) {
         setLoadFailed(true);
@@ -59,5 +59,6 @@ export function useOrderTrackings() {
   }, [rows, reload]);
   useEffect(() => () => { latest.current += 1; }, []);
 
-  return { rows, loading, loadFailed, skipped, reload };
+  // Orders that exist but whose progress could not be loaded: shown by name, never silently dropped.
+  return { rows, loading, loadFailed, skipped: unavailable.length, unavailable, reload };
 }
