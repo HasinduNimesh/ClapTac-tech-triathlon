@@ -77,8 +77,36 @@ spec:
       ports: [{ protocol: TCP, port: 8080 }]
     - to:
         - podSelector:
+            matchLabels: { app: shared-service }
+      ports: [{ protocol: TCP, port: 8080 }]
+    - to:
+        - podSelector:
+            matchLabels: { app: thunderid }
+      ports: [{ protocol: TCP, port: 8090 }]
+    - to:
+        - podSelector:
             matchLabels: { app: otel-collector }
       ports: [{ protocol: TCP, port: 4318 }]
+---
+# kGateway routes /api/v1/agent* to the agent tier. The optional LLM provider
+# is outside the cluster; operators add a provider-specific egress rule when
+# they configure LLM_BASE_URL (the assistants answer agent_unavailable without it).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-kgateway-to-agents
+  namespace: waypoint
+spec:
+  podSelector:
+    matchLabels:
+      waypoint.io/tier: agent
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: { app: kgateway }
+      ports:
+        - { protocol: TCP, port: 8080 }
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

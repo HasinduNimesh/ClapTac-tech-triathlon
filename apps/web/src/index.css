@@ -1729,3 +1729,91 @@ td {
     padding: 16px 20px;
   }
 }
+
+/* Order text helper (A1) */
+.sm-helper-card textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #b8c0cc;
+  border-radius: 6px;
+  resize: vertical;
+}
+.sm-helper-actions { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.sm-helper-actions .tap.primary { background: #3a57e8; color: #fff; border: none; border-radius: 6px; padding: 8px 20px; font-weight: 600; cursor: pointer; }
+.sm-helper-actions .tap.primary:disabled { opacity: 0.6; cursor: default; }
+.sm-helper-link { background: none; border: none; color: #3a57e8; font-weight: 600; cursor: pointer; padding: 4px 8px; min-height: 44px; }
+.sm-helper-result { margin-top: 20px; display: flex; flex-direction: column; gap: 12px; }
+.sm-helper-previous { display: flex; align-items: center; gap: 10px; font-size: 0.9375rem; }
+.sm-helper-previous input { width: 20px; min-height: 20px; }
+.sm-helper-lines, .sm-helper-questions { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.sm-helper-lines li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 1px solid #e3e7ef;
+  border-radius: 6px;
+}
+.sm-helper-question { padding: 12px 16px; border-left: 4px solid #e8a33a; background: #fff7e8; border-radius: 6px; }
+.sm-helper-question-title { margin: 0; font-weight: 600; }
+.sm-helper-quote { margin: 2px 0 8px; font-style: italic; }
+.sm-helper-answer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.sm-helper-answer select, .sm-helper-answer input { padding: 8px 10px; border: 1px solid #b8c0cc; border-radius: 6px; background: #fff; }
+.sm-helper-answer input { width: 96px; }
+.sm-helper-product { font-weight: 500; }
+.sm-helper-fills { display: flex; flex-wrap: wrap; gap: 12px; }
+.sm-helper-filled { margin: 0; }
+
+.sm-ai-fab {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 50;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border: 0;
+  border-radius: 50%;
+  background: #3a57e8;
+  color: #ffffff;
+  box-shadow: 0 6px 20px rgba(17, 38, 146, 0.3);
+  cursor: pointer;
+}
+.sm-ai-fab:hover { filter: brightness(0.95); }
+.sm-ai-fab[aria-expanded="true"] { box-shadow: 0 0 0 4px #c9d2fa; }
+/* Sparkle button (.sm-ai-fab above) opens the order helper in this side panel. */
+.sm-ai-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 60;
+  width: min(460px, 100vw);
+  overflow-y: auto;
+  padding: 16px;
+  background: #ffffff;
+  box-shadow: -8px 0 32px rgba(17, 38, 146, 0.18);
+}
+.sm-ai-drawer .sm-form-card { box-shadow: none; padding: 8px; }
+.sm-ai-drawer-close {
+  float: right;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  background: #eef1ff;
+  color: #232d42;
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .sm-ai-drawer.open { animation: sm-ai-drawer-in 160ms ease-out; }
+  @keyframes sm-ai-drawer-in { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+}
+
+/* Keep the habit card clear of the sparkle button. */
+body:has(.sm-ai-fab) .habit-card { bottom: 96px; }

@@ -251,6 +251,24 @@ services:
       delivery-service: { condition: service_healthy }
       shared-service: { condition: service_healthy }
 
+  agent-assistants:
+    # A1 order assistant and A2 dashboard assistant (Python/LangGraph). Agent
+    # tier: no DATABASE_URL; reads business services with the caller's token.
+    build: { context: ./services/agent-assistants }
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-local}
+      OIDC_ISSUER: ${OIDC_ISSUER:-http://localhost:8090}
+      OIDC_JWKS_URL: http://thunderid:8090/oauth2/jwks
+      OIDC_AUDIENCE: ${OIDC_AUDIENCE:-waypoint-api}
+      SHARED_SERVICE_URL: http://shared-service:8080
+      ORDER_SERVICE_URL: http://order-service:8080
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+    depends_on:
+      order-service: { condition: service_healthy }
+      shared-service: { condition: service_healthy }
+
   web:
     build:
       context: ./apps/web
@@ -284,6 +302,7 @@ services:
       - shared-service
       - integration-service
       - agent-orchestrator
+      - agent-assistants
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/health/live"]
       interval: 10s

@@ -29,6 +29,7 @@ const (
 	PermLoadingIssue           = "loading:issue"
 	PermLoadingReady           = "loading:ready"
 	PermLoadingReadInternal    = "loading:read-internal"
+	PermLoadingDecide          = "loading:decide"
 	PermPlansReadInternal      = "plans:read-internal"
 	PermDeliveriesReadInternal = "deliveries:read-internal"
 	PermTripViewAssigned       = "trip:view-assigned"
@@ -45,6 +46,7 @@ const (
 	PermMasterDataUpdate       = "masterdata:update"
 	PermPolicyReadInternal     = "policy:read-internal"
 	PermPlanAcknowledge        = "plan:acknowledge"
+	PermDashboardManageOwn     = "dashboard:manage-own"
 )
 
 var RolePermissions = map[string][]string{
@@ -53,6 +55,7 @@ var RolePermissions = map[string][]string{
 		PermOrderViewOwn,
 		PermReceiptConfirm,
 		PermDeliveryIssueCreate,
+		PermDashboardManageOwn,
 	},
 	RoleDispatcher: {
 		PermOrderViewAll,
@@ -66,8 +69,10 @@ var RolePermissions = map[string][]string{
 		PermFleetUpdate,
 		PermDeliveryViewAll,
 		PermLoadingViewAll,
+		PermLoadingDecide,
 		PermAuditRead,
 		PermMasterDataUpdate,
+		PermDashboardManageOwn,
 	},
 	RoleLoader: {
 		PermPlanAcknowledge,

@@ -54,6 +54,7 @@ export type PlanVehicle = {
   status: string;
   weightCapacityKg: number;
   volumeCapacityM3: number;
+  kmPerL?: number;
   weeklyFuelQuotaL: number;
   weekFuelUsedL?: number;
   weekFuelPlannedL?: number;
