@@ -1731,7 +1731,6 @@ td {
 }
 
 /* Order text helper (A1) */
-.sm-helper-wrap { padding-bottom: 0; }
 .sm-helper-card textarea {
   width: 100%;
   padding: 10px 12px;
@@ -1765,3 +1764,56 @@ td {
 .sm-helper-product { font-weight: 500; }
 .sm-helper-fills { display: flex; flex-wrap: wrap; gap: 12px; }
 .sm-helper-filled { margin: 0; }
+
+.sm-ai-fab {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 50;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border: 0;
+  border-radius: 50%;
+  background: #3a57e8;
+  color: #ffffff;
+  box-shadow: 0 6px 20px rgba(17, 38, 146, 0.3);
+  cursor: pointer;
+}
+.sm-ai-fab:hover { filter: brightness(0.95); }
+.sm-ai-fab[aria-expanded="true"] { box-shadow: 0 0 0 4px #c9d2fa; }
+/* Sparkle button (.sm-ai-fab above) opens the order helper in this side panel. */
+.sm-ai-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 60;
+  width: min(460px, 100vw);
+  overflow-y: auto;
+  padding: 16px;
+  background: #ffffff;
+  box-shadow: -8px 0 32px rgba(17, 38, 146, 0.18);
+}
+.sm-ai-drawer .sm-form-card { box-shadow: none; padding: 8px; }
+.sm-ai-drawer-close {
+  float: right;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  background: #eef1ff;
+  color: #232d42;
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .sm-ai-drawer.open { animation: sm-ai-drawer-in 160ms ease-out; }
+  @keyframes sm-ai-drawer-in { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+}
+
+/* Keep the habit card clear of the sparkle button. */
+body:has(.sm-ai-fab) .habit-card { bottom: 96px; }

@@ -8,7 +8,7 @@ import { formatDay } from "./orderStage.mjs";
 import { CutoffNotice, StoreManagerHero } from "./StoreManagerHero";
 import iconCheck from "../assets/store-manager/icon-check.svg";
 import { useHelpersAvailable } from "../api/assistants";
-import { OrderTextHelper } from "./OrderTextHelper";
+import { OrderHelperLauncher } from "./OrderHelperLauncher";
 import type { FormFill } from "./orderDraft.mjs";
 
 function failureMessage(error: unknown, fallback: string) {
@@ -36,11 +36,12 @@ export function NewOrderPage() {
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const inFlight = useRef(false);
-  const helpers = useHelpersAvailable(user?.access_token);
-  const [filledFrom, setFilledFrom] = useState("");
 
   const outlet = profile?.outletIds?.[0] || "";
   const goods = temp === "chilled" ? t("Chilled") : t("Ambient");
+
+  const helpers = useHelpersAvailable(user?.access_token);
+  const [filledFrom, setFilledFrom] = useState("");
 
   function fillFromText(fill: FormFill, neededBy: string | null) {
     setTemp(fill.temperature);
@@ -136,12 +137,7 @@ export function NewOrderPage() {
         <CutoffNotice />
       </StoreManagerHero>
 
-      {helpers?.order && user?.access_token && (
-        // Kept outside the order form so Enter in these fields can never submit an order.
-        <div className="sm-page-body sm-helper-wrap">
-          <OrderTextHelper token={user.access_token} onFill={fillFromText} />
-        </div>
-      )}
+      {helpers?.order && user?.access_token && <OrderHelperLauncher token={user.access_token} onFill={fillFromText} />}
 
       <form className="sm-page-body sm-order-form" onSubmit={onSubmit} aria-describedby={error ? "order-error" : undefined}>
         {error && <p id="order-error" className="status-bad sm-form-error" role="alert">{error}</p>}

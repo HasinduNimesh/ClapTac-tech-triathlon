@@ -154,6 +154,8 @@ test("shared text, status, guidance, and action colors meet WCAG AA contrast aga
     ["sm legacy action button", color(rule('.sm-legacy-body button[type="button"]'), "color"), smLegacySubmitBg],
     ["order text helper button", color(rule(".sm-helper-actions .tap.primary"), "color"), color(rule(".sm-helper-actions .tap.primary"), "background")],
     ["order text helper link", color(rule(".sm-helper-link"), "color"), cardBackground],
+    ["order helper button", color(rule(".sm-ai-fab"), "color"), color(rule(".sm-ai-fab"), "background")],
+    ["order helper close", color(rule(".sm-ai-drawer-close"), "color"), color(rule(".sm-ai-drawer-close"), "background")],
   ];
   for (const [label, foreground, background] of smPairs) {
     assert.ok(contrast(foreground, background) >= 4.5, `${label} contrast is below 4.5:1`);
@@ -178,7 +180,7 @@ test("shared text, status, guidance, and action colors meet WCAG AA contrast aga
     ".not-found-action", ".sm-breadcrumb", ".sm-breadcrumb-link", ".sm-load-error", ".sm-order-tab.active",
     ".sm-btn-secondary", ".sm-timeline-step--warn .sm-timeline-label",
     '.sm-legacy-body button[type="submit"]', '.sm-legacy-body button[type="button"]',
-    ".sm-helper-actions .tap.primary", ".sm-helper-link",
+    ".sm-helper-actions .tap.primary", ".sm-helper-link", ".sm-ai-fab", ".sm-ai-drawer-close",
   ]);
   assert.deepEqual(
     explicitForegroundSelectors.filter((selector) => !testedForegroundSelectors.has(selector)),

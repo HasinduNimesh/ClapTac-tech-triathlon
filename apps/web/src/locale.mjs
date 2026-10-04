@@ -899,6 +899,28 @@ const storeManagerDashboardLabels = {
   },
 };
 
+function lookupTranslation(locale, source) { return labels[locale]?.[source] ?? disruptionLabels[locale]?.[source] ?? driverPrivacyLabels[locale]?.[source] ?? loaderLabels[locale]?.[source] ?? loaderOfflineLabels[locale]?.[source] ?? loaderStatusLabels[locale]?.[source] ?? loaderScannerLabels[locale]?.[source] ?? storeLabels[locale]?.[source] ?? storeTrackingLabels[locale]?.[source] ?? dispatcherLabels[locale]?.[source] ?? planningLabels[locale]?.[source] ?? breakdownLabels[locale]?.[source] ?? auditLabels[locale]?.[source] ?? masterDataLabels[locale]?.[source] ?? liveOpsLabels[locale]?.[source] ?? loadingOpsLabels[locale]?.[source] ?? operationalValueLabels[locale]?.[source] ?? masterNoticeLabels[locale]?.[source] ?? policyConflictLabels[locale]?.[source] ?? followUpLabels[locale]?.[source] ?? forecastLabels[locale]?.[source] ?? serviceTimeLabels[locale]?.[source] ?? etaLabels[locale]?.[source] ?? latenessLabels[locale]?.[source] ?? notificationLabels[locale]?.[source] ?? coldChainLabels[locale]?.[source] ?? custodyLabels[locale]?.[source] ?? deferralLabels[locale]?.[source] ?? storeManagerDashboardLabels[locale]?.[source] ?? dispatcherWorkspaceLabels[locale]?.[source] ?? storeWorkspaceLabels[locale]?.[source]; }
+
+const countMessages = [
+  [/^Sync paused \(401\)\. (\d+) kept in IndexedDB\.$/, "Sync paused (401). {count} kept in IndexedDB."],
+  [/^Offline · (\d+) queued$/, "Offline · {count} queued"],
+  [/^Delivery service unavailable · (\d+) unsynced item\(s\) remain saved on this device$/, "Delivery service unavailable · {count} unsynced item(s) remain saved on this device"],
+  [/^No connection · (\d+) item\(s\) saved on this device$/, "No connection · {count} item(s) saved on this device"],
+  [/^Syncing (\d+) saved item\(s\)…$/, "Syncing {count} saved item(s)…"],
+  [/^(\d+) upload\(s\)\/event\(s\) pending on this device$/, "{count} upload(s)/event(s) pending on this device"],
+];
+
+export function translate(locale, source) {
+  const exact = lookupTranslation(locale, source);
+  if (exact !== undefined) return exact;
+  for (const [pattern, template] of countMessages) {
+    const match = source.match(pattern);
+    const localized = match && lookupTranslation(locale, template);
+    if (localized) return localized.replace("{count}", match[1]);
+  }
+  return source;
+}
+
 // Store Manager order text helper (A1) and saved dashboards.
 const helperLabels = {
   si: {
@@ -960,25 +982,5 @@ const helperLabels = {
     "Nothing to fill in yet. Try writing the items with quantities.": "நிரப்ப இன்னும் எதுவும் இல்லை. அளவுகளுடன் பொருட்களை எழுதிப் பாருங்கள்.",
   },
 };
-
-function lookupTranslation(locale, source) { return labels[locale]?.[source] ?? helperLabels[locale]?.[source] ?? disruptionLabels[locale]?.[source] ?? driverPrivacyLabels[locale]?.[source] ?? loaderLabels[locale]?.[source] ?? loaderOfflineLabels[locale]?.[source] ?? loaderStatusLabels[locale]?.[source] ?? loaderScannerLabels[locale]?.[source] ?? storeLabels[locale]?.[source] ?? storeTrackingLabels[locale]?.[source] ?? dispatcherLabels[locale]?.[source] ?? planningLabels[locale]?.[source] ?? breakdownLabels[locale]?.[source] ?? auditLabels[locale]?.[source] ?? masterDataLabels[locale]?.[source] ?? liveOpsLabels[locale]?.[source] ?? loadingOpsLabels[locale]?.[source] ?? operationalValueLabels[locale]?.[source] ?? masterNoticeLabels[locale]?.[source] ?? policyConflictLabels[locale]?.[source] ?? followUpLabels[locale]?.[source] ?? forecastLabels[locale]?.[source] ?? serviceTimeLabels[locale]?.[source] ?? etaLabels[locale]?.[source] ?? latenessLabels[locale]?.[source] ?? notificationLabels[locale]?.[source] ?? coldChainLabels[locale]?.[source] ?? custodyLabels[locale]?.[source] ?? deferralLabels[locale]?.[source] ?? storeManagerDashboardLabels[locale]?.[source] ?? dispatcherWorkspaceLabels[locale]?.[source] ?? storeWorkspaceLabels[locale]?.[source]; }
-
-const countMessages = [
-  [/^Sync paused \(401\)\. (\d+) kept in IndexedDB\.$/, "Sync paused (401). {count} kept in IndexedDB."],
-  [/^Offline · (\d+) queued$/, "Offline · {count} queued"],
-  [/^Delivery service unavailable · (\d+) unsynced item\(s\) remain saved on this device$/, "Delivery service unavailable · {count} unsynced item(s) remain saved on this device"],
-  [/^No connection · (\d+) item\(s\) saved on this device$/, "No connection · {count} item(s) saved on this device"],
-  [/^Syncing (\d+) saved item\(s\)…$/, "Syncing {count} saved item(s)…"],
-  [/^(\d+) upload\(s\)\/event\(s\) pending on this device$/, "{count} upload(s)/event(s) pending on this device"],
-];
-
-export function translate(locale, source) {
-  const exact = lookupTranslation(locale, source);
-  if (exact !== undefined) return exact;
-  for (const [pattern, template] of countMessages) {
-    const match = source.match(pattern);
-    const localized = match && lookupTranslation(locale, template);
-    if (localized) return localized.replace("{count}", match[1]);
-  }
-  return source;
-}
+// Registered here rather than in lookupTranslation so other branches can extend that line freely.
+for (const locale of ["si", "ta"]) Object.assign(labels[locale], helperLabels[locale]);
