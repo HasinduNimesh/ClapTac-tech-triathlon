@@ -340,4 +340,7 @@ type SyncOperation struct {
 	OccurredAt           string         `json:"occurredAt"`
 	DependsOnOperationID string         `json:"dependsOnOperationId"`
 	Payload              map[string]any `json:"payload"`
+	// PlanVersion is the plan version the driver app was showing when the
+	// record was made offline. Optional; zero means unknown.
+	PlanVersion int `json:"planVersion,omitempty"`
 }

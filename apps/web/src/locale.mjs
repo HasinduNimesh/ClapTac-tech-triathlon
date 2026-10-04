@@ -1229,3 +1229,6 @@ Object.assign(labels.ta, {
   "Report-by deadline is today.": "அறிக்கையிட வேண்டிய காலக்கெடு இன்று.",
   "Report-by deadline is tomorrow.": "அறிக்கையிட வேண்டிய காலக்கெடு நாளை.",
 });
+// W11: sync conflicts list with Settle on the dispatcher Notifications page.
+Object.assign(labels.si, { "Sync conflict settled": "සමමුහුර්ත ගැටුම විසඳා ඇත", "Recorded on plan": "සටහන් කළ සැලැස්ම", "current plan": "වත්මන් සැලැස්ම", "Settled by": "විසඳූයේ", "Settle": "විසඳන්න" });
+Object.assign(labels.ta, { "Sync conflict settled": "ஒத்திசைவு மோதல் தீர்க்கப்பட்டது", "Recorded on plan": "பதிவு செய்யப்பட்ட திட்டம்", "current plan": "தற்போதைய திட்டம்", "Settled by": "தீர்த்தவர்", "Settle": "தீர்க்கவும்" });

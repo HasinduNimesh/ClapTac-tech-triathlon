@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"sync/atomic"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -191,6 +192,10 @@ func TestOutletLastAttemptedScopedByDate(t *testing.T) {
 	}
 }
 
+var stubPlanVersion atomic.Int64
+
+func init() { stubPlanVersion.Store(1) }
+
 func TestDeliveryWorkflow(t *testing.T) {
 	ctx := context.Background()
 	req := testcontainers.ContainerRequest{
@@ -237,6 +242,7 @@ func TestDeliveryWorkflow(t *testing.T) {
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0041_delivery_checkout.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0043_delivery_arrival_predictions.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0044_delivery_returns.sql"))
+	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0071_delivery_sync_conflicts.sql"))
 
 	peers := httptest.NewServer(peerStub())
 	t.Cleanup(peers.Close)
@@ -604,6 +610,44 @@ func TestDeliveryWorkflow(t *testing.T) {
 	if arrive3.status != http.StatusOK || !strings.Contains(arrive3.body, `"APPLIED"`) {
 		t.Fatalf("sync arrive 3 %d %s", arrive3.status, arrive3.body)
 	}
+	// W11: a record made offline on plan v3 while the plan is now v4 is kept,
+	// applied, and listed for the dispatcher as a conflict. Nothing is overwritten.
+	stubPlanVersion.Store(4)
+	staleOp := do(t, srv, http.MethodPost, "/api/v1/delivery/sync", "usr-driver", []byte(`{"operations":[{"operationId":"offline-v3-incident","type":"INCIDENT_REPORT","tripId":"trip-north","stopId":"`+stop3+`","planVersion":3,"occurredAt":"2026-09-29T09:20:00Z","payload":{"category":"OUTLET","description":"Gate locked, recorded offline on v3"}}]}`), "")
+	if staleOp.status != http.StatusOK || !strings.Contains(staleOp.body, `"APPLIED"`) || !strings.Contains(staleOp.body, `"currentPlanVersion":4`) || !strings.Contains(staleOp.body, `"recordedPlanVersion":3`) {
+		t.Fatalf("stale-version op must apply and report the newer version %d %s", staleOp.status, staleOp.body)
+	}
+	staleReplay := do(t, srv, http.MethodPost, "/api/v1/delivery/sync", "usr-driver", []byte(`{"operations":[{"operationId":"offline-v3-incident","type":"INCIDENT_REPORT","tripId":"trip-north","planVersion":3}]}`), "")
+	if !strings.Contains(staleReplay.body, `"DUPLICATE"`) {
+		t.Fatalf("replay %s", staleReplay.body)
+	}
+	if code := do(t, srv, http.MethodGet, "/api/v1/delivery/sync-conflicts", "usr-driver", nil, "").status; code != http.StatusForbidden {
+		t.Fatalf("driver must not list sync conflicts: %d", code)
+	}
+	conflicts := do(t, srv, http.MethodGet, "/api/v1/delivery/sync-conflicts?date=2026-09-29", "usr-dispatcher", nil, "")
+	var conflictList struct {
+		Items []struct {
+			ID                  string `json:"id"`
+			OperationID         string `json:"operationId"`
+			RecordedPlanVersion int    `json:"recordedPlanVersion"`
+			CurrentPlanVersion  int    `json:"currentPlanVersion"`
+			SettledBy           string `json:"settledBy"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(conflicts.body), &conflictList); err != nil || len(conflictList.Items) != 1 || conflictList.Items[0].OperationID != "offline-v3-incident" || conflictList.Items[0].RecordedPlanVersion != 3 || conflictList.Items[0].CurrentPlanVersion != 4 {
+		t.Fatalf("conflict list %d %s", conflicts.status, conflicts.body)
+	}
+	if other := do(t, srv, http.MethodGet, "/api/v1/delivery/sync-conflicts?date=2026-01-01", "usr-dispatcher", nil, ""); strings.Contains(other.body, "offline-v3-incident") {
+		t.Fatalf("date filter ignored %s", other.body)
+	}
+	settled := do(t, srv, http.MethodPost, "/api/v1/delivery/sync-conflicts/"+conflictList.Items[0].ID+"/settle", "usr-dispatcher", nil, "")
+	if settled.status != http.StatusOK || !strings.Contains(settled.body, `"settledBy"`) {
+		t.Fatalf("settle %d %s", settled.status, settled.body)
+	}
+	if openOnly := do(t, srv, http.MethodGet, "/api/v1/delivery/sync-conflicts?status=open", "usr-dispatcher", nil, ""); strings.Contains(openOnly.body, "offline-v3-incident") {
+		t.Fatalf("settled conflict still open %s", openOnly.body)
+	}
+	stubPlanVersion.Store(1)
 	ambientTemp := do(t, srv, http.MethodPost, "/api/v1/delivery/sync", "usr-driver", []byte(`{"operations":[{"operationId":"temp-ambient","type":"TEMPERATURE_READING","tripId":"trip-north","stopId":"`+stop3+`","payload":{"valueC":2.0}}]}`), "")
 	if ambientTemp.status != http.StatusOK || !strings.Contains(ambientTemp.body, `"REJECTED"`) {
 		t.Fatalf("ambient stop must reject cold-chain reading %d %s", ambientTemp.status, ambientTemp.body)
@@ -761,7 +805,7 @@ func peerStub() http.Handler {
 		"tripId": "trip-north", "planId": "plan-1", "planRef": "PLAN000001", "deliveryDate": "2026-09-29",
 		"vehicleId": "VEH001", "vehicleType": "truck", "vehicleTemperatureCapability": "reefer",
 		"depot": "DEPOT_NORTH", "tripNumber": 1, "loadingStatus": "ready",
-		"planVersion": 1, "planAcknowledgements": []map[string]any{{"actorId": "USR006", "actorRole": "DRIVER"}},
+		"planVersion": int(stubPlanVersion.Load()), "planAcknowledgements": []map[string]any{{"actorId": "USR006", "actorRole": "DRIVER"}},
 		"orders": []map[string]any{
 			{"allocationId": "a1", "orderId": "ord-1", "orderRef": "ORD000001", "outletId": "OUT034", "brand": "Fresh", "stopSequence": 1, "loadingStatus": "loaded", "temperatureRequirement": "chilled", "expectedUnits": 10, "shortfallSummary": []any{}},
 			{"allocationId": "a2", "orderId": "ord-2", "orderRef": "ORD000002", "outletId": "OUT021", "brand": "Fresh", "stopSequence": 2, "loadingStatus": "loaded", "temperatureRequirement": "chilled", "expectedUnits": 8, "shortfallSummary": []any{}},
