@@ -369,6 +369,13 @@ class DriverSession extends ChangeNotifier {
         return _pendingCount;
       }
     }
+    await _endSession();
+    return 0;
+  }
+
+  /// Signs out and clears the trip state. It queues nothing: the route completion, if there is one,
+  /// was queued (and sent) before this is called.
+  Future<void> _endSession() async {
     worker?.stop();
     signedIn = false;
     if (queue is SqliteSyncQueue) await (queue as SqliteSyncQueue).useOwner(null);
@@ -384,7 +391,6 @@ class DriverSession extends ChangeNotifier {
     _incidents = 0;
     updates.removeWhere((item) => item.id != planConflictId);
     notifyListeners();
-    return 0;
   }
 
   /// Finishes the route the driver has just completed. It sends the completion and everything before
@@ -424,7 +430,9 @@ class DriverSession extends ChangeNotifier {
       return TripWrapUpResult.nextTrip(finished: finished, next: next);
     }
     if (!signedIn) return const TripWrapUpResult.signedOut();
-    await finishTrip(force: true);
+    // No further trip, or it could not be checked. The completion was already sent above, so this must
+    // not go through finishTrip(), which would see a finished route and queue it a second time.
+    await _endSession();
     return const TripWrapUpResult.signedOut();
   }
 
