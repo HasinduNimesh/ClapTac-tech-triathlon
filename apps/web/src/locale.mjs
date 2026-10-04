@@ -1451,3 +1451,16 @@ Object.assign(labels.ta, {
   "Plan-level acknowledgements without a trip (recorded before trip tracking; they do not mark any trip acknowledged)": "பயணம் குறிப்பிடப்படாத திட்ட அளவிலான ஒப்புதல்கள் (பயணக் கண்காணிப்புக்கு முன் பதிவானவை; அவை எந்த பயணத்தையும் ஒப்புக்கொண்டதாகக் குறிக்காது)",
   "Dispatch reminded you to acknowledge this plan at": "இந்தத் திட்டத்தை ஒப்புக்கொள்ளுமாறு அனுப்புநர் உங்களுக்கு நினைவூட்டிய நேரம்",
 });
+
+// Sinhala entries that the merge of several appended label blocks could not keep in place.
+Object.assign(labels.si, {
+  "Recovery is not complete": "ප්‍රතිසාධනය සම්පූර්ණ නැත",
+  "Retry workshop update": "වැඩමුළු යාවත්කාලීනය නැවත උත්සාහ කරන්න",
+  "Trips already published:": "දැනටමත් ප්‍රකාශිත ගමන්:",
+  "could not be marked as in the workshop, so it can still be planned. The replacement is not confirmed until this succeeds.": "වැඩමුළුවේ ඇති බව සටහන් කළ නොහැකි විය, එබැවින් එය තවමත් සැලසුම් කළ හැක. මෙය සාර්ථක වන තුරු ප්‍රතිස්ථාපනය තහවුරු කර නැත.",
+  "Confirm receipt & report difference": "ලැබීම තහවුරු කර වෙනස වාර්තා කරන්න",
+  "Count differs from the driver's record": "ගණන රියදුරුගේ වාර්තාවට වෙනස් වේ",
+  "Differs from driver record": "රියදුරු වාර්තාවට වෙනස්",
+  "Report the difference so the dispatcher can review it before you confirm.": "ඔබ තහවුරු කිරීමට පෙර සම්ප්‍රේෂකයාට සමාලෝචනය කළ හැකි වන පරිදි වෙනස වාර්තා කරන්න.",
+  "you counted": "ඔබ ගණන් කළේ",
+});
