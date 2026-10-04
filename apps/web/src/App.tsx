@@ -38,6 +38,7 @@ const CreateDashboardPage = lazy(() => import("./store-manager/CreateDashboardPa
 const ReceiptConfirmPage = lazy(() => import("./store-manager/ReceiptConfirmPage").then((m) => ({ default: m.ReceiptConfirmPage })));
 const OrderTimelinePage = lazy(() => import("./store-manager/OrderEvidencePages").then((m) => ({ default: m.OrderTimelinePage })));
 const TrackOrderPage = lazy(() => import("./store-manager/OrderEvidencePages").then((m) => ({ default: m.TrackOrderPage })));
+const StoreManagerHelpPage = lazy(() => import("./store-manager/StoreManagerHelpPage").then((m) => ({ default: m.StoreManagerHelpPage })));
 const StoreSettingsPage = lazy(() => import("./store-manager/StoreSettingsPage").then((m) => ({ default: m.StoreSettingsPage })));
 const StoreManagerLayout = lazy(() => import("./store-manager/StoreManagerLayout").then((m) => ({ default: m.StoreManagerLayout })));
 
@@ -59,6 +60,7 @@ function AppRoutes() {
           <Route path="/store-manager/orders/:orderId/timeline" element={<OrderTimelinePage />} />
           <Route path="/store-manager/orders/:orderId/track" element={<TrackOrderPage />} />
           <Route path="/store-manager/settings" element={<StoreSettingsPage />} />
+          <Route path="/store-manager/help" element={<StoreManagerHelpPage />} />
           <Route path="/store-manager/notifications" element={<StoreManagerNotificationsPage />} />
           <Route path="/store-manager/*" element={<NotFoundPage inWorkspace />} />
         </Route>

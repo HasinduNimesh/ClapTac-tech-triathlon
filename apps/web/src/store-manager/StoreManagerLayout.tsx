@@ -71,10 +71,10 @@ export function StoreManagerLayout() {
           <span className="sm-nav-icon" aria-hidden="true"><img src={iconSetting} alt="" width={20} height={20} /></span>
           {t("Settings")}
         </NavLink>
-        <span className="sm-nav-item sm-nav-item--static">
+        <NavLink to="/store-manager/help" className={({ isActive }) => `sm-nav-item${isActive ? " active" : ""}`} onClick={() => setNavOpen(false)}>
           <span className="sm-nav-icon" aria-hidden="true"><img src={iconHelp} alt="" width={6} height={18} /></span>
           {t("Help & Guide")}
-        </span>
+        </NavLink>
       </nav>
 
       <hr className="sm-sidebar-hr sm-sidebar-hr--bottom" />

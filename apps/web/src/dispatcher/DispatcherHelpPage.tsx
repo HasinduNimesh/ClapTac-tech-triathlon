@@ -1,5 +1,7 @@
 import { Link } from "react-router-dom";
 import { useLocale } from "../i18n";
+import { GuideSections } from "../help/GuideSections";
+import { DISPATCHER_GUIDE } from "../help/guideContent.mjs";
 import { AgentAssistant } from "./AgentAssistant";
 import { DpHero, Panel } from "./ui";
 
@@ -29,6 +31,7 @@ export function DispatcherHelpPage() {
           </Panel>
           <div className="dp-panel dp-legacy"><AgentAssistant /></div>
         </div>
+        <GuideSections sections={DISPATCHER_GUIDE} />
       </div>
     </>
   );
