@@ -277,6 +277,7 @@ const followUpLabels = {
     Issue: "ගැටලුව",
     Reported: "වාර්තා කළේ",
     "Completing sign-in…": "පිවිසීම සම්පූර්ණ කරමින්…",
+    "Opening the loader app…": "පැටවුම්කරු යෙදුම විවෘත කරමින්…",
     "Checking your access…": "ඔබගේ ප්‍රවේශය පරීක්ෂා කරමින්…",
     "Sign in required": "පිවිසීම අවශ්‍යයි",
     "to continue.": "ඉදිරියට යාමට.",
@@ -361,6 +362,7 @@ const followUpLabels = {
     Issue: "சிக்கல்",
     Reported: "தெரிவிக்கப்பட்டது",
     "Completing sign-in…": "உள்நுழைவு நிறைவுபெறுகிறது…",
+    "Opening the loader app…": "ஏற்றுபவர் செயலியைத் திறக்கிறது…",
     "Checking your access…": "உங்கள் அணுகல் சரிபார்க்கப்படுகிறது…",
     "Sign in required": "உள்நுழைவு தேவை",
     "to continue.": "தொடர்வதற்கு.",
@@ -920,3 +922,25 @@ export function translate(locale, source) {
   }
   return source;
 }
+Object.assign(labels.si, {
+  "Account name": "ගිණුමේ නම",
+  "Your name": "ඔබේ නම",
+  "Your name appears in the sidebar across devices.": "ඔබේ නම සියලු උපාංගවල පැති තීරුවේ පෙන්වයි.",
+  "Your name appears in your workspace and is saved across devices.": "ඔබේ නම වැඩ අවකාශයේ පෙන්වන අතර සියලු උපාංග සඳහා සුරැකේ.",
+  "Enter a name of up to 120 characters.": "අක්ෂර 120කට නොවැඩි නමක් ඇතුළත් කරන්න.",
+  "Name saved to your Waypoint account.": "නම ඔබේ Waypoint ගිණුමට සුරැකිණි.",
+  "Could not save your name. Try again.": "නම සුරැකීමට නොහැකි විය. නැවත උත්සාහ කරන්න.",
+  "Save name": "නම සුරකින්න",
+  "Saving…": "සුරකිමින්…",
+});
+Object.assign(labels.ta, {
+  "Account name": "கணக்குப் பெயர்",
+  "Your name": "உங்கள் பெயர்",
+  "Your name appears in the sidebar across devices.": "உங்கள் பெயர் எல்லா சாதனங்களிலும் பக்கப்பட்டியில் தோன்றும்.",
+  "Your name appears in your workspace and is saved across devices.": "உங்கள் பெயர் பணியிடத்தில் தோன்றும்; எல்லா சாதனங்களிலும் சேமிக்கப்படும்.",
+  "Enter a name of up to 120 characters.": "120 எழுத்துகளுக்கு மிகாத பெயரை உள்ளிடவும்.",
+  "Name saved to your Waypoint account.": "பெயர் உங்கள் Waypoint கணக்கில் சேமிக்கப்பட்டது.",
+  "Could not save your name. Try again.": "உங்கள் பெயரைச் சேமிக்க முடியவில்லை. மீண்டும் முயலவும்.",
+  "Save name": "பெயரைச் சேமி",
+  "Saving…": "சேமிக்கிறது…",
+});

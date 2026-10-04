@@ -57,7 +57,7 @@ func TestAuditSearchKPIsAndAppendOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = pool.Exec(ctx, `CREATE SCHEMA shared;
-	CREATE TABLE shared.users(id text primary key, identity_subject text unique, role text);
+	CREATE TABLE shared.users(id text primary key, identity_subject text unique, display_name text not null default '', role text);
 	CREATE TABLE shared.store_manager_profiles(user_id text, outlet_id text);
 	CREATE TABLE shared.loader_profiles(user_id text, depot text);
 	CREATE TABLE shared.driver_profiles(user_id text, vehicle_id text);

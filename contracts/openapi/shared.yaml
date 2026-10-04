@@ -9,8 +9,29 @@ paths:
     get:
       operationId: getMyProfile
       security: [{ bearerAuth: [] }]
+      description: Returns the application profile, including its stored displayName (empty until set).
       responses:
         "200": { description: Application profile }
+        "401": { description: Unauthenticated }
+        "404": { description: User not provisioned }
+  /shared/profiles/me/display-name:
+    put:
+      operationId: updateMyDisplayName
+      security: [{ bearerAuth: [] }]
+      description: Updates the authenticated person's stored displayName (1-120 characters). The token subject determines the user; this never changes roles or assignments.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [displayName]
+              properties:
+                displayName: { type: string, minLength: 1, maxLength: 120 }
+      responses:
+        "200": { description: Updated application profile }
+        "400": { description: Invalid display name }
         "401": { description: Unauthenticated }
         "404": { description: User not provisioned }
   /shared/outlets:

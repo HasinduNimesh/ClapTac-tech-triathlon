@@ -10,11 +10,14 @@ import 'auth/auth_gateway.dart';
 import 'auth/auth_store.dart';
 import 'auth/oidc_client.dart';
 import 'auth/profile_api.dart';
+import 'auth/revocation_queue.dart';
+import 'auth/token_revoker.dart';
 import 'messages/messages.dart';
 import 'offline/local_database.dart';
 import 'proof/proof_capturer.dart';
 import 'proof/proof_store.dart';
 import 'sync/sync.dart';
+import 'trips/route_store.dart';
 import 'sync/sqlite_sync_queue.dart';
 import 'sync/sync_worker.dart';
 import 'trips/trip_source.dart';
@@ -30,6 +33,8 @@ import 'theme/app_theme.dart';
     client: AppAuthOidcClient(config),
     profiles: ProfileApi(client: http.Client(), baseUrl: config.apiBaseUrl),
     store: SecureAuthStore(),
+    revoker: HttpTokenRevoker(client: http.Client(), config: config),
+    pendingRevocations: SecureRevocationQueue(),
   );
   final queue = SqliteSyncQueue();
   return (
@@ -51,6 +56,8 @@ void main() {
     trips: services.trips,
     starter: services.starter,
     messageSource: services.messages,
+    // Only a real sign-in has a route worth keeping; demo builds always show the sample route.
+    routeStore: services.auth == null ? null : FileRouteStore(),
     database: InMemoryLocalDatabase(),
     queue: services.queue,
     worker: services.worker,
@@ -77,6 +84,7 @@ class WaypointDriverApp extends StatefulWidget {
     this.trips,
     this.starter,
     this.messageSource,
+    this.routeStore,
     this.worker,
     this.capturer,
     this.connectivity,
@@ -91,6 +99,7 @@ class WaypointDriverApp extends StatefulWidget {
   final TripSource? trips;
   final TripStarter? starter;
   final MessageSource? messageSource;
+  final RouteStore? routeStore;
   final DeliverySyncWorker? worker;
   final ProofCapturer? capturer;
   final ConnectivityMonitor? connectivity;
@@ -110,6 +119,7 @@ class _WaypointDriverAppState extends State<WaypointDriverApp> {
     trips: widget.trips,
     starter: widget.starter,
     messageSource: widget.messageSource,
+    routeStore: widget.routeStore,
     worker: widget.worker,
     connectivity: widget.connectivity,
   );

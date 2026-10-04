@@ -297,3 +297,64 @@ func TestShortUserTokenLifetimeDoesNotShortenServiceTokens(t *testing.T) {
 		t.Errorf("service token lifetime = %v, want 3600", lifetime)
 	}
 }
+
+func postRevoke(t *testing.T, form url.Values) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/oauth2/revoke", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	revoke(rec, req)
+	return rec
+}
+
+func TestDiscoveryAdvertisesTheRevocationEndpoint(t *testing.T) {
+	setup(t)
+	rec := httptest.NewRecorder()
+	discovery(rec, httptest.NewRequest(http.MethodGet, "/.well-known/openid-configuration", nil))
+	if got := decode(t, rec)["revocation_endpoint"]; got != "http://issuer.test/oauth2/revoke" {
+		t.Errorf("revocation_endpoint = %v", got)
+	}
+}
+
+func TestRevokingARefreshTokenStopsItWorking(t *testing.T) {
+	setup(t)
+	rt := signInWith(t, "waypoint-driver", "n", "openid offline_access")["refresh_token"].(string)
+	rec := postRevoke(t, url.Values{"token": {rt}, "token_type_hint": {"refresh_token"}, "client_id": {"waypoint-driver"}})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("revoke status = %d: %s", rec.Code, rec.Body.String())
+	}
+	refresh := postToken(t, url.Values{"grant_type": {"refresh_token"}, "refresh_token": {rt}})
+	if refresh.Code != http.StatusBadRequest || decode(t, refresh)["error"] != "invalid_grant" {
+		t.Errorf("a revoked token must be refused: %d %s", refresh.Code, refresh.Body.String())
+	}
+}
+
+func TestRevokingAnUnknownTokenStillAnswersOK(t *testing.T) {
+	setup(t)
+	if rec := postRevoke(t, url.Values{"token": {"never-issued"}}); rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200 so tokens cannot be probed", rec.Code)
+	}
+}
+
+func TestRevokeNeedsATokenAndAPost(t *testing.T) {
+	setup(t)
+	rec := postRevoke(t, url.Values{})
+	if rec.Code != http.StatusBadRequest || decode(t, rec)["error"] != "invalid_request" {
+		t.Errorf("empty request: %d %s", rec.Code, rec.Body.String())
+	}
+	get := httptest.NewRecorder()
+	revoke(get, httptest.NewRequest(http.MethodGet, "/oauth2/revoke?token=x", nil))
+	if get.Code != http.StatusMethodNotAllowed {
+		t.Errorf("GET status = %d", get.Code)
+	}
+}
+
+func TestRevokingOneTokenLeavesOthersWorking(t *testing.T) {
+	setup(t)
+	a := signInWith(t, "waypoint-driver", "n", "openid offline_access")["refresh_token"].(string)
+	b := signInWith(t, "waypoint-driver", "n", "openid offline_access")["refresh_token"].(string)
+	postRevoke(t, url.Values{"token": {a}})
+	if rec := postToken(t, url.Values{"grant_type": {"refresh_token"}, "refresh_token": {b}}); rec.Code != http.StatusOK {
+		t.Errorf("the other token should still work, got %d", rec.Code)
+	}
+}

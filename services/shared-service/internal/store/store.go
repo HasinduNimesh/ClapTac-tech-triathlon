@@ -109,7 +109,7 @@ func (s Store) Resolve(ctx context.Context, subject string) (*authorization.Prof
 
 func (s Store) ProfileBySubject(ctx context.Context, subject string) (*authorization.Profile, error) {
 	row := s.Pool.QueryRow(ctx, `
-		SELECT u.id, u.identity_subject, u.role, COALESCE(p.outlet_id, ''), COALESCE(l.depot, ''), COALESCE(d.vehicle_id, '')
+		SELECT u.id, u.identity_subject, u.display_name, u.role, COALESCE(p.outlet_id, ''), COALESCE(l.depot, ''), COALESCE(d.vehicle_id, '')
 		FROM users u
 		LEFT JOIN store_manager_profiles p ON p.user_id = u.id
 		LEFT JOIN loader_profiles l ON l.user_id = u.id
@@ -118,7 +118,7 @@ func (s Store) ProfileBySubject(ctx context.Context, subject string) (*authoriza
 	`, subject)
 	var p authorization.Profile
 	var role, outlet, depot, vehicle string
-	if err := row.Scan(&p.UserID, &p.Subject, &role, &outlet, &depot, &vehicle); err != nil {
+	if err := row.Scan(&p.UserID, &p.Subject, &p.DisplayName, &role, &outlet, &depot, &vehicle); err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, fmt.Errorf("not found")
 		}
@@ -131,6 +131,17 @@ func (s Store) ProfileBySubject(ctx context.Context, subject string) (*authoriza
 	p.Depot = depot
 	p.VehicleID = vehicle
 	return &p, nil
+}
+
+// SetDisplayName only changes the user represented by the authenticated token subject.
+func (s Store) SetDisplayName(ctx context.Context, subject, name string) error {
+	var id string
+	err := s.Pool.QueryRow(ctx, `UPDATE shared.users SET display_name=$2, updated_at=now()
+		WHERE identity_subject=$1 RETURNING id`, subject, name).Scan(&id)
+	if err == pgx.ErrNoRows {
+		return fmt.Errorf("not found")
+	}
+	return err
 }
 
 type Outlet struct {
