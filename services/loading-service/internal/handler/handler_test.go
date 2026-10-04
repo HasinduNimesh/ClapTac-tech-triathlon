@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -78,7 +79,28 @@ func (s *stubLoader) DeleteIssue(context.Context, *authorization.Profile, string
 func (s *stubLoader) DecideIssue(context.Context, *authorization.Profile, string, string, string, string, string) (domain.Issue, error) {
 	return s.issue, s.issueErr
 }
-func (s *stubLoader) Ready(context.Context, *authorization.Profile, string) (map[string]any, error) {
+func (s *stubLoader) SyncPlanVersion(context.Context, *authorization.Profile, string, int) (map[string]any, error) {
+	return s.detail, nil
+}
+func (s *stubLoader) AttachIssuePhoto(context.Context, *authorization.Profile, string, string, string, string, []byte) (domain.Issue, error) {
+	return domain.Issue{}, nil
+}
+func (s *stubLoader) IssuePhoto(context.Context, *authorization.Profile, string, string, string) (io.ReadCloser, string, error) {
+	return nil, "", fmt.Errorf("not found")
+}
+func (s *stubLoader) MarkIssueSeen(context.Context, *authorization.Profile, string, string, string) error {
+	return nil
+}
+func (s *stubLoader) RaiseDockAlert(context.Context, *authorization.Profile, string, string, string, string, string, string) (domain.DockAlert, error) {
+	return domain.DockAlert{}, nil
+}
+func (s *stubLoader) ListDockAlerts(context.Context, *authorization.Profile, string) ([]domain.DockAlert, error) {
+	return []domain.DockAlert{}, nil
+}
+func (s *stubLoader) ResolveDockAlert(context.Context, *authorization.Profile, string) (domain.DockAlert, error) {
+	return domain.DockAlert{}, nil
+}
+func (s *stubLoader) Ready(context.Context, *authorization.Profile, string, service.ReadyChecks) (map[string]any, error) {
 	return s.detail, s.readyErr
 }
 func (s *stubLoader) InternalList(context.Context, string, string) ([]map[string]any, error) {

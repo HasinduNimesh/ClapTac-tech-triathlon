@@ -47,6 +47,7 @@ func main() {
 			ClientID:     os.Getenv("M2M_CLIENT_ID"),
 			ClientSecret: os.Getenv("M2M_CLIENT_SECRET"),
 			Scope:        "plans:read-internal deliveries:read-internal outlets:read-internal audit:write policy:read-internal",
+			Resource:     getenv("OIDC_AUDIENCE", "waypoint-api"),
 		},
 	}
 	h := handler.Handler{

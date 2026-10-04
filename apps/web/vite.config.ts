@@ -19,7 +19,8 @@ export default defineConfig({
       workbox: {
         globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
         navigateFallback: "/index.html",
-        navigateFallbackDenylist: [/^\/api/, /^\/health/, /^\/oauth2/],
+        // /loader-app/ is the separate Flutter loader app; without this the service worker answers it with this app's page.
+        navigateFallbackDenylist: [/^\/api/, /^\/health/, /^\/oauth2/, /^\/loader-app/],
       },
     }),
   ],

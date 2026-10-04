@@ -61,7 +61,7 @@ Each account has one server-side role; there is no role selector. The local deve
 | Username | Role | Demo scope |
 |---|---|---|
 | `store-manager` | Store Manager | Outlet `OUT034` |
-| `dispatcher` | Dispatcher | Dispatch/plan operations |
+| `dispatcher` | Dispatcher | Dispatch/plan operations; works from the Peliyagoda depot (`dispatcher_profiles`), can switch depots |
 | `loader` | Loader | North depot / Peliyagoda |
 | `driver` | Driver | Vehicle `VEH001` |
 
@@ -111,13 +111,13 @@ The Hackathon build follows the Designathon workflow (order → plan/allocate/de
 - **Driver client:** the responsive React PWA is the supported driver client; the Flutter shell is an optional, unverified scaffold.
 - **Assistant approvals:** pending approvals are held in bounded process memory (5-minute expiry) instead of Redis; the approval interface allows a shared store later.
 - **Data:** the checked-in seeds are competition-shaped development fixtures, not the official dataset; replace them with `make seed-competition-data`.
-- **Out of scope for now:** maps, live Datathon model integration, live SMS delivery, GPS tracking, and a public production deployment.
+- **Out of scope for now:** live Datathon model integration, live SMS delivery, GPS tracking of trucks, and a public production deployment.
 
 ## Limitations and deviations
 
 - `database/seeds/` CSVs are converted from the official `Tech-Triathlon 2026 - Datasets/` release via `scripts/convert-official-dataset.py`; the converted district-travel and service-allowance tables are documented lossy approximations (see `database/seeds/README.md`), not the official reference model exactly. `validate-seeds.py` checks structural consistency, not semantic fidelity to the official model.
 - The local identity service implements the ThunderID contract for development; replace it with the official identity provider before external deployment.
-- The Flutter driver shell is optional; the responsive React PWA is the supported required client. Maps use approximate outlet positions (district centre; no GPS). Datathon forecast imports are outside current implementation scope.
+- The Flutter driver shell is optional; the responsive React PWA is the supported required client. Maps show an outlet's recorded exact location, or an approximate district position until one is recorded ([docs/outlet-locations.md](docs/outlet-locations.md)); there is no GPS. Datathon forecast imports are outside current implementation scope.
 - A public URL, DNS zone, TLS certificate, production cluster, durable DB/object storage, and production secret store have not been supplied. Kubernetes files are deployment inputs and need target-specific release configuration.
 - Assistant provider is optional and not configured by default. Planning feasibility remains deterministic; sensitive assistant writes require explicit human approval and service-side reauthorization.
 - See [known deployment requirements](docs/architecture.md), [AI disclosure](docs/ai-disclosure.md), and the [submission runbook](docs/submission.md).

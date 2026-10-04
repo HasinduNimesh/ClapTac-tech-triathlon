@@ -47,6 +47,10 @@ class StopInfo {
     required this.contactNote,
     required this.goods,
     this.orderRef = '',
+    this.district = '',
+    this.latitude,
+    this.longitude,
+    this.locationApproximate = false,
   });
 
   /// The server's id for this stop. Delivery operations are keyed by it, not by the outlet code,
@@ -65,6 +69,53 @@ class StopInfo {
   final String contactNote;
   final String goods;
   final String orderRef;
+  final String district;
+
+  /// Where the outlet is, when the server knows. [locationApproximate] means only the district centre
+  /// is known: it must not be used to navigate to the shop (see `StopDirections`).
+  final double? latitude;
+  final double? longitude;
+  final bool locationApproximate;
+
+  /// Reads a stop saved with [toJson]. Anything of the wrong type throws [FormatException], never a
+  /// cast error, so a damaged saved route is recognised and ignored.
+  factory StopInfo.fromJson(Map<String, Object?> json) => StopInfo(
+        stopId: _text(json, 'stopId'),
+        sequence: _whole(json, 'sequence'),
+        outletCode: _text(json, 'outletCode'),
+        name: _text(json, 'name'),
+        windowStart: _text(json, 'windowStart'),
+        windowEnd: _text(json, 'windowEnd'),
+        units: _wholeOrNull(json, 'units'),
+        unitLabel: _text(json, 'unitLabel', 'units'),
+        accessNote: _text(json, 'accessNote'),
+        contactNote: _text(json, 'contactNote'),
+        goods: _text(json, 'goods'),
+        orderRef: _text(json, 'orderRef'),
+        district: _text(json, 'district'),
+        latitude: _decimalOrNull(json, 'latitude'),
+        longitude: _decimalOrNull(json, 'longitude'),
+        locationApproximate: _flag(json, 'locationApproximate'),
+      );
+
+  Map<String, Object?> toJson() => {
+        'stopId': stopId,
+        'sequence': sequence,
+        'outletCode': outletCode,
+        'name': name,
+        'windowStart': windowStart,
+        'windowEnd': windowEnd,
+        if (units != null) 'units': units,
+        'unitLabel': unitLabel,
+        'accessNote': accessNote,
+        'contactNote': contactNote,
+        'goods': goods,
+        'orderRef': orderRef,
+        'district': district,
+        if (latitude != null) 'latitude': latitude,
+        if (longitude != null) 'longitude': longitude,
+        'locationApproximate': locationApproximate,
+      };
 
   String get window => windowStart.isEmpty && windowEnd.isEmpty ? 'No time window' : '$windowStart - $windowEnd';
 
@@ -120,6 +171,53 @@ class TripInfo {
 
   bool get started => runStatus == 'in_progress';
 
+  /// Reads a trip saved with [toJson]. Throws [FormatException] when what is stored is not a trip, so a
+  /// damaged saved route is ignored instead of crashing the app.
+  factory TripInfo.fromJson(Map<String, Object?> json) {
+    final tripId = _text(json, 'tripId');
+    final stops = json['stops'];
+    if (tripId.isEmpty || stops is! List) throw const FormatException('saved trip');
+    final doneIds = json['completedStopIds'];
+    if (doneIds != null && doneIds is! List) throw const FormatException('completedStopIds is not a list');
+    return TripInfo(
+      tripId: tripId,
+      runId: _text(json, 'runId'),
+      vehicleCode: _text(json, 'vehicleCode'),
+      plate: _text(json, 'plate'),
+      tripRef: _text(json, 'tripRef'),
+      depot: _text(json, 'depot'),
+      window: _text(json, 'window'),
+      stops: [
+        for (final stop in stops)
+          if (stop is Map<String, Object?>) StopInfo.fromJson(stop) else throw const FormatException('a stop is not an object'),
+      ],
+      completedStops: _whole(json, 'completedStops'),
+      completedStopIds: {
+        for (final id in (doneIds as List<Object?>? ?? const []))
+          if (id is String) id else throw const FormatException('a completed stop id is not text'),
+      },
+      planId: _text(json, 'planId'),
+      planVersion: _whole(json, 'planVersion'),
+      runStatus: _text(json, 'runStatus'),
+    );
+  }
+
+  Map<String, Object?> toJson() => {
+        'tripId': tripId,
+        'runId': runId,
+        'vehicleCode': vehicleCode,
+        'plate': plate,
+        'tripRef': tripRef,
+        'depot': depot,
+        'window': window,
+        'stops': [for (final stop in stops) stop.toJson()],
+        'completedStops': completedStops,
+        'completedStopIds': completedStopIds.toList()..sort(),
+        'planId': planId,
+        'planVersion': planVersion,
+        'runStatus': runStatus,
+      };
+
   TripInfo withRunStatus(String status) => TripInfo(
         tripId: tripId,
         runId: runId,
@@ -165,6 +263,39 @@ class DeliveryDraft {
 
   /// The captured files to upload before the outcome. Empty when nothing was captured.
   final List<CapturedProof> proofs;
+}
+
+String _text(Map<String, Object?> json, String key, [String fallback = '']) {
+  final value = json[key];
+  if (value == null) return fallback;
+  if (value is String) return value;
+  throw FormatException('$key is not text');
+}
+
+int _whole(Map<String, Object?> json, String key) => _wholeOrNull(json, key) ?? 0;
+
+/// A whole number. JSON may write one as `3.0`, which is accepted; text or a fraction is not.
+int? _wholeOrNull(Map<String, Object?> json, String key) {
+  final value = json[key];
+  if (value == null) return null;
+  if (value is int) return value;
+  if (value is double && value == value.truncateToDouble()) return value.toInt();
+  throw FormatException('$key is not a whole number');
+}
+
+/// A number with or without a fraction. Text is not one.
+double? _decimalOrNull(Map<String, Object?> json, String key) {
+  final value = json[key];
+  if (value == null) return null;
+  if (value is num && value.isFinite) return value.toDouble();
+  throw FormatException('$key is not a number');
+}
+
+bool _flag(Map<String, Object?> json, String key) {
+  final value = json[key];
+  if (value == null) return false;
+  if (value is bool) return value;
+  throw FormatException('$key is not true or false');
 }
 
 const _weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];

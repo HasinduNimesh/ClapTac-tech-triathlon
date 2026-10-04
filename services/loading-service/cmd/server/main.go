@@ -10,6 +10,7 @@ import (
 	"github.com/HasinduNimesh/ClapTac-tech-triathlon/pkg/bootstrap"
 	"github.com/HasinduNimesh/ClapTac-tech-triathlon/pkg/db"
 	"github.com/HasinduNimesh/ClapTac-tech-triathlon/pkg/oauth"
+	"github.com/HasinduNimesh/ClapTac-tech-triathlon/pkg/objectstore"
 	"github.com/HasinduNimesh/ClapTac-tech-triathlon/services/loading-service/internal/client"
 	"github.com/HasinduNimesh/ClapTac-tech-triathlon/services/loading-service/internal/handler"
 	"github.com/HasinduNimesh/ClapTac-tech-triathlon/services/loading-service/internal/service"
@@ -37,12 +38,28 @@ func main() {
 			ClientID:     os.Getenv("M2M_CLIENT_ID"),
 			ClientSecret: os.Getenv("M2M_CLIENT_SECRET"),
 			Scope:        "plans:read-internal orders:read-internal audit:write",
+			Resource:     getenv("OIDC_AUDIENCE", "waypoint-api"),
 		},
+	}
+	// Shortfall photos share the proof object store; without MINIO_ENDPOINT
+	// they are kept in memory (local development only).
+	objects := objectstore.Reader(objectstore.S3{
+		Endpoint:  os.Getenv("MINIO_ENDPOINT"),
+		Bucket:    getenv("MINIO_BUCKET", "waypoint-proof"),
+		AccessKey: getenv("MINIO_ACCESS_KEY", "s3mock"),
+		SecretKey: getenv("MINIO_SECRET_KEY", "s3mock"),
+		Region:    getenv("MINIO_REGION", "us-east-1"),
+	})
+	if os.Getenv("MINIO_ENDPOINT") == "" {
+		if err := objectstore.RequireDurable(app.Config.IsLocal(), ""); err != nil {
+			log.Fatal(err)
+		}
+		objects = &objectstore.Memory{}
 	}
 	h := handler.Handler{
 		Authn:    app.Authenticator,
 		Profiles: client.Profiles{Shared: peers},
-		Service:  service.Service{Repo: store.Postgres{Pool: pool}, Peers: peers},
+		Service:  service.Service{Repo: store.Postgres{Pool: pool}, Peers: peers, Objects: objects},
 	}
 	if err := app.Run(func(r chi.Router) { h.Routes(r) }); err != nil {
 		log.Fatal(err)

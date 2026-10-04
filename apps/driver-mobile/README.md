@@ -65,7 +65,20 @@ When the identity provider issues a refresh token (normally only if `offline_acc
 - if there is no connection when a refresh is needed, that is treated as being offline, not as a sign-out: queued updates stay on the phone and the refresh is retried on the next attempt
 - the app opens with an expired access token as long as there is a refresh token, so it works without signal and refreshes when something needs the server
 
-Without a refresh token (the default scopes against a provider that does not issue one without `offline_access`), an expired access token still means signing in again. Signing out removes the tokens from the phone but does not revoke the refresh token at the provider.
+Without a refresh token (the default scopes against a provider that does not issue one without `offline_access`), an expired access token still means signing in again.
+
+### Signing out revokes the refresh token
+
+Signing out always signs the driver out on the phone at once, then asks the identity provider to revoke the refresh token (RFC 7009, the `revocation_endpoint` in the provider's discovery document, sending only the token, its type and the client id, as the app is a public client), so a copy that leaks afterwards is worthless:
+
+- the sign-out never waits for the provider and never fails because of it
+- the token is first written to a small pending list in secure storage, so if the phone has no signal, or the app is closed before the provider answers, the revocation is tried again when the app starts and when the connection returns; the list keeps only the newest 10 tokens
+- a token is dropped from the list once the provider has revoked it, refused it for good (a client error), or turned out not to offer revocation; it stays only while the provider could not be reached
+- the token is never sent over plain HTTP, except to a local identity server in a debug build
+- a sign-in that does not end in a kept session has its refresh token revoked as well: an account that is not a driver, an account Waypoint does not know (404), a profile call that is rejected or cannot connect, or storage refusing the write; the provider has issued the tokens by then, and nothing would ever use them
+- if the pending list itself cannot be written (secure storage refusing it), the provider is still asked straight away, since the network may be fine; only the retry later cannot be promised
+
+Revocation ends the refresh token, not the person's session at the identity provider (ThunderID's own login cookie): the app always asks for the password at sign-in (`prompt=login`), so a shared phone does not sign the next person in.
 
 ## No signal
 
@@ -86,6 +99,30 @@ Dispatch can send a message about the trip, or about one stop. The app reads the
 - opens one in full, with which stop it is about, and lets the driver **acknowledge** it (`POST .../messages/{id}/ack`; repeating it is harmless)
 
 A missed refresh never removes what was already shown. **Acknowledging needs a connection:** offline, the message stays unread and the dialog says so; it is not queued for later like deliveries and proof are. Messages are not shown before the trip has a run on the server.
+
+## The route on the phone
+
+The route is kept on the phone (a JSON file per driver in the app's private storage, `lib/trips/route_store.dart`) so the app can still show it when it is opened without a connection:
+
+- it is saved when the route loads, when the trip starts, and after each stop is recorded, so a copy shown later has the right progress
+- if Waypoint cannot be reached when the route is loaded (for example the app was reopened without signal), the saved route is shown with a "Saved route" note, **but only if it is for the same driver and the same Waypoint business day** (Asia/Colombo); a route from an earlier day is ignored and deleted
+- the live route replaces it as soon as it can be loaded: when the connection returns, and on each sync tick
+- a route that could not be loaded at all (no saved copy either, for example the radio was not ready when the app opened) is retried quietly on each sync tick, every 15 seconds, until Waypoint answers; the driver is not left on the error until they tap Try again, and the screen does not flicker between retries. There is only ever one route load at a time: tapping Try again while a quiet retry is in flight joins it (the screen shows the loading state at once and then the result) instead of being ignored, and a load that fails in any way, including Waypoint sending a field of an unexpected type, ends with a visible error and never leaves the retries or the button stuck
+- if Waypoint answers that there is no open trip, the saved route is deleted: the server is authoritative
+- signing out, or a sign-in that is no longer accepted, deletes it
+- one phone, two drivers: a route load, message read, saved-route read or trip start that is still waiting for Waypoint when the driver signs out belongs to that driver. Every sign-in, sign-out or ended session starts a new session number, a request keeps the number it started under, and its answer is thrown away if the number has changed; so it is never shown to, applied to, or saved for whoever signs in next, and a new driver's route load never waits for (or is handed the answer to) the previous driver's
+
+A saved route does not make the trip startable offline: confirming the load still needs a connection to acknowledge the plan and start the run. It also cannot show changes dispatch made after it was saved (a changed plan, new messages) until the live route loads.
+
+## Directions to a stop
+
+*Open in maps* on the stop screen (`lib/maps/`) hands the stop to the phone's maps app. The server sends each stop's outlet position (`latitude`, `longitude`, `locationApproximate`), saved with the route so it is there offline:
+
+- **an exact position** (one a dispatcher recorded) opens turn-by-turn directions to it
+- **an approximate position** (only the district centre is known) is **never** used as the destination, because it is kilometres from the shop. The maps app opens a search for "outlet name, district, Sri Lanka" and the app says the exact location is not recorded, so the driver checks the name and area or asks dispatch
+- no maps app on the phone, or a build without a launcher, says so instead of doing nothing
+
+Dispatchers record positions in Master data (see [docs/outlet-locations.md](../../docs/outlet-locations.md)). The app does not read the phone's GPS, so it does not show the truck's position or tell dispatch where it is.
 
 ## Not built yet
 

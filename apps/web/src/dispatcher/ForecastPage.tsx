@@ -2,6 +2,8 @@ import { useState } from "react";
 import { todayInSriLanka } from "../api/date.mjs";
 import { DEPOT_LABELS, sameDepot } from "../api/loading";
 import { useLocale } from "../i18n";
+import { useDepot } from "./DispatcherLayout";
+import { operatingDaysPerWeek } from "./forecastCapacity.mjs";
 import { isRefrigerated, Vehicle } from "./types";
 import { BRAND_COLORS, ChipGroup, DpHero, Note, Panel, Stat, StatRow, Tag } from "./ui";
 import { dateTime, dayLabel, useApi } from "./useApi";
@@ -19,9 +21,6 @@ type CalendarDay = { date: string; isOperating: boolean };
 type Week = { start: string; byBrand: Record<string, number>; total: number; chilled: number };
 const BRANDS = ["Fresh", "Style", "Tech"];
 const RANGE = 0.1;
-// Deliveries run six days a week (no Sunday deliveries), up to two trips per vehicle a day.
-const OPERATING_DAYS = 6;
-const TRIPS_PER_VEHICLE = 2;
 
 function addDays(date: string, days: number) { const d = new Date(`${date}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + days); return d.toISOString().slice(0, 10); }
 function weekNo(date: string) { const d = new Date(`${date}T00:00:00Z`); const day = (d.getUTCDay() + 6) % 7; d.setUTCDate(d.getUTCDate() - day + 3); const first = new Date(Date.UTC(d.getUTCFullYear(), 0, 4)); return 1 + Math.round(((d.getTime() - first.getTime()) / 86400000 - 3 + ((first.getUTCDay() + 6) % 7)) / 7); }
@@ -29,10 +28,12 @@ const approx = (v: number) => `≈ ${Math.round(v).toLocaleString("en-LK")} m³`
 
 export function ForecastPage() {
   const { t } = useLocale();
-  const [depot, setDepot] = useState<string>("DEPOT_NORTH");
+  const { depot: shellDepot } = useDepot();
+  const [depot, setDepot] = useState<string>(shellDepot);
   const today = todayInSriLanka();
   const result = useApi<{ forecast: Forecast }>("/orders/forecast");
   const forecast = result.data?.forecast;
+  const policy = useApi<{ policy: { maxTripsPerVehicle: number } }>("/shared/policies/current");
   const calendar = useApi<{ items: CalendarDay[] }>(`/shared/calendar?from=${today}&to=${addDays(today, 41)}`);
   const fleet = useApi<{ items: Vehicle[] }>("/fleet/vehicles");
 
@@ -56,11 +57,15 @@ export function ForecastPage() {
   const pressureTag = (p: number) => p > 1 ? <Tag tone="red">{t("Over capacity")}</Tag> : p > 0.9 ? <Tag tone="amber">{t("Tight")}</Tag> : <Tag tone="green">{t("Normal")}</Tag>;
   const overWeeks = weeks.filter((w) => pressureOf(w) > 1);
   // Refrigerated trips a day: estimated chilled volume per operating day over
-  // the average reefer's volume, against the depot's reefers running two trips.
+  // the average reefer's volume, against the depot's reefers at the policy's trips per vehicle.
   const reefers = (fleet.data?.items || []).filter((v) => isRefrigerated(v) && (!depot || sameDepot(v.homeDepot, depot)));
   const reeferM3 = reefers.length ? reefers.reduce((s, v) => s + v.volumeCapacityM3, 0) / reefers.length : 0;
-  const reeferTripsAvailable = reefers.length * TRIPS_PER_VEHICLE;
-  const reeferTripsNeeded = (w: Week) => (reeferM3 > 0 ? Math.ceil(w.chilled / OPERATING_DAYS / reeferM3) : 0);
+  // Trips a vehicle may run a day is the planning policy's (Master data); operating days a week come from
+  // the operating calendar. If either is not known the refrigerated-trip maths is skipped, not guessed.
+  const tripsPerVehicle = policy.data?.policy?.maxTripsPerVehicle;
+  const operatingDays = operatingDaysPerWeek(calendar.data?.items);
+  const reeferTripsAvailable = tripsPerVehicle ? reefers.length * tripsPerVehicle : 0;
+  const reeferTripsNeeded = (w: Week) => (reeferM3 > 0 && operatingDays ? Math.ceil(w.chilled / operatingDays / reeferM3) : 0);
   const reeferShort = [...weeks].map((w) => ({ w, need: reeferTripsNeeded(w) })).filter((x) => reeferTripsAvailable > 0 && x.need > reeferTripsAvailable).sort((a, b) => b.need - a.need)[0];
   const max = Math.max(1, ...weeks.map((w) => w.total * (1 + RANGE)));
 

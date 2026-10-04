@@ -23,6 +23,9 @@ class TripLoad {
   final bool signInExpired;
 }
 
+/// What the driver is told when Waypoint answered with a route the app could not read.
+const unreadableRouteMessage = 'Waypoint sent a route the app could not read. Try again, and tell dispatch if it keeps happening.';
+
 abstract class TripSource {
   Future<TripLoad> loadToday();
 }
@@ -66,6 +69,11 @@ class ApiTripSource implements TripSource {
       return TripLoad.loaded(trip);
     } on TripsFailure catch (failure) {
       return TripLoad.failed(failure.message, signInExpired: failure.kind == TripsFailureKind.unauthorized);
+    } on FormatException {
+      return const TripLoad.failed(unreadableRouteMessage);
+    } on TypeError {
+      // Waypoint answered, but a field had a type the app did not expect.
+      return const TripLoad.failed(unreadableRouteMessage);
     }
   }
 }

@@ -1,0 +1,395 @@
+name: CI and production deployment
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: waypoint-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
+
+jobs:
+  changes:
+    name: Select checks
+    runs-on: ubuntu-latest
+    outputs:
+      go: ${{ steps.paths.outputs.go }}
+      web: ${{ steps.paths.outputs.web }}
+      mobile: ${{ steps.paths.outputs.mobile }}
+      loader: ${{ steps.paths.outputs.loader }}
+      docker: ${{ steps.paths.outputs.docker }}
+      targets: ${{ steps.paths.outputs.targets }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Select affected components
+        id: paths
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          go=false web=false mobile=false loader=false docker=false
+          backend_image=false web_image=false loader_image=false all_images=false
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            go=true web=true mobile=true loader=true docker=true all_images=true
+          else
+            base="$BASE_SHA"
+            if [[ ! "$base" =~ ^[0-9a-f]{40}$ ]] || [[ "$base" =~ ^0+$ ]]; then
+              base="$(git rev-parse "$GITHUB_SHA^")"
+            fi
+            while IFS= read -r path; do
+              case "$path" in
+                .github/workflows/*|Makefile)
+                  go=true web=true mobile=true loader=true docker=true all_images=true ;;
+                docker-compose*.yml|infrastructure/*|tools/dev-oidc/*)
+                  docker=true all_images=true ;;
+                apps/driver-mobile/*)
+                  mobile=true ;;
+                apps/loader-web/*)
+                  loader=true docker=true loader_image=true ;;
+                apps/web/*)
+                  web=true docker=true web_image=true ;;
+                go.mod|go.sum|Dockerfile|services/*|pkg/*)
+                  go=true docker=true backend_image=true ;;
+                database/*|contracts/*|scripts/*)
+                  go=true ;;
+              esac
+            done < <(git diff --name-only "$base" "$GITHUB_SHA")
+          fi
+          targets=""
+          if [[ "$all_images" == false ]]; then
+            if [[ "$backend_image" == true ]]; then
+              targets="order-service planning-service fleet-service loading-service delivery-service shared-service integration-service agent-orchestrator"
+            fi
+            if [[ "$web_image" == true ]]; then
+              targets="${targets:+$targets }web"
+            fi
+            if [[ "$loader_image" == true ]]; then
+              targets="${targets:+$targets }loader-web"
+            fi
+          fi
+          {
+            echo "go=$go"
+            echo "web=$web"
+            echo "mobile=$mobile"
+            echo "loader=$loader"
+            echo "docker=$docker"
+            echo "targets=$targets"
+          } >> "$GITHUB_OUTPUT"
+
+  go:
+    name: Go services
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go vet ./...
+      - run: go test ./...
+      - run: go build ./...
+
+  web:
+    name: Web app
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+
+  mobile:
+    name: Driver app
+    needs: changes
+    if: needs.changes.outputs.mobile == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/driver-mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+
+  loader:
+    name: Loader app
+    needs: changes
+    if: needs.changes.outputs.loader == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/loader-web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          # The same SDK the loader's Dockerfile builds with.
+          flutter-version: 3.41.2
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+
+  docker:
+    name: Compose images
+    needs: changes
+    if: needs.changes.outputs.docker == 'true' && github.event_name != 'push'
+    runs-on: ubuntu-latest
+    env:
+      BUILD_TARGETS: ${{ needs.changes.outputs.targets }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose config --quiet
+      - name: Build affected images
+        shell: bash
+        run: |
+          if [[ -z "$BUILD_TARGETS" ]]; then
+            docker compose build
+          else
+            read -r -a targets <<< "$BUILD_TARGETS"
+            docker compose build "${targets[@]}"
+          fi
+
+  images:
+    name: Publish ${{ matrix.service }}
+    needs: [changes, go, web, mobile, loader, docker]
+    # A push only runs the checks its paths need, so skipped checks are fine; a failed one is not.
+    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - order-service
+          - planning-service
+          - fleet-service
+          - loading-service
+          - delivery-service
+          - shared-service
+          - integration-service
+          - agent-orchestrator
+          - web
+          - loader-web
+    steps:
+      - uses: actions/checkout@v4
+      - name: Image name
+        id: image
+        shell: bash
+        run: |
+          # Registry paths must be lowercase. Every image gets the full commit SHA as its tag.
+          echo "name=ghcr.io/${GITHUB_REPOSITORY,,}/${{ matrix.service }}:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push backend service
+        if: matrix.service != 'web' && matrix.service != 'loader-web'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          build-args: SERVICE=${{ matrix.service }}
+          push: true
+          tags: ${{ steps.image.outputs.name }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+      - name: Build and push web app
+        if: matrix.service == 'web'
+        uses: docker/build-push-action@v6
+        with:
+          context: apps/web
+          # The web app bakes these public addresses in at build time, so the image is production-only.
+          build-args: |
+            VITE_OIDC_ISSUER=${{ vars.PROD_OIDC_ISSUER || 'https://id.waypoint.claptac.dev' }}
+            VITE_OIDC_CLIENT_ID=${{ vars.PROD_WEB_OIDC_CLIENT_ID || 'waypoint-web' }}
+            VITE_OIDC_REDIRECT_URI=${{ vars.PROD_WEB_REDIRECT_URI || 'https://waypoint.claptac.dev/auth/callback' }}
+            VITE_OIDC_AUDIENCE=${{ vars.PROD_OIDC_AUDIENCE || 'https://waypoint.claptac.dev/api/v1' }}
+            VITE_API_BASE_URL=/api/v1
+          push: true
+          tags: ${{ steps.image.outputs.name }}
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
+      - name: Build and push loader app
+        if: matrix.service == 'loader-web'
+        uses: docker/build-push-action@v6
+        with:
+          context: apps/loader-web
+          # Also baked in at build time, so this image is production-only.
+          build-args: |
+            OIDC_ISSUER=${{ vars.PROD_OIDC_ISSUER || 'https://id.waypoint.claptac.dev' }}
+            OIDC_CLIENT_ID=${{ vars.PROD_LOADER_OIDC_CLIENT_ID || 'waypoint-loader' }}
+            OIDC_RESOURCE=${{ vars.PROD_OIDC_AUDIENCE || 'https://waypoint.claptac.dev/api/v1' }}
+          push: true
+          tags: ${{ steps.image.outputs.name }}
+          cache-from: type=gha,scope=loader-web
+          cache-to: type=gha,mode=max,scope=loader-web
+
+  deploy:
+    name: Deploy to Azure VM
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    needs: [changes, go, web, mobile, loader, docker, images]
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 30
+    env:
+      AZURE_SSH_HOST: ${{ secrets.AZURE_SSH_HOST }}
+      AZURE_SSH_USER: ${{ secrets.AZURE_SSH_USER }}
+      AZURE_SSH_PRIVATE_KEY: ${{ secrets.AZURE_SSH_PRIVATE_KEY }}
+      AZURE_SSH_KNOWN_HOSTS: ${{ secrets.AZURE_SSH_KNOWN_HOSTS }}
+    steps:
+      - name: Deploy checked commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${AZURE_SSH_HOST:?Set AZURE_SSH_HOST in the production environment}"
+          : "${AZURE_SSH_USER:?Set AZURE_SSH_USER in the production environment}"
+          : "${AZURE_SSH_PRIVATE_KEY:?Set AZURE_SSH_PRIVATE_KEY in the production environment}"
+          : "${AZURE_SSH_KNOWN_HOSTS:?Set AZURE_SSH_KNOWN_HOSTS in the production environment}"
+          key_file="$(mktemp)"
+          hosts_file="$(mktemp)"
+          deploy_log="$(mktemp)"
+          trap 'rm -f "$key_file" "$hosts_file" "$deploy_log"' EXIT
+          chmod 600 "$key_file" "$hosts_file"
+          printf '%s\n' "$AZURE_SSH_PRIVATE_KEY" > "$key_file"
+          printf '%s\n' "$AZURE_SSH_KNOWN_HOSTS" > "$hosts_file"
+          registry_prefix="ghcr.io/${GITHUB_REPOSITORY,,}"
+          # Must match the audience baked into the web and loader images and the one the APIs validate.
+          audience='${{ vars.PROD_OIDC_AUDIENCE || 'https://waypoint.claptac.dev/api/v1' }}'
+          ssh -i "$key_file" -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$hosts_file" \
+            "$AZURE_SSH_USER@$AZURE_SSH_HOST" bash -s -- "$GITHUB_SHA" "$registry_prefix" "$audience" <<'REMOTE' | tee "$deploy_log"
+          set -euo pipefail
+          revision="$1"
+          prefix="$2"
+          audience="$3"
+          services="order-service planning-service fleet-service loading-service delivery-service shared-service integration-service agent-orchestrator web loader-web"
+          # Every compose call sees the image tag being deployed without editing .env first.
+          # The remote shell reads this script from stdin. Compose must not consume
+          # the rest of it while pulling images or starting containers.
+          dc() { sudo -n env WAYPOINT_IMAGE_PREFIX="$prefix" WAYPOINT_TAG="$revision" docker compose "$@" </dev/null; }
+          cd "$HOME/ClapTac-tech-triathlon"
+          test -f .env
+          branch="$(git rev-parse --abbrev-ref HEAD)"
+          if [ "$branch" != main ]; then
+            echo "The VM checkout is on '$branch', not main. Do the one-time checkout move in docs/ci-cd.md first." >&2
+            exit 1
+          fi
+          git fetch origin main
+          test "$(git rev-parse origin/main)" = "$revision"
+          # A fast-forward preserves the VM's existing branch and refuses divergent history.
+          # Git also refuses if an update would overwrite the local Compose port edit.
+          git merge --ff-only "$revision"
+          dc config --quiet
+          # Refuse a production rollout that would point API token validation back at the
+          # development identity server. The web app's addresses are baked in by CI and checked below.
+          dc config --format json | python3 -c '
+          import json, sys
+          services = json.load(sys.stdin)["services"]
+          expected_issuer = "https://id.waypoint.claptac.dev"
+          audience = sys.argv[1]
+          checks = {
+              "API issuer": services["shared-service"]["environment"].get("OIDC_ISSUER") == expected_issuer,
+              "API audience": services["shared-service"]["environment"].get("OIDC_AUDIENCE") == audience,
+              "API JWKS": services["shared-service"]["environment"].get("OIDC_JWKS_URL") == expected_issuer + "/oauth2/jwks",
+              "API token endpoint": services["shared-service"]["environment"].get("OIDC_TOKEN_URL") == expected_issuer + "/oauth2/token",
+              "nginx loopback port": any(p.get("host_ip") == "127.0.0.1" and str(p.get("published")) == "8080" and p.get("target") == 80 for p in services["nginx"]["ports"]),
+          }
+          bad = [name for name, ok in checks.items() if not ok]
+          if bad:
+              raise SystemExit("Production Compose identity configuration is incomplete: " + ", ".join(bad))
+          ' "$audience"
+          # Pull first: if the registry or an image is missing nothing has been touched yet.
+          dc pull --quiet $services
+          # The web and loader images carry their sign-in addresses and API audience; refuse ones built for
+          # another environment.
+          check_image() {
+            sudo -n docker run --rm --entrypoint sh "$prefix/$1:$revision" -c \
+              "grep -rqF 'https://id.waypoint.claptac.dev' $2 && grep -rqF '$audience' $2" </dev/null \
+              || { echo "Image $1:$revision was not built for production sign-in and API audience" >&2; exit 1; }
+          }
+          check_image web /usr/share/nginx/html
+          check_image loader-web /usr/share/nginx/html/loader-app
+          umask 077
+          backup_path="$HOME/waypoint-before-${revision:0:12}-$(date -u +%Y%m%dT%H%M%SZ).dump"
+          dc exec -T postgres \
+            sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > "$backup_path"
+          test -s "$backup_path"
+          # Apply migrations explicitly, before any updated service starts. Database rollback is separate
+          # from image rollback: the backup above is the way back for data.
+          dc run --rm migrate
+          # Remember what is running and make later manual compose commands use the same images.
+          set_env() {
+            if grep -q "^$1=" .env; then sed -i "s|^$1=.*|$1=$2|" .env; else printf '%s=%s\n' "$1" "$2" >> .env; fi
+          }
+          previous_tag="$(grep '^WAYPOINT_TAG=' .env | cut -d= -f2- || true)"
+          set_env WAYPOINT_IMAGE_PREFIX "$prefix"
+          set_env WAYPOINT_TAG "$revision"
+          dc up -d --no-build
+          dc ps
+          rollback_hint() {
+            echo "$1" >&2
+            echo "Previous image tag: ${previous_tag:-none recorded (first registry deploy)}." >&2
+            echo "To roll back images: set WAYPOINT_TAG to it in .env and run: sudo docker compose up -d --no-build" >&2
+            exit 1
+          }
+          # nginx.conf is a single-file bind mount. Recreate nginx to pick up the
+          # current file after the checkout changes; this briefly interrupts traffic.
+          dc up -d --no-build --no-deps --force-recreate nginx \
+            || rollback_hint "nginx could not be recreated with the updated routing configuration."
+          # Every service must report healthy, not just nginx.
+          for service in $services nginx; do
+            container="$(dc ps -q "$service")"
+            [ -n "$container" ] || rollback_hint "$service is not running."
+            healthy=false
+            for _ in $(seq 1 30); do
+              state="$(sudo -n docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container")"
+              if [ "$state" = healthy ] || [ "$state" = running ]; then healthy=true; break; fi
+              sleep 4
+            done
+            [ "$healthy" = true ] || rollback_hint "$service did not become healthy (last state: $state)."
+          done
+          curl -fsS --retry 8 --retry-delay 3 https://waypoint.claptac.dev/health/live >/dev/null \
+            || rollback_hint "https://waypoint.claptac.dev/health/live failed."
+          # The web app answers unknown paths with its own page (HTTP 200), so require the loader's own page.
+          curl -fsS --retry 3 --retry-delay 3 https://waypoint.claptac.dev/loader-app/ | grep -q flutter_bootstrap.js \
+            || rollback_hint "https://waypoint.claptac.dev/loader-app/ did not return the loader app."
+          curl -fsS --retry 3 --retry-delay 3 https://id.waypoint.claptac.dev/.well-known/openid-configuration \
+            | python3 -c 'import json,sys; assert json.load(sys.stdin)["issuer"] == "https://id.waypoint.claptac.dev"' \
+            || rollback_hint "Identity discovery failed or names another issuer."
+          echo "Deployed $revision."
+          REMOTE
+          grep -Fqx "Deployed $GITHUB_SHA." "$deploy_log" || {
+            echo "Deployment stopped before the final health checks; the VM was not fully updated." >&2
+            exit 1
+          }

@@ -41,6 +41,7 @@ func main() {
 			ClientID:     os.Getenv("M2M_CLIENT_ID"),
 			ClientSecret: os.Getenv("M2M_CLIENT_SECRET"),
 			Scope:        "loading:read-internal outlets:read-internal audit:write",
+			Resource:     getenv("OIDC_AUDIENCE", "waypoint-api"),
 		},
 	}
 	objects := objectstore.Store(objectstore.S3{
@@ -51,6 +52,9 @@ func main() {
 		Region:    getenv("MINIO_REGION", "us-east-1"),
 	})
 	if os.Getenv("MINIO_ENDPOINT") == "" {
+		if err := objectstore.RequireDurable(app.Config.IsLocal(), ""); err != nil {
+			log.Fatal(err)
+		}
 		objects = &objectstore.Memory{}
 	}
 	retentionEnabled, retentionDays, err := deliveryProofRetentionConfig(os.Getenv("DELIVERY_PROOF_RETENTION_ENABLED"), os.Getenv("DELIVERY_PROOF_RETENTION_DAYS"))
