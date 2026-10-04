@@ -285,8 +285,16 @@ class TripDetailScreen extends StatelessWidget {
 
   Future<void> _checkOrder(BuildContext context, LoadingTrip trip) async {
     final input = TextEditingController();
+    final note = TextEditingController();
+    // LD-6: time the entry so a scanner burst is told apart from typing; the loader can still correct it.
+    final typing = Stopwatch();
+    var burst = Duration.zero; // first keystroke to the latest one
+    bool? typedChoice;
+    String reason = '';
     await showDialog<void>(context: context, builder: (ctx) => StatefulBuilder(builder: (ctx, setState) {
       final code = input.text.trim();
+      final typed = typedChoice ?? (code.isNotEmpty && !LoadEntry.looksScanned(code, burst));
+      final entry = typed ? LoadEntry.manual(reason, note: note.text) : const LoadEntry.scan();
       final match = controller.findOrder(code);
       final wrong = match != null && match.$1.tripId != trip.tripId;
       final canLoad = match != null && !wrong && !match.$2.loaded && !match.$2.short && trip.started;
@@ -299,7 +307,17 @@ class TripDetailScreen extends StatelessWidget {
       return AlertDialog(
         title: const Text('Check an order number'),
         content: SizedBox(width: 480, child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          TextField(controller: input, autofocus: true, decoration: const InputDecoration(hintText: 'Order number from the label, e.g. FR-4702'), onChanged: (_) => setState(() {})),
+          TextField(controller: input, autofocus: true, decoration: const InputDecoration(hintText: 'Scan the label, or type the order number, e.g. FR-4702'), onChanged: (v) => setState(() {
+                if (v.trim().isEmpty) {
+                  typing..stop()..reset();
+                  burst = Duration.zero;
+                  typedChoice = null;
+                } else if (!typing.isRunning) {
+                  typing.start();
+                } else {
+                  burst = typing.elapsed;
+                }
+              })),
           const SizedBox(height: 12),
           if (code.isNotEmpty && match == null) const StatusNote(tone: Tone.amber, text: 'This order is not on any load list at your depot for this date. Keep it off the truck and tell the dispatcher.'),
           if (wrong) ...[
@@ -308,24 +326,45 @@ class TripDetailScreen extends StatelessWidget {
           if (match != null && !wrong) StatusNote(tone: Tone.green, text: '${match.$2.orderRef} belongs on this vehicle · Stop ${match.$2.stopSequence}${match.$2.chilled ? ' · chilled zone' : ''}${match.$2.loaded ? ' · already loaded' : ''}.'),
           if (match != null && !wrong && match.$2.short) const Padding(padding: EdgeInsets.only(top: 8), child: StatusNote(tone: Tone.amber, text: 'This order has a reported shortfall.')),
           if (match != null && !wrong && !trip.started) const Padding(padding: EdgeInsets.only(top: 8), child: StatusNote(text: 'Start loading this trip first.')),
+          if (canLoad) ...[
+            const SizedBox(height: 14),
+            const Text('How did you enter this number?', style: TextStyle(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 6),
+            Wrap(spacing: 8, children: [
+              ChoiceChip(label: const Text('Scanned the label'), selected: !typed, onSelected: (_) => setState(() => typedChoice = false)),
+              ChoiceChip(label: const Text('Typed it in'), selected: typed, onSelected: (_) => setState(() => typedChoice = true)),
+            ]),
+            if (typed) ...[
+              const SizedBox(height: 10),
+              const Text('Why could the label not be scanned?'),
+              const SizedBox(height: 6),
+              Wrap(spacing: 8, runSpacing: 6, children: [
+                for (final r in LoadEntry.manualReasons.entries)
+                  ChoiceChip(label: Text(r.value), selected: reason == r.key, onSelected: (_) => setState(() => reason = r.key)),
+              ]),
+              const SizedBox(height: 8),
+              TextField(controller: note, maxLength: 200, decoration: const InputDecoration(hintText: 'Note for the dispatcher (optional)')),
+              if (!entry.complete) const StatusNote(tone: Tone.amber, text: 'Choose a reason before marking a typed order number loaded.'),
+            ],
+          ],
         ])),
         actions: [
           if (wrong || code.isNotEmpty && match == null) OutlinedButton(onPressed: controller.busy ? null : tell, child: const Text('Tell dispatcher')),
           if (wrong) FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('Put back, not on this truck')),
-          if (canLoad) FilledButton(onPressed: () { Navigator.pop(ctx); _markOne(context, trip, match.$2); }, child: const Text('Mark loaded')),
+          if (canLoad) FilledButton(onPressed: entry.complete ? () { Navigator.pop(ctx); _markOne(context, trip, match.$2, entry: entry); } : null, child: const Text('Mark loaded')),
           if (!wrong) OutlinedButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
         ],
       );
     }));
   }
 
-  Future<void> _markOne(BuildContext context, LoadingTrip trip, LoadingOrder order) async {
+  Future<void> _markOne(BuildContext context, LoadingTrip trip, LoadingOrder order, {LoadEntry? entry}) async {
     TechCustody? custody;
     if (_isTech(order)) {
       custody = await showDialog<TechCustody>(context: context, builder: (_) => _CustodyDialog(order: order));
       if (custody == null) return;
     }
-    _toast(context, await controller.markLoaded(trip, order, custody: custody), '${order.orderRef} loaded.');
+    _toast(context, await controller.markLoaded(trip, order, custody: custody, entry: entry), '${order.orderRef} loaded${entry?.manual == true ? ' · typed, reason recorded' : ''}.');
   }
 
   Future<void> _report(BuildContext context, LoadingTrip trip, LoadingOrder order, bool tablet) async {
