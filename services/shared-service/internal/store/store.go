@@ -211,6 +211,11 @@ func (s Store) EnqueueNotification(ctx context.Context, e NotificationEvent) (En
 	var phone, locale string
 	var enabled bool
 	err := s.Pool.QueryRow(ctx, `SELECT phone_e164,locale,consent_enabled AND CASE $2 WHEN 'DEFERRAL' THEN deferrals_enabled WHEN 'LOAD_SHORTFALL' THEN deferrals_enabled WHEN 'MAJOR_DELAY' THEN major_delays_enabled WHEN 'ARRIVAL_CHANGE' THEN major_delays_enabled WHEN 'DELIVERY_REJECTED' THEN deferrals_enabled ELSE false END FROM shared.outlet_notification_preferences WHERE outlet_id=$1`, e.OutletID, e.Type).Scan(&phone, &locale, &enabled)
+	if err == pgx.ErrNoRows {
+		// An outlet that has never saved notification preferences has given no
+		// consent, so nothing is sent. That is not an error for the caller.
+		return EnqueueResult{Status: "suppressed"}, nil
+	}
 	if err != nil {
 		return EnqueueResult{}, err
 	}

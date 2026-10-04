@@ -28,6 +28,10 @@ func (s Service) finishReturnedGoods(ctx context.Context, stopID string) error {
         item.FollowupOrderID, item.FollowupOrderRef, item.FollowupDate = id, ref, date
     }
     if err := s.Repo.EnsureReturnDispatcherMessage(ctx, stopID); err != nil { return err }
-    if err := s.Peers.QueueReturnedGoodsNotice(ctx, *item); err != nil { return err }
+    // The store notice is best effort: a notice that cannot be queued must not
+    // turn the driver's recorded take-back into an error.
+    if err := s.Peers.QueueReturnedGoodsNotice(ctx, *item); err != nil {
+        s.Peers.Logger.Error("returned_goods_notice_failed", "stop_id", stopID, "error", err)
+    }
     return nil
 }
