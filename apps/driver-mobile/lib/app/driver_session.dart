@@ -155,8 +155,15 @@ class DriverSession extends ChangeNotifier {
     if (source == null || !signedIn || !hasRoute || _fetchingMessages) return;
     final tripId = _baseTrip!.tripId;
     _fetchingMessages = true;
-    final result = await source.load(tripId);
-    _fetchingMessages = false;
+    MessageLoad result;
+    try {
+      result = await source.load(tripId);
+    } on Object {
+      // A read that fails any way at all just keeps what was shown; it must not block the next read.
+      result = const MessageLoad.failed('Waypoint sent messages the app could not read.');
+    } finally {
+      _fetchingMessages = false;
+    }
     if (!signedIn) return;
     if (_baseTrip?.tripId != tripId) {
       // The route changed while this was in flight: the answer is for the old trip. Read the new one.
@@ -400,22 +407,51 @@ class DriverSession extends ChangeNotifier {
     if (profile != null) await loadTrips();
   }
 
-  bool _tripLoadInFlight = false;
+  /// The load in progress, if any. Everyone who asks for the route while it is running shares it.
+  Future<void>? _tripLoad;
 
-  /// Loads today's route for the signed-in driver. Safe to call again to retry. A [silent] load, used for
-  /// the automatic retries, does not show the loading state or clear the error while it waits, so the
-  /// screen does not flicker every few seconds; the result is applied the same way.
-  Future<void> loadTrips({bool silent = false}) async {
-    final source = trips;
-    if (source == null || _tripLoadInFlight || !signedIn) return;
-    _tripLoadInFlight = true;
+  /// What the driver is told when Waypoint's answer could not be read at all.
+  static const unreadableRoute = unreadableRouteMessage;
+
+  /// Loads today's route for the signed-in driver. Safe to call again to retry.
+  ///
+  /// There is only ever one load at a time. A call made while one is running does not start another: it
+  /// joins it and ends with the same result. A [silent] load, used for the automatic retries, does not
+  /// show the loading state or clear the error while it waits, so the screen does not flicker every few
+  /// seconds; but when the driver taps Try again during one, the screen shows the loading state at once
+  /// (rather than ignoring the tap until the request times out) and then the result.
+  Future<void> loadTrips({bool silent = false}) {
+    if (trips == null || !signedIn) return Future<void>.value();
+    final running = _tripLoad;
+    if (running != null) {
+      if (!silent && !tripsLoading) {
+        tripsLoading = true;
+        notifyListeners();
+      }
+      return running;
+    }
+    late final Future<void> load;
+    load = _loadTrips(silent: silent).whenComplete(() {
+      if (identical(_tripLoad, load)) _tripLoad = null;
+    });
+    return _tripLoad = load;
+  }
+
+  Future<void> _loadTrips({required bool silent}) async {
+    final source = trips!;
     if (!silent) {
       tripsLoading = true;
       tripsError = null;
       notifyListeners();
     }
-    final result = await source.loadToday();
-    _tripLoadInFlight = false;
+    TripLoad result;
+    try {
+      result = await source.loadToday();
+    } on Object {
+      // Whatever went wrong inside the source, the load ends here with a visible error and the next
+      // attempt (the timer, or the driver) is free to try again. It must never leave the load stuck.
+      result = const TripLoad.failed(unreadableRoute);
+    }
     tripsLoading = false;
     // Waypoint answered (with a route, or with "no trip"): whatever failed before is over. A loud load
     // clears the error up front, but a quiet retry leaves it in place until now.

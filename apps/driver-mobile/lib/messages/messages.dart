@@ -165,6 +165,10 @@ class ApiMessageSource implements MessageSource {
       return MessageLoad.loaded(await api.list(tripId, token));
     } on MessagesFailure catch (failure) {
       return MessageLoad.failed(_message(failure), signInExpired: failure.kind == MessagesFailureKind.unauthorized);
+    } on FormatException {
+      return const MessageLoad.failed('Waypoint sent messages the app could not read.');
+    } on TypeError {
+      return const MessageLoad.failed('Waypoint sent messages the app could not read.');
     }
   }
 
