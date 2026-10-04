@@ -7,6 +7,7 @@ import '../proof/proof_capturer.dart';
 import '../screens/delivery/record_delivery_screen.dart';
 import '../screens/delivery/stop_details_screen.dart';
 import '../screens/delivery/take_back_sheet.dart';
+import '../sync/operations.dart';
 import '../screens/route/report_problem_sheet.dart';
 import '../screens/route/route_home_screen.dart';
 import '../screens/route/safe_stop_screen.dart';
@@ -288,6 +289,7 @@ class _DriverHomeState extends State<_DriverHome> {
       context,
       stop: stop,
       orderRef: stop.orderRef,
+      reason: takeBackReasonText(reasonFor(draft)),
       onSave: (reattempt) => _commit(
         context,
         stop,

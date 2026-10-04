@@ -6,7 +6,7 @@ import { DpHero, Panel } from "./ui";
 export function DispatcherHelpPage() {
   const { t } = useLocale();
   const steps: [string, string, string][] = [
-    ["/dispatcher/orders", t("Review the order queue"), t("Confirmed orders after the 4:00 PM cutoff. Chilled and previously deferred orders are marked.")],
+    ["/dispatcher/orders", t("Review the order queue"), t("Confirmed orders that made the cutoff. Chilled and previously deferred orders are marked.")],
     ["/dispatcher/planning", t("Plan and allocate"), t("Generate the plan, fix blocking issues, defer with a reason, then lock and publish.")],
     ["/dispatcher/live", t("Watch live operations"), t("Trips from driver updates. Breakdowns and closing windows come first.")],
     ["/dispatcher/notifications", t("Decide on exceptions"), t("Loader shortfalls, sync conflicts and store receipts that need a decision.")],

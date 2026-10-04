@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:waypoint_driver/data/driver_models.dart';
+import 'package:waypoint_driver/data/sample_data.dart';
 import 'package:waypoint_driver/main.dart';
 import 'package:waypoint_driver/offline/local_database.dart';
 import 'package:waypoint_driver/proof/proof_capturer.dart';
@@ -156,6 +157,19 @@ void main() {
     final ops = await _ops(queue);
     expect(ops.map((op) => op['type']), ['ARRIVED', 'STOP_OUTCOME']);
     expect((ops.last['payload'] as Map)['deliveredUnits'], 0);
+  });
+
+  testWidgets('the take-back sheet shows the stop\'s own order and the reason that will be sent, not sample content', (tester) async {
+    await _boot(tester, capturer: _Capturer());
+    await _tapText(tester, 'Failed');
+    await _tapText(tester, 'Save delivery');
+    await tester.pumpAndSettle();
+    final stop = sampleStops.first;
+    expect(find.text('Order ${stop.orderRef} · taking back ${stop.units} ${stop.unitLabel}'), findsOneWidget);
+    expect(find.text('Reason: another reason'), findsOneWidget, reason: 'a failed delivery with no reason chosen is sent as OTHER');
+    expect(find.textContaining('Yoghurt'), findsNothing);
+    expect(find.textContaining('Fresh milk'), findsNothing);
+    expect(find.textContaining('arrived after the receiving window'), findsNothing);
   });
 
   testWidgets('without a capturer the buttons say capture is unavailable and nothing is stored', (tester) async {
