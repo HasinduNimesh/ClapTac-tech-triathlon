@@ -63,8 +63,10 @@ class _FakeClient implements OidcClient {
   int refreshes = 0;
   OidcTokens? lastRefreshed;
 
+  OidcTokens? signInResult;
+
   @override
-  Future<OidcTokens?> signIn() async => null;
+  Future<OidcTokens?> signIn() async => signInResult;
 
   @override
   Future<OidcTokens> refresh(OidcTokens current) async {
@@ -83,7 +85,10 @@ class _FakeClient implements OidcClient {
   final gateway = OidcAuthGateway(
     config: _config,
     client: client,
-    profiles: ProfileApi(client: MockClient((_) async => http.Response('{}', 500)), baseUrl: 'http://localhost:18080'),
+    profiles: ProfileApi(
+      client: MockClient((_) async => http.Response('{"profile": {"userId": "USR007", "subject": "usr-other", "roles": ["DRIVER"], "vehicleId": "VEH002"}}', 200)),
+      baseUrl: 'http://localhost:18080',
+    ),
     store: store,
     clock: () => _now,
   );
@@ -257,6 +262,58 @@ void main() {
 
     test('with no session there is nothing to return', () async {
       expect(await _gateway().gateway.accessToken(), isNull);
+    });
+  });
+
+  group('a refresh that finishes after the session changed', () {
+    test('does not write the old session back after a sign-out', () async {
+      final h = _gateway(stored: _tokens(life: const Duration(minutes: -5)));
+      final release = Completer<void>();
+      h.client.hold = release.future;
+      final result = h.gateway.accessToken();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await h.gateway.signOut();
+      expect(await h.store.read(), isNull);
+      release.complete();
+      expect(await result, isNull, reason: 'the driver is signed out, so there is no token to hand out');
+      expect(await h.store.read(), isNull, reason: 'the refreshed session must not come back after sign-out');
+    });
+
+    test('does not overwrite a newer sign-in with the old session\'s tokens', () async {
+      final h = _gateway(stored: _tokens(life: const Duration(minutes: -5)));
+      final release = Completer<void>();
+      h.client.hold = release.future;
+      final result = h.gateway.accessToken();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      // Someone else signs in while the first refresh is still waiting for the provider.
+      h.client.signInResult = _tokens(access: 'new-access', refresh: 'new-refresh');
+      final outcome = await h.gateway.signIn();
+      expect(outcome.profile?.userId, 'USR007');
+      release.complete();
+      expect(await result, isNull);
+      final stored = (await h.store.read())!;
+      expect(stored.tokens.accessToken, 'new-access');
+      expect(stored.profile.userId, 'USR007');
+    });
+
+    test('a refresh token refused after a new sign-in does not wipe that sign-in', () async {
+      final h = _gateway(stored: _tokens(life: const Duration(minutes: -5)));
+      final release = Completer<void>();
+      h.client.hold = release.future;
+      h.client.error = const AuthFailure(AuthFailureKind.unauthorized);
+      final result = h.gateway.accessToken();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      h.client.signInResult = _tokens(access: 'new-access', refresh: 'new-refresh');
+      await h.gateway.signIn();
+      release.complete();
+      expect(await result, isNull);
+      expect((await h.store.read())?.tokens.accessToken, 'new-access', reason: 'the newer session survives');
+    });
+
+    test('an ordinary refresh with no session change is still stored', () async {
+      final h = _gateway(stored: _tokens(life: const Duration(minutes: -5)));
+      expect(await h.gateway.accessToken(), 'access-2');
+      expect((await h.store.read())?.tokens.accessToken, 'access-2');
     });
   });
 
