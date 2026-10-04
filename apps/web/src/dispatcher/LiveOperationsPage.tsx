@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiJSON } from "../api/client";
 import { todayInSriLanka } from "../api/date.mjs";
@@ -19,7 +19,8 @@ import { FRESH_TRIP_BUDGET_MINUTES } from "./planModel";
 import { runRecovery } from "./breakdownRecovery.mjs";
 
 import { useDepot } from "./DispatcherLayout";
-import { Incident, Outlet, outletMap } from "./types";
+import { Incident, Outlet, outletMap, Vehicle } from "./types";
+import { buildSampleTrips, isSampleTrip } from "./sampleTrips.mjs";
 import { LatLng, MapLine, MapMarker, WaypointMap, depotPosition } from "../components/WaypointMap";
 import { LiveLocationMap } from "../components/LiveLocationMap";
 import { ESTIMATES_UNAVAILABLE_MESSAGE, validArrivalAt } from "../api/estimateAvailability.mjs";
@@ -50,6 +51,7 @@ export function LiveOperationsPage() {
   const [date, setDate] = useState(todayInSriLanka);
   const [view, setView] = useState<"list" | "map">("list");
   const [filter, setFilter] = useState<"all" | "risk" | "silent" | "chilled">("all");
+  const [showSample, setShowSample] = useState(false);
   const [rows, setRows] = useState<Row[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
@@ -119,6 +121,14 @@ export function LiveOperationsPage() {
   const order: RowState[] = ["broken", "late", "silent", "ok", "waiting", "done"];
   const sorted = [...evaluated].sort((a, b) => order.indexOf(a.state) - order.indexOf(b.state));
   const visible = sorted.filter((r) => filter === "all" || (filter === "risk" && r.state === "late") || (filter === "silent" && r.state === "silent") || (filter === "chilled" && r.chilled));
+  // Sample routes: only when the day has no trips at all, only on request, and only in the list and
+  // map below. They are built from real outlets and vehicles but never reach the stats or Needs action.
+  const noTrips = loaded && !error && evaluated.length === 0;
+  const sampleOn = showSample && noTrips;
+  const sampleFleet = useApi<{ items: Vehicle[] }>(sampleOn ? "/fleet/vehicles" : null);
+  const sampleRows = useMemo(() => (sampleOn ? (buildSampleTrips({ outlets: (outlets.data?.items || []).filter((o) => !depot || sameDepot(o.depot, depot)), vehicles: sampleFleet.data?.items || [], date }) as Row[]) : []), [sampleOn, outlets.data, sampleFleet.data, date, depot]);
+  const shown = sampleOn ? sampleRows : visible;
+  const openRow = (tripId: string) => { if (!isSampleTrip(tripId)) setOpenTrip(tripId); };
   const totalStops = evaluated.reduce((s, r) => s + (r.summary.stopCount ?? r.detail?.stops.length ?? 0), 0);
   const doneStops = evaluated.reduce((s, r) => s + (r.summary.completedStops ?? r.detail?.stops.filter((x) => x.outcomeCode).length ?? 0), 0);
   const onRoad = evaluated.filter((r) => r.state !== "done" && r.state !== "waiting").length;
@@ -229,20 +239,36 @@ export function LiveOperationsPage() {
           ]} />
           <span className="muted" style={{ fontSize: "0.8125rem" }}>◷ {t("Progress comes from driver updates, not GPS")}</span>
         </>}>
-          {view === "map" ? <TripMap rows={visible} outlets={outletMap(outlets.data?.items)} onOpen={setOpenTrip} /> : (
+          {noTrips && !sampleOn && (
+            <div className="dp-panel-body" style={{ paddingBottom: 0 }}>
+              <Note title={t("No trips on the road for this date")}>
+                {t("To see how the map works, show sample routes built from your real outlets and depots.")}{" "}
+                <button type="button" className="dp-btn dp-btn--sm" onClick={() => { setShowSample(true); setView("map"); }}>{t("Show sample routes")}</button>
+              </Note>
+            </div>
+          )}
+          {sampleOn && (
+            <div className="dp-panel-body" style={{ paddingBottom: 0 }}>
+              <Note tone="amber" title={<>{t("Sample routes")} <Tag tone="amber">{t("Not real trips")}</Tag></>}>
+                {t("These trips are invented to show how the map works. They use real outlets, depots and vehicles, but nothing is planned, sent or counted.")}{" "}
+                <button type="button" className="dp-btn dp-btn--sm dp-btn--secondary" onClick={() => setShowSample(false)}>{t("Hide sample routes")}</button>
+              </Note>
+            </div>
+          )}
+          {view === "map" ? <TripMap rows={shown} outlets={outletMap(outlets.data?.items)} onOpen={openRow} /> : (
             <div className="dp-table-wrap">
               <table className="dp-table">
                 <thead><tr><th>{t("Vehicle / depot")}</th><th>{t("Brand · district")}</th><th>{t("Trip")}</th><th>{t("Progress")}</th><th>{t("Next stop")}</th><th>{t("Planned / estimated")}</th><th>{t("Cooling")}</th><th>{t("Last update")}</th><th>{t("Status")}</th></tr></thead>
                 <tbody>
-                  {loaded && visible.length === 0 && <tr><td colSpan={9}>{t("No delivery trips for this date.")}</td></tr>}
+                  {loaded && shown.length === 0 && <tr><td colSpan={9}>{t("No delivery trips for this date.")}</td></tr>}
                   {!loaded && <tr><td colSpan={9}>{t("Loading trips…")}</td></tr>}
-                  {visible.map((row) => {
+                  {shown.map((row) => {
                     const stops = row.detail?.stops || [];
                     const first = stops[0];
                     const ago = minutesAgo(row.lastUpdate, now);
                     return (
-                      <tr key={row.summary.tripId} className={`is-clickable${row.state === "broken" ? " is-alert" : ""}${row.state === "silent" ? " is-silent" : ""}`} onClick={() => setOpenTrip(row.summary.tripId)}>
-                        <td><button type="button" className="dp-link" onClick={(e) => { e.stopPropagation(); setOpenTrip(row.summary.tripId); }}>{row.summary.vehicleId}</button><span className="dp-cell-sub">{DEPOT_LABELS[row.summary.depot || ""] || row.summary.depot}</span></td>
+                      <tr key={row.summary.tripId} className={`is-clickable${row.state === "broken" ? " is-alert" : ""}${row.state === "silent" ? " is-silent" : ""}`} onClick={() => openRow(row.summary.tripId)}>
+                        <td><button type="button" className="dp-link" onClick={(e) => { e.stopPropagation(); openRow(row.summary.tripId); }}>{row.summary.vehicleId}</button><span className="dp-cell-sub">{DEPOT_LABELS[row.summary.depot || ""] || row.summary.depot}</span></td>
                         <td><span className="dp-cell-main">{t(first?.brand || "—")}</span><span className="dp-cell-sub">{first?.district || ""}</span></td>
                         <td>{row.summary.tripNumber ?? 1} {t("of")} 2</td>
                         <td><span className="dp-dots" aria-label={`${row.summary.completedStops ?? 0} ${t("of")} ${row.summary.stopCount ?? stops.length} ${t("stops")}`}>{stops.map((s) => <span key={s.id} className={`dp-dot${s.outcomeCode ? (/fail|refus/i.test(s.outcomeCode) ? " dp-dot--failed" : " dp-dot--done") : ""}`} />)}</span> <span className="dp-cell-sub" style={{ display: "inline" }}>{row.summary.completedStops ?? 0} {t("of")} {row.summary.stopCount ?? stops.length}</span></td>
@@ -258,7 +284,7 @@ export function LiveOperationsPage() {
               </table>
             </div>
           )}
-          <div className="dp-table-foot"><span>{`${t("Showing")} ${visible.length} ${t("trips")} · ${depot ? DEPOT_LABELS[depot] : t("All depots")} · ${date}`}</span><span>{t("Completed trips move to the bottom")}</span></div>
+          <div className="dp-table-foot"><span>{`${t("Showing")} ${shown.length} ${sampleOn ? t("sample trips") : t("trips")} · ${depot ? DEPOT_LABELS[depot] : t("All depots")} · ${date}`}</span><span>{t("Completed trips move to the bottom")}</span></div>
         </Panel>
       </div>
       <TripDrawer tripId={openTrip} plan={plan.data} serviceMinutes={serviceMinutes} serviceVersion={forecast.data?.forecast?.serviceEstimateVersion || fallbackServiceTime.version} onClose={() => setOpenTrip("")} />
@@ -329,7 +355,7 @@ function TripMap({ rows, outlets, onOpen }: { rows: Row[]; outlets: Map<string, 
                 <div><dt>{t("Next stop")}</dt><dd>{chosen.next ? `${chosen.next.outletId} · ${clock(chosen.nextEta?.eta || chosen.next.plannedWindowOpen)}` : "—"}</dd></div>
                 <div><dt>{t("Last update")}</dt><dd>{chosen.lastUpdate ? clock(chosen.lastUpdate) : t("No driver update yet")}</dd></div>
               </dl>
-              <button type="button" className="dp-btn dp-btn--block" style={{ marginTop: 8 }} onClick={() => onOpen(chosen.summary.tripId)}>{t("Open trip")}</button>
+              {!isSampleTrip(chosen.summary.tripId) && <button type="button" className="dp-btn dp-btn--block" style={{ marginTop: 8 }} onClick={() => onOpen(chosen.summary.tripId)}>{t("Open trip")}</button>}
             </div>
           )}
         </div>
