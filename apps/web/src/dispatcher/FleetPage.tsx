@@ -62,7 +62,7 @@ export function FleetPage() {
     <>
       <DpHero title={t("Fleet")} subtitle={t("Vehicle capability, depot readiness and weekly fuel in one place.")} />
       <StatRow cols={4}>
-        <Stat label={t("Fleet vehicles")} value={scoped.length} sub={depot ? DEPOT_LABELS[depot] : t("Across Peliyagoda and Kandy")} />
+        <Stat label={t("Fleet vehicles")} value={scoped.length} sub={depot ? DEPOT_LABELS[depot] : Object.values(DEPOT_LABELS).join(" · ")} />
         <Stat label={t("Available")} value={available.length} sub={`${t("Includes")} ${available.filter(isRefrigerated).length} ${t("refrigerated")}`} subTone="green" />
         <Stat label={t("Assigned / workshop")} value={`${assigned.length} / ${workshop.length}`} sub={t("Workshop vehicles cannot be allocated")} subTone="red" />
         <Stat label={t("Low fuel remaining")} value={lowFuel.length} sub={t("Below 20% of weekly quota")} subTone="amber" />
@@ -77,7 +77,7 @@ export function FleetPage() {
             <label className="dp-field">{t("Cooling")}<select value={cooling} onChange={(e) => setCooling(e.target.value)}><option value="">{t("All capabilities")}</option><option value="reefer">{t("Refrigerated")}</option><option value="ambient">{t("Ambient")}</option></select></label>
           </div>
         </Panel>
-        <Note title={t("Allocation checks apply to every vehicle")}>{t("Match depot, cooling, weight, volume and delivery windows. Check weekly fuel and the maximum of two trips per vehicle.")}</Note>
+        <Note title={t("Allocation checks apply to every vehicle")}>{t("Match depot, cooling, weight, volume and delivery windows. Check weekly fuel and the maximum trips per vehicle set in Master data.")}</Note>
         {vehicles.error && <p className="dp-note dp-note--red" role="alert">{vehicles.error}</p>}
         <div className="dp-row dp-row--between"><h2 className="dp-panel-title">{t("Vehicle inventory")}</h2><span className="muted" style={{ fontSize: "0.8125rem" }}>{t("Week")}: {ledger.data ? `${dayLabel(ledger.data.weekStart)} – ${dayLabel(ledger.data.weekEnd)}` : dayLabel(date)}</span></div>
         {vehicles.loading && <p role="status">{t("Loading fleet…")}</p>}

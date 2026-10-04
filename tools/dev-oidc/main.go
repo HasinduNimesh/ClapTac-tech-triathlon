@@ -349,7 +349,7 @@ type provisionedUser struct {
 func provisioned() []provisionedUser {
 	return []provisionedUser{
 		{UserID: "USR001", Username: "store-manager", Subject: users["store-manager"].Subject, Role: "STORE_MANAGER", OutletID: "OUT034"},
-		{UserID: "USR002", Username: "dispatcher", Subject: users["dispatcher"].Subject, Role: "DISPATCHER"},
+		{UserID: "USR002", Username: "dispatcher", Subject: users["dispatcher"].Subject, Role: "DISPATCHER", Depot: "DEPOT_NORTH"},
 		{UserID: "USR003", Username: "store-manager-b", Subject: users["store-manager-b"].Subject, Role: "STORE_MANAGER", OutletID: "OUT021"},
 		{UserID: "USR004", Username: "loader", Subject: users["loader"].Subject, Role: "LOADER", Depot: "DEPOT_NORTH"},
 		{UserID: "USR005", Username: "loader-kandy", Subject: users["loader-kandy"].Subject, Role: "LOADER", Depot: "DEPOT_SOUTH"},

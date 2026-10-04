@@ -34,7 +34,7 @@ paths:
   /delivery/trips/{tripId}:
     get:
       operationId: getDeliveryTrip
-      description: Drivers prepare a run from the loading READY snapshot on first get. Dispatchers receive a read-only view and never mutate loading. Each stop snapshots expectedUnits from its order load; unitLabel is "units" because the order model does not define cartons or another physical unit. Historical stops without a matching loading record omit expectedUnits.
+      description: Drivers prepare a run from the loading READY snapshot on first get. Dispatchers receive a read-only view and never mutate loading. Each stop snapshots expectedUnits from its order load; unitLabel is "units" because the order model does not define cartons or another physical unit. Historical stops without a matching loading record omit expectedUnits. Each stop also carries latitude and longitude read from its outlet when the trip is served (not stored, so a corrected position reaches prepared trips within about 30 seconds); locationApproximate is true when only the approximate district position is known, in which case a client must not navigate to it as the shop. Stops omit the position when shared-service cannot be reached.
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: "#/components/parameters/TripID"
