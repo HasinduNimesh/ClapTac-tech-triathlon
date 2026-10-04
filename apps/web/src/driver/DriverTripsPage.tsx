@@ -69,6 +69,34 @@ export function DriverTripsPage() {
   const queueHealthReport = useRef({ ownerId: "", attemptedAt: 0, inFlight: false });
   detailRef.current = detail;
 
+
+  useEffect(() => {
+    const activeTrip = detail?.status === "in_progress" || detail?.run?.status === "in_progress";
+    if (!activeTrip || endedLocally || !detail?.tripId || !token || ownerState !== "ready" || !navigator.geolocation) return;
+    const tripId = detail.tripId;
+    let stopped = false;
+    let sending = false;
+    let lastSent = 0;
+    let watchId: number;
+    try {
+      watchId = navigator.geolocation.watchPosition((position) => {
+      if (stopped || sending || !navigator.onLine || Date.now() - lastSent < 15_000) return;
+      sending = true;
+      lastSent = Date.now();
+      void apiJSON("/delivery/trips/" + encodeURIComponent(tripId) + "/location", token, {
+        method: "POST",
+        body: JSON.stringify({ latitude: position.coords.latitude, longitude: position.coords.longitude, timestamp: new Date(position.timestamp).toISOString() }),
+      }).catch((err) => {
+        if (err instanceof ApiError && [403, 404, 409].includes(err.status)) {
+          stopped = true;
+          navigator.geolocation.clearWatch(watchId);
+        }
+      }).finally(() => { sending = false; });
+      }, () => { /* Permission or GPS failure leaves the route usable. */ }, { enableHighAccuracy: true, maximumAge: 10_000, timeout: 15_000 });
+    } catch { return; }
+    return () => { stopped = true; navigator.geolocation.clearWatch(watchId); };
+  }, [detail?.tripId, detail?.status, detail?.run?.status, endedLocally, token, ownerState]);
+
   // Every record is stamped with the plan version this screen was showing, so the
   // server can tell when it was made on an older plan.
   function enqueueRecord(item: QueueItem) {
@@ -118,6 +146,7 @@ export function DriverTripsPage() {
       />
     );
   }
+
 
   // FR-25 review fix: receiverName is proof metadata for whichever stop is
   // currently open. Without this, switching stops after typing a name for

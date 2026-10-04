@@ -1,7 +1,6 @@
 package e2e
 
 import (
-	"sync/atomic"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -15,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -236,6 +236,7 @@ func TestDeliveryWorkflow(t *testing.T) {
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0031_cold_chain_readings.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0038_delivery_proof_receiver_name.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0039_delivery_driver_incidents.sql"))
+	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0074_delivery_live_locations.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0040_delivery_stop_expected_units.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0041_delivery_outcome_units.sql"))
 
@@ -244,7 +245,6 @@ func TestDeliveryWorkflow(t *testing.T) {
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0055_delivery_checkout.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0057_delivery_arrival_predictions.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0058_delivery_returns.sql"))
-
 
 	peers := httptest.NewServer(peerStub())
 	t.Cleanup(peers.Close)
@@ -298,12 +298,32 @@ func TestDeliveryWorkflow(t *testing.T) {
 		t.Fatalf("other driver %d", code)
 	}
 
+	pointBody := []byte(fmt.Sprintf(`{"latitude":6.9271,"longitude":79.8612,"timestamp":%q}`, time.Now().UTC().Format(time.RFC3339Nano)))
+	// The run is created when the assigned driver first opens the trip. Until then
+	// there is nothing to report a position for (404); once prepared but not
+	// started the trip is not active (409).
+	if code := do(t, srv, http.MethodPost, "/api/v1/delivery/trips/trip-north/location", "usr-driver", pointBody, "").status; code != http.StatusNotFound {
+		t.Fatalf("unprepared trip location status=%d", code)
+	}
+	if opened := do(t, srv, http.MethodGet, "/api/v1/delivery/trips/trip-north", "usr-driver", nil, ""); opened.status != http.StatusOK {
+		t.Fatalf("driver opens trip %d %s", opened.status, opened.body)
+	}
+	if code := do(t, srv, http.MethodPost, "/api/v1/delivery/trips/trip-north/location", "usr-driver", pointBody, "").status; code != http.StatusConflict {
+		t.Fatalf("prepared trip accepted location status=%d", code)
+	}
+
 	beforeCheckout := do(t, srv, http.MethodPost, "/api/v1/delivery/trips/trip-north/start", "usr-driver", nil, "start-before-checkout")
-	if beforeCheckout.status != http.StatusConflict { t.Fatalf("departure without checkout %d %s", beforeCheckout.status, beforeCheckout.body) }
+	if beforeCheckout.status != http.StatusConflict {
+		t.Fatalf("departure without checkout %d %s", beforeCheckout.status, beforeCheckout.body)
+	}
 	staleCheckout := do(t, srv, http.MethodPost, "/api/v1/delivery/trips/trip-north/checkout", "usr-driver", []byte(`{"planVersion":2,"confirmedOrderIds":["ord-1","ord-2","ord-4","ord-5"]}`), "")
-	if staleCheckout.status != http.StatusConflict { t.Fatalf("stale plan checkout %d %s", staleCheckout.status, staleCheckout.body) }
+	if staleCheckout.status != http.StatusConflict {
+		t.Fatalf("stale plan checkout %d %s", staleCheckout.status, staleCheckout.body)
+	}
 	wrongDriver := do(t, srv, http.MethodPost, "/api/v1/delivery/trips/trip-north/checkout", "usr-driver-other", []byte(`{"planVersion":1,"confirmedOrderIds":["ord-1","ord-2","ord-4","ord-5"]}`), "")
-	if wrongDriver.status != http.StatusForbidden { t.Fatalf("other vehicle checkout %d %s", wrongDriver.status, wrongDriver.body) }
+	if wrongDriver.status != http.StatusForbidden {
+		t.Fatalf("other vehicle checkout %d %s", wrongDriver.status, wrongDriver.body)
+	}
 	blockedCheckout := do(t, srv, http.MethodPost, "/api/v1/delivery/trips/trip-north/checkout", "usr-driver", []byte(`{"planVersion":1,"confirmedOrderIds":["ord-1","ord-4","ord-5"]}`), "")
 	if blockedCheckout.status != http.StatusOK || !strings.Contains(blockedCheckout.body, `"status":"blocked"`) {
 		t.Fatalf("missing goods did not block checkout %d %s", blockedCheckout.status, blockedCheckout.body)
@@ -339,9 +359,28 @@ func TestDeliveryWorkflow(t *testing.T) {
 	if reconfirmed.status != http.StatusOK || !strings.Contains(reconfirmed.body, `"status":"confirmed"`) {
 		t.Fatalf("reconfirmed checkout %d %s", reconfirmed.status, reconfirmed.body)
 	}
+
 	started := do(t, srv, http.MethodPost, "/api/v1/delivery/trips/trip-north/start", "usr-driver", nil, "start-1")
 	if started.status != http.StatusOK {
 		t.Fatalf("start %d %s", started.status, started.body)
+	}
+	point := do(t, srv, http.MethodPost, "/api/v1/delivery/trips/trip-north/location", "usr-driver", pointBody, "")
+	if point.status != http.StatusOK || !strings.Contains(point.body, `"vehicleId":"VEH001"`) {
+		t.Fatalf("active point %d %s", point.status, point.body)
+	}
+	if code := do(t, srv, http.MethodPost, "/api/v1/delivery/trips/trip-north/location", "usr-driver-other", pointBody, "").status; code != http.StatusForbidden {
+		t.Fatalf("other driver location status=%d", code)
+	}
+	if code := do(t, srv, http.MethodGet, "/api/v1/delivery/trips/trip-north/location", "usr-store-manager", nil, "").status; code != http.StatusForbidden {
+		t.Fatalf("store direct location status=%d", code)
+	}
+	visible := do(t, srv, http.MethodGet, "/api/v1/delivery/trips/trip-north/location", "usr-dispatcher", nil, "")
+	if visible.status != http.StatusOK || !strings.Contains(visible.body, `"latitude":6.9271`) {
+		t.Fatalf("dispatcher location %d %s", visible.status, visible.body)
+	}
+	storeScoped := do(t, srv, http.MethodGet, "/api/v1/delivery/internal/orders/ord-1", "svc-order", nil, "")
+	if storeScoped.status != http.StatusOK || !strings.Contains(storeScoped.body, `"latitude":6.9271`) {
+		t.Fatalf("authorized order location %d %s", storeScoped.status, storeScoped.body)
 	}
 	startReplay := do(t, srv, http.MethodPost, "/api/v1/delivery/trips/trip-north/start", "usr-driver", nil, "start-1")
 	if startReplay.status != http.StatusOK || !strings.Contains(startReplay.body, `"in_progress"`) {
@@ -725,18 +764,29 @@ func TestDeliveryWorkflow(t *testing.T) {
 		t.Fatalf("returned goods count=%d err=%v", returnCount, err)
 	}
 
-    returnedTracking := do(t, srv, http.MethodGet, "/api/v1/delivery/internal/orders/ord-5", "svc-order", nil, "")
-    if returnedTracking.status != http.StatusOK || !strings.Contains(returnedTracking.body, `"goods":"Rejected cartons"`) ||
-        !strings.Contains(returnedTracking.body, `"followupOrderRef":"ORD000006"`) {
-        t.Fatalf("returned goods tracking: %d %s", returnedTracking.status, returnedTracking.body)
-    }
-    var dispatcherNotices int
-    if err := pool.QueryRow(ctx, `SELECT count(*) FROM delivery.trip_messages WHERE stop_id=$1::uuid AND sent_by='system:returned-goods'`, stop4).Scan(&dispatcherNotices); err != nil || dispatcherNotices != 1 {
-        t.Fatalf("dispatcher return notice count=%d err=%v", dispatcherNotices, err)
-    }
+	returnedTracking := do(t, srv, http.MethodGet, "/api/v1/delivery/internal/orders/ord-5", "svc-order", nil, "")
+	if returnedTracking.status != http.StatusOK || !strings.Contains(returnedTracking.body, `"goods":"Rejected cartons"`) ||
+		!strings.Contains(returnedTracking.body, `"followupOrderRef":"ORD000006"`) {
+		t.Fatalf("returned goods tracking: %d %s", returnedTracking.status, returnedTracking.body)
+	}
+	var dispatcherNotices int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM delivery.trip_messages WHERE stop_id=$1::uuid AND sent_by='system:returned-goods'`, stop4).Scan(&dispatcherNotices); err != nil || dispatcherNotices != 1 {
+		t.Fatalf("dispatcher return notice count=%d err=%v", dispatcherNotices, err)
+	}
 	done := do(t, srv, http.MethodPost, "/api/v1/delivery/sync", "usr-driver", []byte(`{"operations":[{"operationId":"done-1","type":"ROUTE_COMPLETED","tripId":"trip-north"}]}`), "")
 	if done.status != http.StatusOK || !strings.Contains(done.body, `"APPLIED"`) {
 		t.Fatalf("complete %d %s", done.status, done.body)
+	}
+	if code := do(t, srv, http.MethodPost, "/api/v1/delivery/trips/trip-north/location", "usr-driver", pointBody, "").status; code != http.StatusConflict {
+		t.Fatalf("completed trip accepted location status=%d", code)
+	}
+	endedOrder := do(t, srv, http.MethodGet, "/api/v1/delivery/internal/orders/ord-1", "svc-order", nil, "")
+	if endedOrder.status != http.StatusOK || strings.Contains(endedOrder.body, `"location"`) {
+		t.Fatalf("completed order still exposes location %d %s", endedOrder.status, endedOrder.body)
+	}
+	ended := do(t, srv, http.MethodGet, "/api/v1/delivery/trips/trip-north/location", "usr-dispatcher", nil, "")
+	if ended.status != http.StatusOK || !strings.Contains(ended.body, `"location":null`) {
+		t.Fatalf("completed trip still live %d %s", ended.status, ended.body)
 	}
 	dispatcherDetail := do(t, srv, http.MethodGet, "/api/v1/delivery/trips/trip-north", "usr-dispatcher", nil, "")
 	if dispatcherDetail.status != http.StatusOK || !strings.Contains(dispatcherDetail.body, `"outcomeCode":"DELIVERED"`) || !strings.Contains(dispatcherDetail.body, `"outcomeCode":"PARTIAL"`) || !strings.Contains(dispatcherDetail.body, `"outcomeCode":"FAILED"`) || !strings.Contains(dispatcherDetail.body, `"outcomeCode":"REFUSED"`) {
@@ -865,14 +915,14 @@ func peerStub() http.Handler {
 	r.Post("/api/v1/shared/audit-events", func(w http.ResponseWriter, _ *http.Request) {
 		httpx.WriteJSON(w, http.StatusAccepted, map[string]any{"status": "ingested"})
 	})
-    r.Post("/api/v1/orders/internal/delivery-followups", func(w http.ResponseWriter, _ *http.Request) {
-        httpx.WriteJSON(w, http.StatusOK, map[string]any{"order": map[string]any{
-            "id": "followup-ord-5", "orderRef": "ORD000006", "requestedDeliveryDate": "2026-09-30",
-        }})
-    })
-    r.Post("/api/v1/shared/internal/notifications/enqueue", func(w http.ResponseWriter, _ *http.Request) {
-        httpx.WriteJSON(w, http.StatusAccepted, map[string]any{"notification": map[string]any{"status": "enqueued"}})
-    })
+	r.Post("/api/v1/orders/internal/delivery-followups", func(w http.ResponseWriter, _ *http.Request) {
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{"order": map[string]any{
+			"id": "followup-ord-5", "orderRef": "ORD000006", "requestedDeliveryDate": "2026-09-30",
+		}})
+	})
+	r.Post("/api/v1/shared/internal/notifications/enqueue", func(w http.ResponseWriter, _ *http.Request) {
+		httpx.WriteJSON(w, http.StatusAccepted, map[string]any{"notification": map[string]any{"status": "enqueued"}})
+	})
 	return r
 }
 

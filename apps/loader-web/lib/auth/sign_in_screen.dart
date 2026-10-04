@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../theme/tokens.dart';
 import '../widgets/common.dart';
 import 'auth.dart';
+import 'inactivity_monitor.dart';
 
 /// The loader's way in. The password is typed on the identity server's own page, never here:
 /// this screen only sends the browser there and explains it when something goes wrong.
@@ -35,6 +36,10 @@ class _SignInScreenState extends State<SignInScreen> {
         SignInError.noProfile => ('Your access profile could not be loaded', 'Your account is not set up for Waypoint yet. Ask your supervisor.'),
         SignInError.wrongAudience => ('Signed in, but not for the Waypoint API', 'The identity server issued a token for "${e!.detail}", which the Waypoint services will not accept. Ask IT to check the loader client\'s API resource setting.'),
         SignInError.sessionExpired => ('Your session ended', 'Sign in again to continue. Loads and reports are saved on the server as you make them.'),
+        SignInError.inactivity => (
+            'Signed out',
+            'You were signed out after ${loaderInactivityTimeout.inMinutes} minutes of inactivity.${e!.detail == 'unsent' ? ' A report that had not been sent was discarded. Open the trip and send it again.' : ''}',
+          ),
         null => null,
       };
 
