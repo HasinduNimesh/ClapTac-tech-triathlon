@@ -20,7 +20,7 @@ import { Check, ChipGroup, DpHero, Drawer, Note, Panel, Stat, StatRow, Tag, Toas
 import { clock, dateTime, errorText, isChilled, minutesAgo, useApi, useToken } from "./useApi";
 
 type TripMessage = { id: string; tripId: string; stopId?: string; body: string; sentBy: string; createdAt: string; acknowledgedBy?: string; acknowledgedAt?: string };
-type BreakdownProposal = { planId: string; vehicleId: string; items: { tripNumber: number; stops: { allocationId: string; orderId: string; orderRef: string; outletId: string; stopSequence: number }[]; options: { vehicleId: string; valid: boolean; projectedStops: number; failures: { reasonCode: string }[] }[] }[]; confirmed: boolean };
+type BreakdownProposal = { planId: string; vehicleId: string; items: { tripNumber: number; stops: { allocationId: string; orderId: string; orderRef: string; outletId: string; stopSequence: number; urgencyRank?: number; chilled?: boolean; windowClose?: string }[]; options: { vehicleId: string; valid: boolean; projectedStops: number; failures: { reasonCode: string }[] }[] }[]; confirmed: boolean; critical?: boolean; severity?: string };
 type RowState = "broken" | "late" | "silent" | "done" | "ok" | "waiting";
 type Row = { summary: DeliveryTripSummary; detail?: DeliveryTripDetail; state: RowState; next?: DeliveryStop; nextEta?: ReturnType<typeof estimateArrival>; lastUpdate?: string; chilled: boolean; incident?: Incident };
 type Severity = "critical" | "high" | "medium" | "low";
@@ -428,7 +428,7 @@ function RecoveryDrawer({ incident, plan, rows, onClose, onDone }: { incident: I
   const row = rows.find((r) => r.summary.vehicleId === incident?.vehicleId);
   const stopInfo = (orderId: string) => row?.detail?.stops.find((s) => s.orderId === orderId);
   const ranked = (proposal?.items || []).flatMap((item) => item.stops.map((s) => ({ ...s, tripNumber: item.tripNumber, stop: stopInfo(s.orderId) })))
-    .sort((a, b) => Number(isChilled(b.stop?.temperatureRequirement)) - Number(isChilled(a.stop?.temperatureRequirement)) || (a.stop?.plannedWindowClose || "").localeCompare(b.stop?.plannedWindowClose || ""));
+    .sort((a, b) => Number(Boolean(b.chilled) || isChilled(b.stop?.temperatureRequirement)) - Number(Boolean(a.chilled) || isChilled(a.stop?.temperatureRequirement)) || (a.windowClose || a.stop?.plannedWindowClose || "").localeCompare(b.windowClose || b.stop?.plannedWindowClose || "") || (a.urgencyRank ?? 0) - (b.urgencyRank ?? 0));
   const anyChoice = Object.values(choice).some(Boolean);
   const steps = (
     <ol className="dp-steps">
