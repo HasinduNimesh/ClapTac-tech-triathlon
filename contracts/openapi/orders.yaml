@@ -49,6 +49,27 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "500": { $ref: "#/components/responses/Internal" }
+  /orders/internal/delivery-followups:
+    post:
+      operationId: createDeliveryFollowup
+      description: Delivery-service only; idempotently clones a rejected stop's goods as a confirmed order for the next operating run.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sourceOrderId, stopId, tripDate, units, resolution]
+              properties:
+                sourceOrderId: { type: string }
+                stopId: { type: string }
+                tripDate: { type: string, format: date }
+                units: { type: integer, minimum: 1 }
+                resolution: { type: string, enum: [NEXT_RUN, REQUEST_DEFERRAL] }
+      responses:
+        "200": { description: Created or existing follow-up order }
+        "403": { description: Internal order scope required }
   /orders/cutoff:
     get:
       operationId: getOrderCutoff

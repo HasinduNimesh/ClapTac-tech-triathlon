@@ -56,6 +56,13 @@ spec:
 ---
 apiVersion: v1
 kind: Service
+metadata: { name: agent-assistants, namespace: waypoint }
+spec:
+  selector: { app: agent-assistants }
+  ports: [{ name: http, port: 8080, targetPort: 8080 }]
+---
+apiVersion: v1
+kind: Service
 metadata: { name: web, namespace: waypoint }
 spec:
   selector: { app: web }

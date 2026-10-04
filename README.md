@@ -43,6 +43,17 @@ Open:
 
 The checked-in `database/seeds/` files are generated from the official `Tech-Triathlon 2026 - Datasets/` release via `scripts/convert-official-dataset.py` (120 outlets, 60 vehicles, 910 calendar dates — matching the official counts). The travel and service-allowance tables are a documented lossy approximation of the official reference model; see `database/seeds/README.md`. After pulling an updated official dataset, re-run `python3 scripts/convert-official-dataset.py`, then `./scripts/validate-seeds.py`, then `make seed-competition-data`. The importer upserts outlet/vehicle rows and reloads the optional reference tables.
 
+## Agents, workflows and prediction models
+
+| Kind | Where in Waypoint |
+|---|---|
+| Agent (reads people's words, suggests, a person says yes) | A1 order text helper (sparkle button on Place an Order); A2 Create new dashboard; the guarded chat assistant (M7). A1/A2 live in `services/agent-assistants` (Python, LangGraph) and only return drafts. |
+| Automated workflow (fixed steps) | Order received, plan publish/acknowledge, deferral notice, loading shortfall, offline sync, delivery and receipt, breakdown reassignment, audit record keeping (Go services). |
+| Prediction model (a number or range) | Arrival range and lateness probability, history-based demand forecast. |
+| Rule (yes/no against a limit) | Planning constraints: weight, volume, cooling, van-only, depot, trips, window, fuel. |
+
+Set `LLM_BASE_URL` and `LLM_MODEL` to switch the helpers on; without them the helpers are hidden and every screen works as before. Run their tests with `./scripts/test-agent-assistants.sh`.
+
 ## Seeded judge accounts
 
 Each account has one server-side role; there is no role selector. The local development password is `waypoint` for all four:
@@ -110,3 +121,7 @@ The Hackathon build follows the Designathon workflow (order → plan/allocate/de
 - A public URL, DNS zone, TLS certificate, production cluster, durable DB/object storage, and production secret store have not been supplied. Kubernetes files are deployment inputs and need target-specific release configuration.
 - Assistant provider is optional and not configured by default. Planning feasibility remains deterministic; sensitive assistant writes require explicit human approval and service-side reauthorization.
 - See [known deployment requirements](docs/architecture.md), [AI disclosure](docs/ai-disclosure.md), and the [submission runbook](docs/submission.md).
+
+## A3 habit helper and A4 workflow builder
+
+Store Managers and Dispatchers can open **My automations**. A3 offers evidence-backed order prefills or personal planning review flags and remembers Yes/No responses. A4 drafts a weekly workflow, tests it, and activates only after **Turn on**. Scheduled workflows run independently of the optional LLM. See [setup, screen-recording script, test commands and scope](docs/a3-a4-demo.md).

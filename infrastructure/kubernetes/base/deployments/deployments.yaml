@@ -209,6 +209,39 @@ spec:
 ---
 apiVersion: apps/v1
 kind: Deployment
+metadata: { name: agent-assistants, namespace: waypoint }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: agent-assistants } }
+  template:
+    metadata: { labels: { app: agent-assistants, waypoint.io/tier: agent } }
+    spec:
+      serviceAccountName: agent-assistants
+      containers:
+        - name: app
+          image: waypoint/agent-assistants:dev
+          ports: [{ containerPort: 8080 }]
+          env:
+            - { name: ENVIRONMENT, valueFrom: { configMapKeyRef: { name: waypoint-config, key: ENVIRONMENT } } }
+            - { name: OIDC_ISSUER, valueFrom: { configMapKeyRef: { name: waypoint-config, key: OIDC_ISSUER } } }
+            - { name: OIDC_AUDIENCE, valueFrom: { configMapKeyRef: { name: waypoint-config, key: OIDC_AUDIENCE } } }
+            - { name: OIDC_JWKS_URL, valueFrom: { configMapKeyRef: { name: waypoint-config, key: OIDC_JWKS_URL } } }
+            - { name: SHARED_SERVICE_URL, valueFrom: { configMapKeyRef: { name: waypoint-config, key: SHARED_SERVICE_URL } } }
+            - { name: ORDER_SERVICE_URL, value: "http://order-service:8080" }
+            - { name: LLM_BASE_URL, valueFrom: { configMapKeyRef: { name: waypoint-config, key: LLM_BASE_URL } } }
+            - { name: LLM_MODEL, valueFrom: { configMapKeyRef: { name: waypoint-config, key: LLM_MODEL } } }
+            - name: LLM_API_KEY
+              valueFrom:
+                secretKeyRef: { name: waypoint-llm, key: api-key, optional: true }
+          resources:
+            requests: { cpu: 50m, memory: 96Mi }
+            limits: { memory: 256Mi }
+          securityContext: { runAsNonRoot: true, runAsUser: 65534, allowPrivilegeEscalation: false, readOnlyRootFilesystem: true }
+          readinessProbe: { httpGet: { path: /health/ready, port: 8080 } }
+          livenessProbe: { httpGet: { path: /health/live, port: 8080 } }
+---
+apiVersion: apps/v1
+kind: Deployment
 metadata: { name: web, namespace: waypoint }
 spec:
   replicas: 1

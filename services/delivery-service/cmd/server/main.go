@@ -34,13 +34,14 @@ func main() {
 
 	peers := client.Peers{
 		LoadingURL: getenv("LOADING_SERVICE_URL", "http://loading-service:8080"),
+        OrdersURL: getenv("ORDER_SERVICE_URL", "http://order-service:8080"),
 		SharedURL:  getenv("SHARED_SERVICE_URL", "http://shared-service:8080"),
 		Logger:     app.Logger,
 		M2M: &oauth.TokenSource{
 			TokenURL:     getenv("OIDC_TOKEN_URL", "http://thunderid:8090/oauth2/token"),
 			ClientID:     os.Getenv("M2M_CLIENT_ID"),
 			ClientSecret: os.Getenv("M2M_CLIENT_SECRET"),
-			Scope:        "loading:read-internal outlets:read-internal audit:write",
+			Scope:        "loading:read-internal outlets:read-internal audit:write orders:write-internal",
 			Resource:     getenv("OIDC_AUDIENCE", "waypoint-api"),
 		},
 	}
@@ -68,7 +69,7 @@ func main() {
 	h := handler.Handler{
 		Authn:    app.Authenticator,
 		Profiles: client.Profiles{Shared: peers},
-		Service:  service.Service{Repo: store.Postgres{Pool: pool}, Peers: peers, Objects: objects},
+		Service:  service.Service{Repo: store.Postgres{Pool: pool}, Peers: peers, Objects: objects, ServiceMinutesPerStop: serviceMinutesPerStop(app.Logger)},
 	}
 	if err := app.Run(func(r chi.Router) { h.Routes(r) }); err != nil {
 		log.Fatal(err)
@@ -99,4 +100,19 @@ func deliveryProofRetentionConfig(enabledValue, daysValue string) (bool, int, er
 		return false, 0, fmt.Errorf("DELIVERY_PROOF_RETENTION_DAYS must be between 1 and 3650")
 	}
 	return enabled, days, nil
+}
+
+// serviceMinutesPerStop is the per-stop service allowance behind arrival-time projections; it should match
+// the allowance the planner uses. Unset or invalid means the 20-minute default.
+func serviceMinutesPerStop(logger interface{ Warn(string, ...any) }) int {
+	raw := os.Getenv("DELIVERY_SERVICE_MINUTES_PER_STOP")
+	if raw == "" {
+		return service.DefaultServiceMinutesPerStop
+	}
+	minutes, err := strconv.Atoi(raw)
+	if err != nil || minutes < 0 || minutes > 240 {
+		logger.Warn("delivery_service_minutes_per_stop_invalid", "value", raw)
+		return service.DefaultServiceMinutesPerStop
+	}
+	return minutes
 }
