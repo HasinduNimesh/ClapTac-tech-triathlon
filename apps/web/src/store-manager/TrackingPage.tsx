@@ -1,5 +1,6 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { ArrivalPrediction } from "../api/delivery";
 import { apiJSON, Order } from "../api/client";
 import { LiveLocation } from "../api/delivery";
 import { LiveLocationMap } from "../components/LiveLocationMap";
@@ -16,7 +17,7 @@ type Tracking = {
   stage:string;
   order:Order;
   planning:{state:string;planRef?:string;stopSequence?:number;reasonCode?:string;reasonComment?:string;plannedArrivalAt?:string;plannedServiceStartAt?:string};
-  delivery?:{runStatus:string;depot?:string;location?:LiveLocation;outcome?:string;reason?:string;completedAt?:string;proofs:{type:string;mimeType:string;pending:boolean;receiverName?:string}[];loadingShortfallSummary?:unknown[]};
+  delivery?:{runStatus:string;depot?:string;location?:LiveLocation;arrivalPrediction?:ArrivalPrediction;returnedGoods?:{goods:string;units:number;reason:string;resolution:string;followupOrderRef?:string;followupDate?:string};outcome?:string;reason?:string;completedAt?:string;proofs:{type:string;mimeType:string;pending:boolean;receiverName?:string}[];loadingShortfallSummary?:unknown[]};
   receipt?:Receipt;
   receiptIssues:ReceiptIssue[];
   custody?:CustodyEvent[];
@@ -86,6 +87,12 @@ export function TrackingPage({receiptsOnly=false}:{receiptsOnly?:boolean}){
     </article>):items.map(row=><article className="card" key={row.order.id}>
       <h3>{row.order.orderRef} · {row.order.brand}</h3><p>{t("Requested")} {row.order.requestedDeliveryDate} · {row.order.orderUnits} {t("units")} · {t(row.stage.replace(/_/g," "))}</p>
       {row.delivery?.runStatus==="in_progress"&&<LiveLocationMap key={row.order.id} location={row.delivery.location||null} store={row.order.outletId} depot={row.delivery.depot||"Depot"} />}
+      {row.delivery?.returnedGoods&&<p role="status">{t("Returned goods")}: {row.delivery.returnedGoods.units} - {row.delivery.returnedGoods.goods} - {t(row.delivery.returnedGoods.reason)}. {row.delivery.returnedGoods.resolution==="REQUEST_DEFERRAL"?t("Dispatcher deferral requested"):t("Re-attempt on next run")}. {row.delivery.returnedGoods.followupOrderRef&&<>{t("Follow-up order")}: {row.delivery.returnedGoods.followupOrderRef} - {row.delivery.returnedGoods.followupDate}</>}</p>}
+      {row.delivery?.arrivalPrediction&&<div role="status">
+        <p>{t("Predicted arrival")}: {new Date(row.delivery.arrivalPrediction.estimatedArrivalAt).toLocaleString()} - {t(row.delivery.arrivalPrediction.lateRisk)}</p>
+        {row.delivery.arrivalPrediction.arrivalRangeLower&&row.delivery.arrivalPrediction.arrivalRangeUpper&&<p>{t("Arrival range")}: {new Date(row.delivery.arrivalPrediction.arrivalRangeLower).toLocaleString()} - {new Date(row.delivery.arrivalPrediction.arrivalRangeUpper).toLocaleString()}</p>}
+        {row.delivery.arrivalPrediction.previouslyCommunicatedAt&&row.delivery.arrivalPrediction.notifiedArrivalAt&&<p>{t("Arrival changed from")} {new Date(row.delivery.arrivalPrediction.previouslyCommunicatedAt).toLocaleString()} {t("to")} {new Date(row.delivery.arrivalPrediction.notifiedArrivalAt).toLocaleString()}</p>}
+      </div>}
       {validArrivalAt(row.planning.plannedArrivalAt)?<p>{t("Planned arrival")}: {new Date(row.planning.plannedArrivalAt).toLocaleString()}</p>:["PLANNED","READY_FOR_DEPARTURE","OUT_FOR_DELIVERY"].includes(row.stage)&&<p role="status">{ESTIMATES_UNAVAILABLE_MESSAGE}</p>}
       {row.planning.reasonCode&&(()=>{const why=deferralExplanation(row.planning.reasonCode);return <div className="status-bad" role="status"><p><strong>{t("Deferred")}</strong>: {t(why.message)}{row.planning.reasonComment?` · ${row.planning.reasonComment}`:""}</p><p>{t("What happens next")}: {t(why.nextAction)}</p></div>;})()}
       {(row.custody||[]).length>0&&<section className="card"><h4>{t("Tech chain of custody")}</h4><ol>{row.custody!.map(event=><li key={event.id}>{t(event.stage)} · {t("Seal ID")} {event.sealId} · {event.serialNumbers.join(", ")} · {event.condition} · {event.recordedBy} · {new Date(event.recordedAt).toLocaleString()}{event.receiverName?` · ${event.receiverName}`:""}{event.evidenceRef?` · ${t("Evidence reference")} ${event.evidenceRef}`:""}</li>)}</ol></section>}

@@ -179,6 +179,12 @@ type NotificationEvent struct {
 	OrderRef     string `json:"orderRef"`
 	Reason       string `json:"reason,omitempty"`
 	DelayMinutes int    `json:"delayMinutes,omitempty"`
+	OldArrivalAt string `json:"oldArrivalAt,omitempty"`
+	Goods string `json:"goods,omitempty"`
+	Units int `json:"units,omitempty"`
+	Resolution string `json:"resolution,omitempty"`
+	FollowupDate string `json:"followupDate,omitempty"`
+	NewArrivalAt string `json:"newArrivalAt,omitempty"`
 }
 
 type EnqueueResult struct {
@@ -189,7 +195,7 @@ type EnqueueResult struct {
 func (s Store) EnqueueNotification(ctx context.Context, e NotificationEvent) (EnqueueResult, error) {
 	var phone, locale string
 	var enabled bool
-	err := s.Pool.QueryRow(ctx, `SELECT phone_e164,locale,consent_enabled AND CASE $2 WHEN 'DEFERRAL' THEN deferrals_enabled WHEN 'MAJOR_DELAY' THEN major_delays_enabled ELSE false END FROM shared.outlet_notification_preferences WHERE outlet_id=$1`, e.OutletID, e.Type).Scan(&phone, &locale, &enabled)
+	err := s.Pool.QueryRow(ctx, `SELECT phone_e164,locale,consent_enabled AND CASE $2 WHEN 'DEFERRAL' THEN deferrals_enabled WHEN 'MAJOR_DELAY' THEN major_delays_enabled WHEN 'ARRIVAL_CHANGE' THEN major_delays_enabled WHEN 'DELIVERY_REJECTED' THEN deferrals_enabled ELSE false END FROM shared.outlet_notification_preferences WHERE outlet_id=$1`, e.OutletID, e.Type).Scan(&phone, &locale, &enabled)
 	if err != nil {
 		return EnqueueResult{}, err
 	}
@@ -197,25 +203,47 @@ func (s Store) EnqueueNotification(ctx context.Context, e NotificationEvent) (En
 		return EnqueueResult{Status: "suppressed"}, nil
 	}
 	var body string
-	reason := notificationReason(locale, e.Reason)
-	switch locale {
-	case "si":
-		if e.Type == "DEFERRAL" {
-			body = fmt.Sprintf("Waypoint: ඇණවුම %s කල් දමා ඇත. හේතුව: %s. ඊළඟ බෙදාහැරීම සඳහා Dispatcher අමතන්න.", e.OrderRef, reason)
-		} else {
-			body = fmt.Sprintf("Waypoint: ඇණවුම %s පැමිණීම විනාඩි %dකින් ප්‍රමාද වේ.", e.OrderRef, e.DelayMinutes)
+    if e.Type == "DELIVERY_REJECTED" {
+        action := "re-attempt requested for the next run"
+        if e.Resolution == "REQUEST_DEFERRAL" { action = "dispatcher deferral requested" }
+        body = fmt.Sprintf("Waypoint: order %s rejected; %d unit(s) of %s returned (%s). %s. Follow-up run: %s.",
+            e.OrderRef, e.Units, e.Goods, e.Reason, action, e.FollowupDate)
+    } else if e.Type == "ARRIVAL_CHANGE" {
+		oldETA, oldErr := time.Parse(time.RFC3339Nano, e.OldArrivalAt)
+		newETA, newErr := time.Parse(time.RFC3339Nano, e.NewArrivalAt)
+		if oldErr != nil || newErr != nil { return EnqueueResult{}, fmt.Errorf("invalid arrival notification") }
+		colombo := time.FixedZone("Sri Lanka", 5*60*60+30*60)
+		oldText := oldETA.In(colombo).Format("02 Jan 15:04")
+		newText := newETA.In(colombo).Format("02 Jan 15:04")
+		switch locale {
+		case "si":
+			body = fmt.Sprintf("Waypoint: %s ඇණවුමේ පෙර පැමිණීම %s; නව පැමිණීම %s.", e.OrderRef, oldText, newText)
+		case "ta":
+			body = fmt.Sprintf("Waypoint: %s ஆர்டரின் முந்தைய வருகை %s; புதிய வருகை %s.", e.OrderRef, oldText, newText)
+		default:
+			body = fmt.Sprintf("Waypoint: order %s arrival changed from %s to %s (Sri Lanka time).", e.OrderRef, oldText, newText)
 		}
-	case "ta":
-		if e.Type == "DEFERRAL" {
-			body = fmt.Sprintf("Waypoint: ஆர்டர் %s ஒத்திவைக்கப்பட்டது. காரணம்: %s. அடுத்த விநியோகத்துக்கு Dispatcher-ஐ தொடர்புகொள்ளவும்.", e.OrderRef, reason)
-		} else {
-			body = fmt.Sprintf("Waypoint: ஆர்டர் %s வருகை %d நிமிடங்கள் தாமதமாகும்.", e.OrderRef, e.DelayMinutes)
-		}
-	default:
-		if e.Type == "DEFERRAL" {
-			body = fmt.Sprintf("Waypoint: order %s was deferred (%s). Contact the dispatcher about the next delivery run.", e.OrderRef, reason)
-		} else {
-			body = fmt.Sprintf("Waypoint: order %s is expected to arrive %d minutes later than planned.", e.OrderRef, e.DelayMinutes)
+	} else {
+		reason := notificationReason(locale, e.Reason)
+		switch locale {
+		case "si":
+			if e.Type == "DEFERRAL" {
+				body = fmt.Sprintf("Waypoint: ඇණවුම %s කල් දමා ඇත. හේතුව: %s. ඊළඟ බෙදාහැරීම සඳහා Dispatcher අමතන්න.", e.OrderRef, reason)
+			} else {
+				body = fmt.Sprintf("Waypoint: ඇණවුම %s පැමිණීම විනාඩි %dකින් ප්‍රමාද වේ.", e.OrderRef, e.DelayMinutes)
+			}
+		case "ta":
+			if e.Type == "DEFERRAL" {
+				body = fmt.Sprintf("Waypoint: ஆர்டர் %s ஒத்திவைக்கப்பட்டது. காரணம்: %s. அடுத்த விநியோகத்துக்கு Dispatcher-ஐ தொடர்புகொள்ளவும்.", e.OrderRef, reason)
+			} else {
+				body = fmt.Sprintf("Waypoint: ஆர்டர் %s வருகை %d நிமிடங்கள் தாமதமாகும்.", e.OrderRef, e.DelayMinutes)
+			}
+		default:
+			if e.Type == "DEFERRAL" {
+				body = fmt.Sprintf("Waypoint: order %s was deferred (%s). Contact the dispatcher about the next delivery run.", e.OrderRef, reason)
+			} else {
+				body = fmt.Sprintf("Waypoint: order %s is expected to arrive %d minutes later than planned.", e.OrderRef, e.DelayMinutes)
+			}
 		}
 	}
 	var id int64
@@ -289,7 +317,7 @@ func (s Store) ClaimNotification(ctx context.Context) (*PendingNotification, err
 	defer tx.Rollback(ctx)
 	var n PendingNotification
 	var consent, enabled bool
-	err = tx.QueryRow(ctx, `SELECT n.id,COALESCE(p.phone_e164,n.phone_e164),n.body,n.event_type,COALESCE(p.consent_enabled,false),COALESCE(CASE n.event_type WHEN 'DEFERRAL' THEN p.deferrals_enabled WHEN 'MAJOR_DELAY' THEN p.major_delays_enabled END,false)
+	err = tx.QueryRow(ctx, `SELECT n.id,COALESCE(p.phone_e164,n.phone_e164),n.body,n.event_type,COALESCE(p.consent_enabled,false),COALESCE(CASE n.event_type WHEN 'DEFERRAL' THEN p.deferrals_enabled WHEN 'MAJOR_DELAY' THEN p.major_delays_enabled WHEN 'ARRIVAL_CHANGE' THEN p.major_delays_enabled WHEN 'DELIVERY_REJECTED' THEN p.deferrals_enabled END,false)
 	FROM shared.notification_outbox n LEFT JOIN shared.outlet_notification_preferences p USING(outlet_id)
 	WHERE n.status='PENDING' ORDER BY n.created_at,n.id LIMIT 1 FOR UPDATE OF n SKIP LOCKED`).Scan(&n.ID, &n.Phone, &n.Body, &n.EventType, &consent, &enabled)
 	if err == pgx.ErrNoRows {

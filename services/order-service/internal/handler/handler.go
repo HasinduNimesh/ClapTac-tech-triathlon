@@ -43,6 +43,7 @@ func (h Handler) Routes(r chi.Router) {
 		r.With(authorization.RequireWith(h.Authn, h.Profiles, authorization.PermOrderViewAll)).Post("/import.csv", h.importCSV)
 		r.With(authorization.RequireWith(h.Authn, h.Profiles, authorization.PermOrderViewAll)).Get("/export", h.exportJSON)
 		r.With(authorization.RequireWith(h.Authn, h.Profiles, authorization.PermOrderViewAll)).Post("/import", h.importJSON)
+		r.Post("/internal/delivery-followups", h.deliveryFollowup)
 		r.With(authorization.RequireWith(h.Authn, h.Profiles, authorization.PermOrderCreate)).Post("/", h.create)
 		r.With(authorization.RequireAnyWith(h.Authn, h.Profiles, authorization.PermOrderViewOwn, authorization.PermOrderViewAll, authorization.PermOrdersReadInternal)).Get("/", h.list)
 		r.With(authorization.RequireAnyWith(h.Authn, h.Profiles, authorization.PermOrderViewOwn, authorization.PermOrderViewAll, authorization.PermOrdersReadInternal)).Get("/{id}", h.get)
@@ -384,4 +385,28 @@ func writeServiceError(w http.ResponseWriter, err error) bool {
 		apierrors.Internal(w, "unexpected error")
 	}
 	return true
+}
+
+
+func (h Handler) deliveryFollowup(w http.ResponseWriter, r *http.Request) {
+    principal, err := h.Authn.Authenticate(r)
+    if err != nil { apierrors.Unauthorized(w, err.Error()); return }
+    authorized := false
+    for _, scope := range principal.Scopes {
+        if scope == "orders:write-internal" { authorized = true; break }
+    }
+    if !authorized { apierrors.Forbidden(w, "internal order scope required"); return }
+    var body struct {
+        SourceOrderID string `json:"sourceOrderId"`
+        StopID string `json:"stopId"`
+        TripDate string `json:"tripDate"`
+        Units int `json:"units"`
+        Resolution string `json:"resolution"`
+    }
+    dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
+    dec.DisallowUnknownFields()
+    if err := dec.Decode(&body); err != nil { apierrors.BadRequest(w, "invalid follow-up"); return }
+    order, err := h.Service.CreateDeliveryFollowup(body.SourceOrderID, body.StopID, body.TripDate, body.Units, body.Resolution)
+    if writeServiceError(w, err) { return }
+    httpx.WriteJSON(w, http.StatusOK, map[string]any{"order": order})
 }

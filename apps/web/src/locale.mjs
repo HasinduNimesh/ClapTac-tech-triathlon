@@ -918,6 +918,71 @@ Object.assign(labels.ta, {
   "Live location unavailable.": "நேரடி இருப்பிடம் கிடைக்கவில்லை.",
   "Coordinates unavailable": "ஆயத்தொலைவுகள் கிடைக்கவில்லை",
 });
+Object.assign(labels.si, {
+
+  "Truck check-out": "ට්‍රක් රථය පිටත් කිරීමේ පරීක්ෂාව",
+  "Current load list unavailable. Refresh the trip before departure.": "වත්මන් පැටවුම් ලැයිස්තුව නොමැත. පිටත් වීමට පෙර ගමන නැවුම් කරන්න.",
+  "On board": "රථයේ ඇත",
+  "Missing": "නොමැත",
+  "Check-out blocked. Loader and dispatcher alerted.": "පිටත් කිරීම අවහිරයි. පැටවුම්කරුට සහ යැවීම් කළමනාකරුට දන්වා ඇත.",
+  "Check-out recorded": "පිටත් කිරීමේ පරීක්ෂාව සටහන් කර ඇත",
+  "Confirm check-out": "පිටත් කිරීම තහවුරු කරන්න",
+  "Driver reported missing goods at check-out": "රියදුරු පිටත් කිරීමේදී භාණ්ඩ නොමැති බව වාර්තා කළේය",
+  "Check-out blocked. Review this load with dispatch.": "පිටත් කිරීම අවහිරයි. යැවීම් අංශය සමඟ පැටවුම පරීක්ෂා කරන්න.",
+  "Check-out blocked. Review this load with the loader.": "පිටත් කිරීම අවහිරයි. පැටවුම්කරු සමඟ පැටවුම පරීක්ෂා කරන්න.",
+});
+Object.assign(labels.ta, {
+  "Truck check-out": "லாரி புறப்பாடு சரிபார்ப்பு",
+  "Current load list unavailable. Refresh the trip before departure.": "தற்போதைய ஏற்றப்பட்ட பட்டியல் கிடைக்கவில்லை. புறப்படும் முன் பயணத்தைப் புதுப்பிக்கவும்.",
+  "On board": "வண்டியில் உள்ளது",
+  "Missing": "காணவில்லை",
+  "Check-out blocked. Loader and dispatcher alerted.": "புறப்பாடு தடுக்கப்பட்டது. ஏற்றுபவருக்கும் அனுப்புநருக்கும் அறிவிக்கப்பட்டது.",
+  "Check-out recorded": "புறப்பாடு சரிபார்ப்பு பதிவு செய்யப்பட்டது",
+  "Confirm check-out": "புறப்பாட்டை உறுதிசெய்",
+  "Driver reported missing goods at check-out": "புறப்பாட்டின் போது பொருட்கள் காணவில்லை என்று ஓட்டுநர் தெரிவித்தார்",
+  "Check-out blocked. Review this load with dispatch.": "புறப்பாடு தடுக்கப்பட்டது. அனுப்புநருடன் ஏற்றத்தைச் சரிபார்க்கவும்.",
+  "Check-out blocked. Review this load with the loader.": "புறப்பாடு தடுக்கப்பட்டது. ஏற்றுபவருடன் ஏற்றத்தைச் சரிபார்க்கவும்.",
+});
+
+Object.assign(labels.si, {
+  "Predicted arrival": "පුරෝකථිත පැමිණීම",
+  "Arrival range": "පැමිණීමේ කාල පරාසය",
+  "Arrival changed from": "පැමිණීම වෙනස් වූයේ",
+  "to": "සිට",
+});
+Object.assign(labels.ta, {
+  "Predicted arrival": "கணிக்கப்பட்ட வருகை",
+  "Arrival range": "வருகை நேர வரம்பு",
+  "Arrival changed from": "வருகை மாறியது",
+  "to": "இலிருந்து",
+});
+
+Object.assign(labels.si, {
+  "Rejected goods / take-back": "ආපසු ගන්නා ප්‍රතික්ෂේපිත භාණ්ඩ",
+  "Goods or items being returned": "ආපසු එන භාණ්ඩ හෝ අයිතම",
+  "Quantity returning": "ආපසු එන ප්‍රමාණය",
+  "Follow-up choice": "ඊළඟ පියවර තේරීම",
+  "Re-attempt on next run": "ඊළඟ ගමනේ නැවත බෙදාහරින්න",
+  "Request dispatcher deferral": "ඩිස්පැචර්ගෙන් කල් දැමීම ඉල්ලන්න",
+  "Enter the returned goods and quantity.": "ආපසු එන භාණ්ඩ හා ප්‍රමාණය ඇතුළත් කරන්න.",
+  "Returned goods": "ආපසු ලැබුණු භාණ්ඩ",
+  "Dispatcher deferral requested": "ඩිස්පැචර්ගෙන් කල් දැමීම ඉල්ලා ඇත",
+  "Follow-up order": "ඊළඟ ඇණවුම",
+  "Rejected delivery": "ප්‍රතික්ෂේපිත බෙදාහැරීම",
+});
+Object.assign(labels.ta, {
+  "Rejected goods / take-back": "திரும்பப் பெறப்படும் நிராகரிக்கப்பட்ட பொருட்கள்",
+  "Goods or items being returned": "திரும்ப வரும் பொருட்கள்",
+  "Quantity returning": "திரும்ப வரும் அளவு",
+  "Follow-up choice": "அடுத்த நடவடிக்கைத் தேர்வு",
+  "Re-attempt on next run": "அடுத்த பயணத்தில் மீண்டும் வழங்கு",
+  "Request dispatcher deferral": "அனுப்புநரிடம் ஒத்திவைப்பைக் கோரு",
+  "Enter the returned goods and quantity.": "திரும்ப வரும் பொருட்களையும் அளவையும் உள்ளிடவும்.",
+  "Returned goods": "திரும்பிய பொருட்கள்",
+  "Dispatcher deferral requested": "அனுப்புநரிடம் ஒத்திவைப்பு கோரப்பட்டது",
+  "Follow-up order": "தொடர்ச்சி ஆர்டர்",
+  "Rejected delivery": "நிராகரிக்கப்பட்ட விநியோகம்",
+});
 
 function lookupTranslation(locale, source) { return automationLabels[locale]?.[source] ?? labels[locale]?.[source] ?? disruptionLabels[locale]?.[source] ?? driverPrivacyLabels[locale]?.[source] ?? loaderLabels[locale]?.[source] ?? loaderOfflineLabels[locale]?.[source] ?? loaderStatusLabels[locale]?.[source] ?? loaderScannerLabels[locale]?.[source] ?? storeLabels[locale]?.[source] ?? storeTrackingLabels[locale]?.[source] ?? dispatcherLabels[locale]?.[source] ?? planningLabels[locale]?.[source] ?? breakdownLabels[locale]?.[source] ?? auditLabels[locale]?.[source] ?? masterDataLabels[locale]?.[source] ?? liveOpsLabels[locale]?.[source] ?? loadingOpsLabels[locale]?.[source] ?? operationalValueLabels[locale]?.[source] ?? masterNoticeLabels[locale]?.[source] ?? policyConflictLabels[locale]?.[source] ?? followUpLabels[locale]?.[source] ?? forecastLabels[locale]?.[source] ?? serviceTimeLabels[locale]?.[source] ?? etaLabels[locale]?.[source] ?? latenessLabels[locale]?.[source] ?? notificationLabels[locale]?.[source] ?? coldChainLabels[locale]?.[source] ?? custodyLabels[locale]?.[source] ?? deferralLabels[locale]?.[source] ?? storeManagerDashboardLabels[locale]?.[source] ?? dispatcherWorkspaceLabels[locale]?.[source] ?? storeWorkspaceLabels[locale]?.[source]; }
 

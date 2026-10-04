@@ -20,11 +20,21 @@ function Chevron() {
   return <img src={iconChev} alt="" aria-hidden="true" width={16} height={16} className="sm-chev-right" />;
 }
 
+// Predicted arrival (#35) when it is a usable time, otherwise the planned one;
+// undefined means estimates are unavailable (W15, #29).
+function arrivalOf(row: Tracking | undefined): string | undefined {
+  const predicted = row?.delivery?.arrivalPrediction?.estimatedArrivalAt;
+  if (validArrivalAt(predicted)) return predicted;
+  const planned = row?.planning.plannedArrivalAt;
+  return validArrivalAt(planned) ? planned : undefined;
+}
+
 function nextStep(row: Tracking, t: (key: string) => string) {
   if (needsReceipt(row.stage)) return <Link to={`/store-manager/receipts?order=${encodeURIComponent(row.order.id)}`} className="sm-track-link">{t("Confirm receipt")}</Link>;
   if (isDeferred(row.stage)) return t("Awaiting a new run");
-  if (validArrivalAt(row.planning.plannedArrivalAt) && (row.stage === "PLANNED" || row.stage === "READY_FOR_DEPARTURE" || row.stage === "OUT_FOR_DELIVERY")) {
-    return `${t("ETA")} ${colomboTime(row.planning.plannedArrivalAt)}`;
+  const eta = arrivalOf(row);
+  if (eta && (row.stage === "PLANNED" || row.stage === "READY_FOR_DEPARTURE" || row.stage === "OUT_FOR_DELIVERY")) {
+    return `${t("ETA")} ${colomboTime(eta)}`;
   }
   if (row.stage === "CONFIRMED") return t("Awaiting dispatch planning");
   return t("Complete");
@@ -75,8 +85,8 @@ export function StoreManagerDashboardPage() {
   const deferred = rows.filter((row) => isDeferred(row.stage));
   const awaitingReceipt = rows.filter((row) => needsReceipt(row.stage));
   const attentionCount = deferred.length + awaitingReceipt.length;
-  const nextArrival = arriving.find((row) => validArrivalAt(row.planning.plannedArrivalAt));
-  const estimatesUnavailable = arriving.some((row) => !validArrivalAt(row.planning.plannedArrivalAt));
+  const nextArrival = arriving.find((row) => arrivalOf(row));
+  const estimatesUnavailable = arriving.some((row) => !arrivalOf(row));
   const temperature = (value: string) => (value === "chilled" ? t("Chilled") : t("Ambient"));
 
   return (
@@ -90,7 +100,7 @@ export function StoreManagerDashboardPage() {
           <div className="sm-stat-icon sm-stat-icon--blue"><img src={iconHistory} alt="" aria-hidden="true" width={24} height={24} /></div>
           <div className="sm-stat-body">
             <p className="sm-stat-label">{t("Next expected arrival")}</p>
-            <p className="sm-stat-value">{validArrivalAt(nextArrival?.planning.plannedArrivalAt) ? colomboTime(nextArrival.planning.plannedArrivalAt) : "—"}</p>
+            <p className="sm-stat-value">{arrivalOf(nextArrival) ? colomboTime(arrivalOf(nextArrival)!) : "—"}</p>
             <p className="sm-stat-sub sm-stat-sub--orange">
               {nextArrival ? `${t("Today")} · ${temperature(nextArrival.order.temperatureRequirement)}` : t("No arrivals today")}
             </p>
@@ -147,7 +157,7 @@ export function StoreManagerDashboardPage() {
               <div className="sm-order-card-bottom">
                 <p className="sm-order-eta">
                   <span className="muted">{t("Expected arrival:")} </span>
-                  <strong>{validArrivalAt(row.planning.plannedArrivalAt) ? colomboTime(row.planning.plannedArrivalAt) : "—"}</strong>
+                  <strong>{arrivalOf(row) ? colomboTime(arrivalOf(row)!) : "—"}</strong>
                 </p>
                 <Link to={`/store-manager/orders/${encodeURIComponent(row.order.id)}/track`} className="sm-track-link">{t("Track order")}<Chevron /></Link>
               </div>

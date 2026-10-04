@@ -114,6 +114,23 @@ func (h Handler) enqueueNotification(w http.ResponseWriter, r *http.Request) {
 			apierrors.BadRequest(w, "major delay must be between 30 minutes and 24 hours")
 			return
 		}
+    } else if e.Type == "DELIVERY_REJECTED" {
+        if len(strings.TrimSpace(e.Goods)) == 0 || utf8.RuneCountInString(e.Goods) > 200 || e.Units < 1 ||
+            e.Reason == "" || len(e.Reason) > 80 || (e.Resolution != "NEXT_RUN" && e.Resolution != "REQUEST_DEFERRAL") {
+            apierrors.BadRequest(w, "rejected goods, units, reason and resolution required")
+            return
+        }
+        if _, err := time.Parse(time.DateOnly, e.FollowupDate); err != nil {
+            apierrors.BadRequest(w, "valid follow-up date required")
+            return
+        }
+	} else if e.Type == "ARRIVAL_CHANGE" {
+		oldETA, oldErr := time.Parse(time.RFC3339Nano, e.OldArrivalAt)
+		newETA, newErr := time.Parse(time.RFC3339Nano, e.NewArrivalAt)
+		if oldErr != nil || newErr != nil || !arrivalChangeAtLeastThirty(oldETA, newETA) {
+			apierrors.BadRequest(w, "arrival change must be at least 30 minutes")
+			return
+		}
 	} else {
 		apierrors.BadRequest(w, "unsupported notification type")
 		return
@@ -607,4 +624,9 @@ func hasScope(scopes []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func arrivalChangeAtLeastThirty(oldETA, newETA time.Time) bool {
+	delta := newETA.Sub(oldETA)
+	return delta >= 30*time.Minute || delta <= -30*time.Minute
 }

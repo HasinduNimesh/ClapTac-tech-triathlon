@@ -22,6 +22,7 @@ type TokenSource interface {
 
 type Peers struct {
 	LoadingURL string
+    OrdersURL string
 	SharedURL  string
 	M2M        TokenSource
 	HTTP       *http.Client
@@ -93,6 +94,30 @@ func (p Peers) ReadyTrip(ctx context.Context, tripID string) (domain.LoadingTrip
 		return domain.LoadingTrip{}, err
 	}
 	return trip, nil
+}
+
+func (p Peers) QueueArrivalChange(ctx context.Context, eventKey, outletID, orderRef string, oldETA, newETA time.Time) (string, error) {
+	tok, err := p.m2m(ctx)
+	if err != nil { return "", err }
+	body, err := json.Marshal(map[string]any{
+		"eventKey": eventKey, "outletId": outletID, "orderRef": orderRef,
+		"type": "ARRIVAL_CHANGE", "oldArrivalAt": oldETA, "newArrivalAt": newETA,
+	})
+	if err != nil { return "", err }
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.SharedURL+"/api/v1/shared/internal/notifications/enqueue", bytes.NewReader(body))
+	if err != nil { return "", err }
+	req.Header.Set("Content-Type", "application/json")
+	if tok != "" { req.Header.Set("Authorization", "Bearer "+tok) }
+	resp, err := p.http().Do(req)
+	if err != nil { return "", err }
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		message, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return "", fmt.Errorf("arrival notification enqueue returned HTTP %d: %s", resp.StatusCode, message)
+	}
+	var result struct { Notification struct { Status string `json:"status"` } `json:"notification"` }
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&result); err != nil { return "", err }
+	return result.Notification.Status, nil
 }
 
 func (p Peers) Outlet(ctx context.Context, id string) (domain.Outlet, error) {
@@ -207,4 +232,63 @@ func (p Peers) publishOnce(ctx context.Context, action, actor, resource, resourc
 		return
 	}
 	_ = resp.Body.Close()
+}
+
+
+// CreateDeliveryFollowup asks order-service to clone the original confirmed
+// order into the next operating run. stopID is its idempotency key.
+func (p Peers) CreateDeliveryFollowup(ctx context.Context, orderID, stopID, tripDate string, units int, resolution string) (string, string, string, error) {
+    token, err := p.m2m(ctx)
+    if err != nil { return "", "", "", err }
+    body, err := json.Marshal(map[string]any{
+        "sourceOrderId": orderID, "stopId": stopID, "tripDate": tripDate,
+        "units": units, "resolution": resolution,
+    })
+    if err != nil { return "", "", "", err }
+    target := p.OrdersURL
+    if target == "" { target = "http://order-service:8080" }
+    req, err := http.NewRequestWithContext(ctx, http.MethodPost, target+"/api/v1/orders/internal/delivery-followups", bytes.NewReader(body))
+    if err != nil { return "", "", "", err }
+    req.Header.Set("Content-Type", "application/json")
+    if token != "" { req.Header.Set("Authorization", "Bearer "+token) }
+    resp, err := p.http().Do(req)
+    if err != nil { return "", "", "", err }
+    defer resp.Body.Close()
+    if resp.StatusCode >= 300 {
+        message, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+        return "", "", "", fmt.Errorf("follow-up order returned HTTP %d: %s", resp.StatusCode, message)
+    }
+    var result struct { Order struct {
+        ID string `json:"id"`
+        OrderRef string `json:"orderRef"`
+        RequestedDeliveryDate string `json:"requestedDeliveryDate"`
+    } `json:"order"` }
+    if err := json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&result); err != nil { return "", "", "", err }
+    if result.Order.ID == "" { return "", "", "", fmt.Errorf("follow-up order missing ID") }
+    return result.Order.ID, result.Order.OrderRef, result.Order.RequestedDeliveryDate, nil
+}
+
+
+func (p Peers) QueueReturnedGoodsNotice(ctx context.Context, item domain.ReturnedGoods) error {
+    token, err := p.m2m(ctx)
+    if err != nil { return err }
+    body, err := json.Marshal(map[string]any{
+        "eventKey": "returned-goods:"+item.StopID, "outletId": item.OutletID,
+        "type": "DELIVERY_REJECTED", "orderRef": item.OrderRef,
+        "goods": item.Goods, "units": item.Units, "reason": item.Reason,
+        "resolution": item.Resolution, "followupDate": item.FollowupDate,
+    })
+    if err != nil { return err }
+    req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.SharedURL+"/api/v1/shared/internal/notifications/enqueue", bytes.NewReader(body))
+    if err != nil { return err }
+    req.Header.Set("Content-Type", "application/json")
+    if token != "" { req.Header.Set("Authorization", "Bearer "+token) }
+    resp, err := p.http().Do(req)
+    if err != nil { return err }
+    defer resp.Body.Close()
+    if resp.StatusCode >= 300 {
+        message, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+        return fmt.Errorf("return notification returned HTTP %d: %s", resp.StatusCode, message)
+    }
+    return nil
 }

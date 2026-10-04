@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiJSON, Order } from "../api/client";
-import { LiveLocation } from "../api/delivery";
+import { ArrivalPrediction, LiveLocation } from "../api/delivery";
 import { useAuth } from "../auth/AuthContext";
 
 export type Tracking = {
@@ -10,6 +10,8 @@ export type Tracking = {
   delivery?: {
     runStatus: string; outcome?: string; reason?: string; vehicleId?: string; tripId?: string; occurredAt?: string; completedAt?: string;
     depot?: string; location?: LiveLocation;
+    arrivalPrediction?: ArrivalPrediction;
+    returnedGoods?: { goods: string; units: number; reason: string; resolution: string; occurredAt: string; followupOrderRef?: string; followupDate?: string };
     proofs?: { type: string; mimeType: string; pending: boolean; uploadedAt?: string; receiverName?: string }[];
     loadingShortfallSummary?: { type?: string; affectedUnits?: number; note?: string }[];
   };
@@ -27,10 +29,10 @@ export function useOrderTrackings() {
   const [skipped, setSkipped] = useState(0);
   const latest = useRef(0);
 
-  const reload = useCallback(async () => {
+  const reload = useCallback(async (quiet = false) => {
     if (!token) return;
     const request = ++latest.current;
-    setLoading(true);
+    if (!quiet) setLoading(true);
     setLoadFailed(false);
     try {
       const body = await apiJSON<{ items: Order[] }>("/orders", token);
@@ -48,14 +50,14 @@ export function useOrderTrackings() {
         setRows((current) => current.map((row) => ({ ...row, delivery: row.delivery ? { ...row.delivery, location: undefined } : undefined })));
       }
     } finally {
-      if (request === latest.current) setLoading(false);
+      if (request === latest.current && !quiet) setLoading(false);
     }
   }, [token]);
 
   useEffect(() => { void reload(); }, [reload]);
   useEffect(() => {
     if (!rows.some((row) => row.delivery?.runStatus === "in_progress")) return;
-    const timer = window.setInterval(() => { void reload(); }, 15_000);
+    const timer = window.setInterval(() => { void reload(true); }, 15_000);
     return () => window.clearInterval(timer);
   }, [rows, reload]);
   useEffect(() => () => { latest.current += 1; }, []);

@@ -9,6 +9,8 @@ test("stage labels and tones follow the backend tracking stages", () => {
   assert.equal(statusLabel("RECEIPT_CONFIRMED_WITH_ISSUE"), "Receipt confirmed with issue");
   assert.equal(statusTone("DEFERRED"), "deferred");
   assert.equal(statusTone("DELIVERED"), "delivered");
+  assert.equal(statusLabel("REFUSED"), "Rejected delivery");
+  assert.equal(statusTone("REFUSED"), "deferred");
   assert.equal(statusTone("CONFIRMED"), "default");
 });
 
@@ -55,6 +57,10 @@ test("timeline marks progress and surfaces deferral and failed delivery", () => 
   const failed = timelineSteps({ stage: "NOT_DELIVERED" });
   assert.equal(failed.length, 4);
   assert.equal(failed[3].label, "Not delivered");
+  const refused = timelineSteps({ stage: "REFUSED" });
+  assert.equal(refused.length, 4);
+  assert.equal(refused[3].label, "Rejected delivery");
+  assert.equal(refused[3].warn, true);
 });
 
 test("day labels are formatted from date-only strings without timezone drift", () => {
