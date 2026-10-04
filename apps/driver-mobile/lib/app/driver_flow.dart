@@ -42,6 +42,8 @@ class DriverFlow extends StatelessWidget {
           return SignInScreen(
             errorMessage: session.signInError,
             identityProviderMode: session.usesIdentityProvider,
+            // Signing in needs the browser and the identity provider, so without a network it waits.
+            noSignal: !session.deviceOnline,
             busy: session.signingIn,
             onSignIn: (staffId, password) => session.signIn(),
           );
@@ -182,7 +184,10 @@ class _DriverHomeState extends State<_DriverHome> {
           final navigator = Navigator.of(context);
           await session.markArrived(stop);
           if (!mounted) return;
-          navigator.pushReplacement(MaterialPageRoute<void>(builder: (context) => _stopDetails(context, stop)));
+          // Rebuilt when the connection changes, so the offline variant appears and goes away by itself.
+          navigator.pushReplacement(MaterialPageRoute<void>(
+            builder: (context) => ListenableBuilder(listenable: session, builder: (context, _) => _stopDetails(context, stop)),
+          ));
         },
       ),
     ));
@@ -203,6 +208,7 @@ class _DriverHomeState extends State<_DriverHome> {
   Widget _stopDetails(BuildContext context, StopInfo stop) {
     return StopDetailsScreen(
       stop: stop,
+      offline: session.offline,
       onTabSelected: _selectTab,
       onReportIssue: () => _reportProblem(stop),
       onProofRequested: _captureProof,
@@ -338,6 +344,7 @@ class _DriverHomeState extends State<_DriverHome> {
           case DriverTab.route:
             return RouteHomeScreen(
               trip: session.trip,
+              offline: session.offline,
               onViewStop: _startStop,
               onReportProblem: () => _reportProblem(session.trip.nextStop),
               onTabSelected: session.selectTab,
