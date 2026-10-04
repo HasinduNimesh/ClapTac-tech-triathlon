@@ -47,7 +47,7 @@ The checked-in `database/seeds/` files are generated from the official `Tech-Tri
 
 | Kind | Where in Waypoint |
 |---|---|
-| Agent (reads people's words, suggests, a person says yes) | A1 order text helper on Place an Order; A2 Create new dashboard; the guarded chat assistant (M7). A1/A2 live in `services/agent-assistants` (Python, LangGraph) and only return drafts. |
+| Agent (reads people's words, suggests, a person says yes) | A1 order text helper (sparkle button on Place an Order); A2 Create new dashboard; the guarded chat assistant (M7). A1/A2 live in `services/agent-assistants` (Python, LangGraph) and only return drafts. |
 | Automated workflow (fixed steps) | Order received, plan publish/acknowledge, deferral notice, loading shortfall, offline sync, delivery and receipt, breakdown reassignment, audit record keeping (Go services). |
 | Prediction model (a number or range) | Arrival range and lateness probability, history-based demand forecast. |
 | Rule (yes/no against a limit) | Planning constraints: weight, volume, cooling, van-only, depot, trips, window, fuel. |
