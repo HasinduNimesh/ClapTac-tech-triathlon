@@ -5,11 +5,12 @@ import {
   colomboDate, colomboTime, formatDay, isDeferred, isReceiptConfirmed, needsReceipt, statusLabel, statusTone, timelineSteps,
 } from "./orderStage.mjs";
 import { CutoffNotice, StoreManagerHero } from "./StoreManagerHero";
+import { UnavailableOrders } from "./UnavailableOrders";
 import { useOrderTrackings } from "./useOrderTrackings";
 
 export function OrderListPage() {
   const { t } = useLocale();
-  const { rows, loading, loadFailed, skipped, reload } = useOrderTrackings();
+  const { rows, loading, loadFailed, unavailable, reload } = useOrderTrackings();
   const [params, setParams] = useSearchParams();
 
   const selected = rows.find((row) => row.order.id === params.get("order")) ?? rows[0];
@@ -30,7 +31,8 @@ export function OrderListPage() {
             </div>
           )}
           {loading && <p className="muted" role="status">{t("Loading your orders…")}</p>}
-          {!loading && !loadFailed && (
+          {!loading && !loadFailed && <UnavailableOrders orders={unavailable} onRetry={() => void reload()} />}
+          {!loading && !loadFailed && unavailable.length === 0 && (
             <section className="sm-form-card sm-empty-card">
               <h2 className="sm-form-card-title">{t("No orders yet")}</h2>
               <p className="muted">{t("Orders you place for your outlet will appear here with live status.")}</p>
@@ -65,7 +67,7 @@ export function OrderListPage() {
             <button type="button" className="tap" onClick={() => void reload()}>{t("Retry")}</button>
           </div>
         )}
-        {skipped > 0 && <p className="sm-load-note muted" role="status">{t("Some orders could not be loaded and are not shown.")}</p>}
+        {!loadFailed && <UnavailableOrders orders={unavailable} onRetry={() => void reload()} />}
 
         <div className="sm-order-tabs" role="group" aria-label={t("Choose an order")}>
           {rows.map((row) => (
