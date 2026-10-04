@@ -283,6 +283,11 @@ func TestDeliveryWorkflow(t *testing.T) {
 	}
 
 	pointBody := []byte(fmt.Sprintf(`{"latitude":6.9271,"longitude":79.8612,"timestamp":%q}`, time.Now().UTC().Format(time.RFC3339Nano)))
+	// The run is created when the assigned driver first opens the trip. Until then
+	// there is nothing to report a position for (404); once prepared but not
+	// started the trip is not active (409).
+	if code := do(t, srv, http.MethodPost, "/api/v1/delivery/trips/trip-north/location", "usr-driver", pointBody, "").status; code != http.StatusNotFound { t.Fatalf("unprepared trip location status=%d", code) }
+	if opened := do(t, srv, http.MethodGet, "/api/v1/delivery/trips/trip-north", "usr-driver", nil, ""); opened.status != http.StatusOK { t.Fatalf("driver opens trip %d %s", opened.status, opened.body) }
 	if code := do(t, srv, http.MethodPost, "/api/v1/delivery/trips/trip-north/location", "usr-driver", pointBody, "").status; code != http.StatusConflict { t.Fatalf("prepared trip accepted location status=%d", code) }
 	started := do(t, srv, http.MethodPost, "/api/v1/delivery/trips/trip-north/start", "usr-driver", nil, "start-1")
 	if started.status != http.StatusOK {
