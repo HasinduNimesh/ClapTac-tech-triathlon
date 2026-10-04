@@ -553,6 +553,7 @@ func (s Service) BreakdownProposals(ctx context.Context, planID, vehicleID strin
 		}
 	}
 	var proposals []map[string]any
+	critical := false
 	for _, tn := range tripNos {
 		moving := groups[tn]
 		for i := 0; i < len(moving); i++ {
@@ -603,14 +604,23 @@ func (s Service) BreakdownProposals(ctx context.Context, planID, vehicleID strin
 			}
 			options = append(options, map[string]any{"vehicleId": candidate.ID, "valid": len(failures) == 0, "failures": failures, "projectedStops": len(state.Stops)})
 		}
-		ordersOut := make([]map[string]any, 0, len(moving))
-		for _, a := range moving {
-			o := orders[a.OrderID]
-			ordersOut = append(ordersOut, map[string]any{"allocationId": a.ID, "orderId": a.OrderID, "orderRef": o.OrderRef, "outletId": o.OutletID, "stopSequence": a.Sequence})
+		ranked := rankStrandedStops(moving, orders, world.Outlets)
+		ordersOut := make([]map[string]any, 0, len(ranked))
+		tripChilled := false
+		for i, r := range ranked {
+			tripChilled = tripChilled || r.Chilled
+			ordersOut = append(ordersOut, map[string]any{"allocationId": r.Alloc.ID, "orderId": r.Alloc.OrderID, "orderRef": r.Order.OrderRef, "outletId": r.Order.OutletID, "stopSequence": r.Alloc.Sequence, "urgencyRank": i + 1, "chilled": r.Chilled, "windowClose": r.WindowClose})
 		}
-		proposals = append(proposals, map[string]any{"tripNumber": tn, "stops": ordersOut, "options": options})
+		if tripChilled {
+			critical = true
+		}
+		proposals = append(proposals, map[string]any{"tripNumber": tn, "stops": ordersOut, "options": options, "chilledOnBoard": tripChilled})
 	}
-	return map[string]any{"planId": pl.ID, "vehicleId": vehicleID, "items": proposals, "confirmed": false}, nil
+	severity := "high"
+	if critical {
+		severity = "critical"
+	}
+	return map[string]any{"planId": pl.ID, "vehicleId": vehicleID, "items": proposals, "confirmed": false, "critical": critical, "severity": severity}, nil
 }
 
 func (s Service) ConfirmBreakdown(ctx context.Context, profile *authorization.Profile, planID, sourceVehicle, targetVehicle string, tripNo int) (map[string]any, error) {
@@ -721,6 +731,12 @@ func (s Service) ConfirmBreakdown(ctx context.Context, profile *authorization.Pr
 		return map[string]any{"status": "reassignment_saved_plan_not_published", "noticeDrafts": notices}, err
 	}
 	updated, _ := s.Repo.Get(ctx, pl.ID)
+	// The broken vehicle goes to the workshop so it cannot be planned again.
+	workshopErr := s.Peers.SetVehicleWorkshop(ctx, sourceVehicle, pl.DeliveryDate, "breakdown recovery for plan "+pl.PlanRef)
+	if workshopErr != nil && s.Peers.Logger != nil {
+		s.Peers.Logger.Error("breakdown_workshop_failed", "vehicle_id", sourceVehicle, "error", workshopErr)
+	}
+	s.Peers.Publish(ctx, audit.ActionBreakdownRecoveryConfirmed, actorID(profile), "PLAN", pl.PlanRef, map[string]any{"decidedBy": actorID(profile), "sourceVehicleId": sourceVehicle, "replacementVehicleId": targetVehicle, "tripNumber": tripNo, "version": updated.CurrentVersion, "movedStops": len(moved), "vehicleInWorkshop": workshopErr == nil})
 	s.Peers.Publish(ctx, audit.ActionPlanConfirmed, actorID(profile), "PLAN", pl.PlanRef, map[string]any{"reason": "vehicle_breakdown", "sourceVehicleId": sourceVehicle, "replacementVehicleId": targetVehicle, "tripNumber": tripNo, "version": updated.CurrentVersion})
 	oldByOrder := make(map[string]domain.Allocation, len(allocs))
 	for _, a := range allocs {
@@ -740,7 +756,7 @@ func (s Service) ConfirmBreakdown(ctx context.Context, profile *authorization.Pr
 			s.Peers.Logger.Error("notification_enqueue_failed", "event", "major_delay", "order_id", a.OrderID, "error", err)
 		}
 	}
-	return map[string]any{"status": "confirmed", "planVersion": updated.CurrentVersion, "sourceVehicleId": sourceVehicle, "replacementVehicleId": targetVehicle, "tripNumber": tripNo, "movedStops": len(moved), "noticeDrafts": notices}, nil
+	return map[string]any{"status": "confirmed", "planVersion": updated.CurrentVersion, "sourceVehicleId": sourceVehicle, "replacementVehicleId": targetVehicle, "tripNumber": tripNo, "movedStops": len(moved), "noticeDrafts": notices, "vehicleInWorkshop": workshopErr == nil, "decidedBy": actorID(profile)}, nil
 }
 
 func majorDelayMinutes(previous, next *time.Time) int {
