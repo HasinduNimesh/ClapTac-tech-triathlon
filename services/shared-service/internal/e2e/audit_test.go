@@ -57,9 +57,10 @@ func TestAuditSearchKPIsAndAppendOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = pool.Exec(ctx, `CREATE SCHEMA shared;
-	CREATE TABLE shared.users(id text primary key, identity_subject text unique, role text);
+	CREATE TABLE shared.users(id text primary key, identity_subject text unique, display_name text not null default '', role text);
 	CREATE TABLE shared.store_manager_profiles(user_id text, outlet_id text);
 	CREATE TABLE shared.loader_profiles(user_id text, depot text);
+	CREATE TABLE shared.dispatcher_profiles(user_id text, depot text);
 	CREATE TABLE shared.driver_profiles(user_id text, vehicle_id text);
 	CREATE TABLE shared.outlets(id text primary key,brand text,name text,district text,depot text,dock_type text,parking_constraint text,mall_window boolean,window_open_time time,window_close_time time,access_instructions text not null default '',access_instructions_updated_by text not null default '',access_instructions_updated_at timestamptz,access_instructions_confirmed_by text not null default '',access_instructions_confirmed_at timestamptz,chilled_temperature_min_c numeric(5,2),chilled_temperature_max_c numeric(5,2),version integer not null default 1);
 	CREATE TABLE shared.operating_calendar(date date primary key,is_operating boolean,version integer not null default 1);
@@ -74,6 +75,15 @@ func TestAuditSearchKPIsAndAppendOnly(t *testing.T) {
 	INSERT INTO shared.store_manager_profiles(user_id,outlet_id) VALUES('u-store','OUT001')`)
 	if err != nil {
 		t.Fatal(err)
+	}
+	// Outlet updates now read the outlet back with its position, so the test schema needs the real
+	// location columns and district table.
+	locationMigration, err := os.ReadFile("../../../../database/migrations/0043_outlet_locations.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, string(locationMigration)); err != nil {
+		t.Fatalf("apply location migration: %v", err)
 	}
 	migration, err := os.ReadFile("../../../../database/migrations/0026_shared_notifications.sql")
 	if err != nil {

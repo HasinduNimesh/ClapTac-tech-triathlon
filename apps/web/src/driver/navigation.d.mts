@@ -1,0 +1,1 @@
+export function navigationTarget(stop: { latitude?: number; longitude?: number; locationApproximate?: boolean; outletName?: string; outletId?: string; district?: string } | null | undefined): { href: string; exact: boolean };

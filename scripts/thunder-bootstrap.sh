@@ -53,6 +53,11 @@ tail -n +2 "$tmp" | while IFS="$(printf '\t')" read -r user_id subject role outl
       -c "INSERT INTO shared.loader_profiles (user_id, depot) VALUES ('$user_id', '$depot')
           ON CONFLICT (user_id) DO UPDATE SET depot = EXCLUDED.depot, updated_at = now()"
   fi
+  if [ "$role" = "DISPATCHER" ] && [ -n "$depot" ]; then
+    psql "$URL" -v ON_ERROR_STOP=1 \
+      -c "INSERT INTO shared.dispatcher_profiles (user_id, depot) VALUES ('$user_id', '$depot')
+          ON CONFLICT (user_id) DO UPDATE SET depot = EXCLUDED.depot, updated_at = now()"
+  fi
   if [ "$role" = "DRIVER" ] && [ -n "$vehicle_id" ]; then
     psql "$URL" -v ON_ERROR_STOP=1 \
       -c "INSERT INTO shared.driver_profiles (user_id, vehicle_id) VALUES ('$user_id', '$vehicle_id')

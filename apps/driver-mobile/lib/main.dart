@@ -14,6 +14,7 @@ import 'auth/revocation_queue.dart';
 import 'auth/token_revoker.dart';
 import 'messages/messages.dart';
 import 'offline/local_database.dart';
+import 'maps/map_launcher.dart';
 import 'proof/proof_capturer.dart';
 import 'proof/proof_store.dart';
 import 'sync/sync.dart';
@@ -63,6 +64,8 @@ void main() {
     worker: services.worker,
     // Real photos and signatures only with a real sign-in; demo builds say capture is unavailable.
     capturer: services.auth == null ? null : DeviceProofCapturer(store: FileProofStore()),
+    // Directions open in whatever maps app the phone has, in demo builds too.
+    mapLauncher: const DeviceMapLauncher(),
     // Only a real sign-in needs the network; demo builds stay online.
     connectivity: services.auth == null ? null : PlatformConnectivityMonitor(),
     // Demo switches are forced off in release builds (see DemoFlags).
@@ -87,6 +90,7 @@ class WaypointDriverApp extends StatefulWidget {
     this.routeStore,
     this.worker,
     this.capturer,
+    this.mapLauncher,
     this.connectivity,
   });
 
@@ -102,6 +106,7 @@ class WaypointDriverApp extends StatefulWidget {
   final RouteStore? routeStore;
   final DeliverySyncWorker? worker;
   final ProofCapturer? capturer;
+  final MapLauncher? mapLauncher;
   final ConnectivityMonitor? connectivity;
 
   @override
@@ -143,7 +148,7 @@ class _WaypointDriverAppState extends State<WaypointDriverApp> {
       title: 'Waypoint Driver',
       debugShowCheckedModeBanner: false,
       theme: buildAppTheme(),
-      home: DriverFlow(session: _session, capturer: widget.capturer),
+      home: DriverFlow(session: _session, capturer: widget.capturer, mapLauncher: widget.mapLauncher),
     );
   }
 }
