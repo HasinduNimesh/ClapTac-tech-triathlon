@@ -21,8 +21,17 @@ const (
 )
 
 // DecisionAllowsDeparture reports whether a decided shortfall lets the trip leave.
-func DecisionAllowsDeparture(decision string) bool {
-	return decision == DecisionPartialLoad || decision == DecisionMoveToNextRun
+// A partial load does on its own. Moving the line to the next run only does
+// once the order is off the confirmed plan the session is loading against: until
+// planning has published that new plan, the short line is still on this trip.
+func DecisionAllowsDeparture(decision string, onConfirmedPlan bool) bool {
+	switch decision {
+	case DecisionPartialLoad:
+		return true
+	case DecisionMoveToNextRun:
+		return !onConfirmedPlan
+	}
+	return false
 }
 
 type Session struct {

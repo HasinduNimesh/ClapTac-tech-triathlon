@@ -34,12 +34,23 @@ paths:
   /delivery/trips/{tripId}:
     get:
       operationId: getDeliveryTrip
-      description: Drivers prepare a run from the loading READY snapshot on first get. Dispatchers receive a read-only view and never mutate loading.
+      description: Drivers prepare a run from the loading READY snapshot on first get. Dispatchers receive a read-only view and never mutate loading. Each stop snapshots expectedUnits from its order load; unitLabel is "units" because the order model does not define cartons or another physical unit. Historical stops without a matching loading record omit expectedUnits.
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: "#/components/parameters/TripID"
       responses:
-        "200": { description: Run and stops }
+        "200":
+          description: Run and stops
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tripId: { type: string }
+                  run: { type: object }
+                  stops:
+                    type: array
+                    items: { $ref: "#/components/schemas/DeliveryStop" }
   /delivery/trips/{tripId}/prepare:
     post:
       operationId: prepareDeliveryRun
@@ -106,7 +117,7 @@ paths:
   /delivery/trips/{tripId}/stops/{stopId}/outcome:
     post:
       operationId: recordStopOutcome
-      description: DELIVERED and PARTIAL require a finalized proof. FAILED and REFUSED require a reason. Dual timestamps occurredAt vs received_at.
+      description: DELIVERED and PARTIAL require a finalized proof. FAILED and REFUSED require a reason. When supplied, deliveredUnits is checked against the stop's expectedUnits and outcome code. Legacy clients may omit it; the quantity and shortfall then remain unknown. Dual timestamps occurredAt vs received_at.
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: "#/components/parameters/TripID"
@@ -123,6 +134,7 @@ paths:
                 code: { type: string, enum: [DELIVERED, PARTIAL, FAILED, REFUSED] }
                 reason: { type: string }
                 note: { type: string }
+                deliveredUnits: { type: integer, minimum: 0, description: "Actual order units delivered. For PARTIAL, greater than zero and less than expectedUnits; for DELIVERED, equal to expectedUnits; for non-delivery, zero. Omission preserves legacy clients but leaves shortfall unknown." }
                 occurredAt: { type: string, format: date-time }
                 operationId: { type: string }
                 dependsOnOperationId: { type: string }
@@ -165,7 +177,7 @@ paths:
                       stopId: { type: string, description: "Optional for INCIDENT_REPORT; not every incident happens at a stop." }
                       occurredAt: { type: string, format: date-time }
                       dependsOnOperationId: { type: string }
-                      payload: { type: object, description: "INCIDENT_REPORT: { category: VEHICLE|ROAD|OUTLET|GOODS|SAFETY|OTHER, description: string }" }
+                      payload: { type: object, description: "STOP_OUTCOME: { code, reason, note, deliveredUnits? }; INCIDENT_REPORT: { category: VEHICLE|ROAD|OUTLET|GOODS|SAFETY|OTHER, description: string }" }
       responses:
         "200": { description: Per-operation APPLIED, DUPLICATE, CONFLICT, or REJECTED }
   /delivery/telemetry/offline-queue:
@@ -201,6 +213,36 @@ paths:
         "401": { description: Unauthenticated }
         "403": { description: Missing internal-read scope }
 components:
+  schemas:
+    DeliveryStop:
+      type: object
+      description: One immutable delivery stop prepared from a loading READY order.
+      required: [id, runId, allocationId, orderId, outletId, stopSequence, status, unitLabel]
+      properties:
+        id: { type: string, description: "Server stop ID for arrival, proof, and outcome calls." }
+        runId: { type: string }
+        allocationId: { type: string }
+        orderId: { type: string }
+        orderRef: { type: string }
+        outletId: { type: string }
+        stopSequence: { type: integer }
+        status: { type: string }
+        expectedUnits:
+          type: integer
+          minimum: 1
+          description: Expected order units snapshotted from loading; omitted if unknown for historical data.
+        unitLabel:
+          type: string
+          example: units
+          description: Generic order units. Do not render as cartons without a source for that unit.
+        deliveredUnits:
+          type: integer
+          minimum: 0
+          description: Actual units reported by the driver; omitted for legacy outcomes.
+        shortfallUnits:
+          type: integer
+          minimum: 0
+          description: expectedUnits minus deliveredUnits; omitted until both are known.
   securitySchemes:
     bearerAuth:
       type: http

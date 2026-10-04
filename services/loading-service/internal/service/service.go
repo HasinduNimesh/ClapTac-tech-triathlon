@@ -262,33 +262,24 @@ func (s Service) Ready(ctx context.Context, profile *authorization.Profile, trip
 		return nil, fmt.Errorf("conflict: session not in progress")
 	}
 	loads, _ := s.Repo.ListLoads(ctx, sess.ID)
-	var pending, undecided []string
+	issues := map[string][]domain.Issue{}
 	for _, l := range loads {
-		if l.Status == domain.LoadPending {
-			pending = append(pending, l.OrderID)
-			continue
-		}
 		if l.Status == domain.LoadShortfall {
-			iss, _ := s.Repo.ListIssues(ctx, l.ID)
-			if len(iss) == 0 {
-				pending = append(pending, l.OrderID)
-				continue
-			}
-			// A shortfall only lets the trip leave once the dispatcher has
-			// accepted a partial load or moved the line to the next run.
-			for _, i := range iss {
-				if !domain.DecisionAllowsDeparture(i.Decision) {
-					undecided = append(undecided, l.OrderID)
-					break
-				}
-			}
+			issues[l.ID], _ = s.Repo.ListIssues(ctx, l.ID)
 		}
 	}
+	// The plan checked above is confirmed and is the version this session is
+	// loading against, so its allocations say which orders are still on the trip.
+	onPlan := map[string]bool{}
+	for _, a := range trip.Allocations {
+		onPlan[a.OrderID] = true
+	}
+	pending, undecided, moveUnpublished := departureBlockers(loads, issues, onPlan)
 	if len(pending) > 0 {
 		return nil, IncompleteError{Pending: pending}
 	}
-	if len(undecided) > 0 {
-		return nil, DecisionRequiredError{OrderIDs: undecided}
+	if len(undecided) > 0 || len(moveUnpublished) > 0 {
+		return nil, DecisionRequiredError{OrderIDs: append(undecided, moveUnpublished...), MoveUnpublished: moveUnpublished}
 	}
 	ready, err := s.Repo.MarkReady(ctx, sess.ID, actor(profile))
 	if err != nil {
@@ -306,10 +297,50 @@ func (s Service) Ready(ctx context.Context, profile *authorization.Profile, trip
 type IncompleteError struct{ Pending []string }
 
 // DecisionRequiredError blocks departure while a loader shortfall has no
-// dispatcher decision, or the dispatcher chose to hold the trip.
-type DecisionRequiredError struct{ OrderIDs []string }
+// dispatcher decision, the dispatcher chose to hold the trip, or the line was
+// sent to the next run but planning has not published a plan without it yet
+// (MoveUnpublished, a subset of OrderIDs).
+type DecisionRequiredError struct {
+	OrderIDs        []string
+	MoveUnpublished []string
+}
 
 func (e DecisionRequiredError) Error() string { return "conflict: dispatcher_decision_required" }
+
+// departureBlockers sorts the order lines that stop a trip leaving: lines not
+// yet loaded or reported (pending), shortfalls the dispatcher has not cleared
+// (undecided, including HOLD), and lines moved to the next run whose order is
+// still on the confirmed plan (moveUnpublished). The last case is what keeps a
+// "move to next run" decision from releasing the trip with the short line still
+// on it if the planning calls that follow it fail or have not finished.
+func departureBlockers(loads []domain.OrderLoad, issues map[string][]domain.Issue, onPlan map[string]bool) (pending, undecided, moveUnpublished []string) {
+	for _, l := range loads {
+		if l.Status == domain.LoadPending {
+			pending = append(pending, l.OrderID)
+			continue
+		}
+		if l.Status != domain.LoadShortfall {
+			continue
+		}
+		iss := issues[l.ID]
+		if len(iss) == 0 {
+			pending = append(pending, l.OrderID)
+			continue
+		}
+		for _, i := range iss {
+			if domain.DecisionAllowsDeparture(i.Decision, onPlan[l.OrderID]) {
+				continue
+			}
+			if i.Decision == domain.DecisionMoveToNextRun {
+				moveUnpublished = append(moveUnpublished, l.OrderID)
+			} else {
+				undecided = append(undecided, l.OrderID)
+			}
+			break
+		}
+	}
+	return
+}
 
 // DecideIssue records the dispatcher's decision on a loader shortfall. The
 // order is never reduced here: moving a line to the next run is done in

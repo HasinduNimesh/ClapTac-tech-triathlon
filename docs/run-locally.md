@@ -47,7 +47,7 @@ The seed loads outlets, vehicles and the operating calendar, but **no orders**. 
 1. **Store Manager** (`store-manager`): *Place Orders* → add an ambient and a chilled order. Note the delivery date shown (orders after the 4:00 PM cutoff move to the next operating day). Repeat with `store-manager-b` for a second outlet.
 2. **Dispatcher** (`dispatcher`): *Plan and allocate* → set the date to that delivery date → *Create or load plan* → *Generate* → *Lock plan and send to dispatch*.
 3. **Loader** (<http://localhost/loader-app/>): open the trip, start loading, mark orders loaded, report a missing item. *Ready to depart* stays locked.
-4. **Dispatcher**: *Notifications* → *Review the load exception* → choose *Accept a partial load* (or *Hold* / *Move to the next run*). The loader can now confirm *Ready to depart*.
+4. **Dispatcher**: *Notifications* → *Review the load exception* → choose *Accept a partial load* (or *Hold* / *Move to the next run*). A partial load lets the loader confirm *Ready to depart*. *Move to the next run* publishes a new plan version without the line; the loader must acknowledge it before *Ready to depart* unlocks (the loader app arrives in the follow-up loader PR). *Hold* keeps the trip locked.
 5. **Driver** (driver app): run the trip and record outcomes.
 6. **Store Manager**: *Track order* (map), *Confirm delivery receipt*, the order evidence timeline and *Notifications*.
 
@@ -57,7 +57,7 @@ The seed loads outlets, vehicles and the operating calendar, but **no orders**. 
 
 **Store Manager:** Dashboard with the *Dashboard* menu and *Create new dashboard* (assistant + live preview) · saved dashboards · Track order (map) · Confirm delivery receipt · Order evidence timeline · Notifications (receipts, ETA changes, deferrals) · Settings → Language & display.
 
-**Maps:** Live operations → *Map* and Store Manager → *Track order* use OpenStreetMap tiles (internet access needed). Outlet positions are approximate (district centre plus a small offset; migration `0041_outlet_locations.sql`) and a truck is shown at its last reported stop, not a GPS position.
+**Maps:** Live operations → *Map* and Store Manager → *Track order* use OpenStreetMap tiles (internet access needed). Outlet positions are approximate (district centre plus a small offset; migration `0043_outlet_locations.sql`) and a truck is shown at its last reported stop, not a GPS position.
 
 ## 5. Stop or reset
 

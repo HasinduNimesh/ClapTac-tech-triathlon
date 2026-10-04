@@ -216,9 +216,13 @@ func writeErr(w http.ResponseWriter, err error) bool {
 	if errors.As(err, &dec) {
 		w.Header().Set("Content-Type", "application/problem+json")
 		w.WriteHeader(http.StatusConflict)
+		detail := "a loader shortfall is waiting for the dispatcher's decision"
+		if len(dec.MoveUnpublished) > 0 {
+			detail = "a line moved to the next run is still on the confirmed plan; the new plan must be published and the loader must acknowledge it first"
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"type": "dispatcher_decision_required", "title": "Conflict", "status": 409,
-			"detail": "a loader shortfall is waiting for the dispatcher's decision", "orderIds": dec.OrderIDs,
+			"detail": detail, "orderIds": dec.OrderIDs, "moveUnpublishedOrderIds": dec.MoveUnpublished,
 		})
 		return true
 	}

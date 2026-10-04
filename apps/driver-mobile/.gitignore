@@ -1,0 +1,5 @@
+.dart_tool/
+build/
+.flutter-plugins*
+.packages
+test/render/out/
