@@ -76,7 +76,7 @@ class DeliverySyncWorker {
   Future<void> _pass() async {
     try {
       while (_enabled) {
-        final item = await _queue.first();
+        final item = await _queue.next();
         if (item == null) {
           onProgress?.call(SyncProgress.idle, null);
           return;

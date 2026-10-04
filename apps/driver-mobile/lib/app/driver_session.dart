@@ -20,6 +20,7 @@ import '../trips/trip_source.dart';
 import '../trips/trip_start.dart';
 import '../widgets/driver_shell.dart';
 import '../widgets/note_banner.dart';
+import 'driver_prefs.dart';
 
 String _two(int value) => value.toString().padLeft(2, '0');
 
@@ -57,6 +58,7 @@ class DriverSession extends ChangeNotifier {
     this.messageSource,
     this.messagePollInterval = const Duration(seconds: 30),
     this.routeStore,
+    this.prefs,
   })  : _initialTrip = trip ?? ((demoRoute || (auth == null && demoAuth)) ? sampleTrip : null),
         _clock = clock ?? DateTime.now,
         _newId = newId ?? newOperationId {
@@ -72,6 +74,7 @@ class DriverSession extends ChangeNotifier {
       notifyListeners();
     };
     _watchConnectivity();
+    prefs?.addListener(_onPrefsChanged);
     if (demoUpdates) {
       updates.add(const UpdateItem(
         id: planConflictId,
@@ -84,6 +87,15 @@ class DriverSession extends ChangeNotifier {
   }
 
   static const planConflictId = 'plan-conflict';
+
+  /// Phone settings: low-data mode (DR-6) and the first-run sheet (DR-8). Null in tests that do not need them.
+  final DriverPrefs? prefs;
+
+  /// Low-data mode changes how often messages are checked; restart the timer if it is running.
+  void _onPrefsChanged() {
+    if (_messageTimer != null) _startMessagePolling();
+    notifyListeners();
+  }
 
   /// Keeps the route on the phone so it can still be shown when Waypoint cannot be reached. Null in demo
   /// and test sessions.
@@ -216,7 +228,7 @@ class DriverSession extends ChangeNotifier {
   void _startMessagePolling() {
     _messageTimer?.cancel();
     if (messageSource == null) return;
-    _messageTimer = Timer.periodic(messagePollInterval, (_) => unawaited(refreshMessages()));
+    _messageTimer = Timer.periodic(prefs?.messagePoll(messagePollInterval) ?? messagePollInterval, (_) => unawaited(refreshMessages()));
     unawaited(refreshMessages());
   }
 
@@ -254,6 +266,7 @@ class DriverSession extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    prefs?.removeListener(_onPrefsChanged);
     unawaited(_connectivitySubscription?.cancel());
     _messageTimer?.cancel();
     worker?.onProgress = null;

@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import 'app/demo_flags.dart';
+import 'app/driver_prefs.dart';
 import 'app/driver_flow.dart';
 import 'app/driver_session.dart';
 import 'auth/auth_config.dart';
@@ -51,6 +54,9 @@ import 'theme/app_theme.dart';
 void main() {
   final demo = DemoFlags.fromEnvironment();
   final services = _buildServices();
+  // Low-data mode and the first-run sheet are remembered on the phone (DR-6, DR-8).
+  final prefs = DriverPrefs(store: FileDriverPrefsStore());
+  unawaited(prefs.load());
   runApp(WaypointDriverApp(
     // Real sign-in when OIDC_ISSUER and API_BASE_URL are provided; otherwise sign-in stays disabled.
     auth: services.auth,
@@ -63,7 +69,8 @@ void main() {
     queue: services.queue,
     worker: services.worker,
     // Real photos and signatures only with a real sign-in; demo builds say capture is unavailable.
-    capturer: services.auth == null ? null : DeviceProofCapturer(store: FileProofStore()),
+    capturer: services.auth == null ? null : DeviceProofCapturer(store: FileProofStore(), photoSize: () => prefs.photoSize),
+    prefs: prefs,
     // Directions open in whatever maps app the phone has, in demo builds too.
     mapLauncher: const DeviceMapLauncher(),
     // Only a real sign-in needs the network; demo builds stay online.
@@ -92,6 +99,7 @@ class WaypointDriverApp extends StatefulWidget {
     this.capturer,
     this.mapLauncher,
     this.connectivity,
+    this.prefs,
   });
 
   final LocalDatabase database;
@@ -108,6 +116,7 @@ class WaypointDriverApp extends StatefulWidget {
   final ProofCapturer? capturer;
   final MapLauncher? mapLauncher;
   final ConnectivityMonitor? connectivity;
+  final DriverPrefs? prefs;
 
   @override
   State<WaypointDriverApp> createState() => _WaypointDriverAppState();
@@ -127,6 +136,7 @@ class _WaypointDriverAppState extends State<WaypointDriverApp> {
     routeStore: widget.routeStore,
     worker: widget.worker,
     connectivity: widget.connectivity,
+    prefs: widget.prefs,
   );
 
   @override
