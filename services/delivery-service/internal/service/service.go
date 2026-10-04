@@ -27,6 +27,9 @@ type Service struct {
 	Repo    store.Postgres
 	Peers   client.Peers
 	Objects objectstore.Store
+	// ServiceMinutesPerStop is the per-stop service allowance used to project arrival times after a
+	// driver event (see arrival_updates.go). Zero means the 20-minute default.
+	ServiceMinutesPerStop int
 }
 
 func (s Service) List(ctx context.Context, profile *authorization.Profile, date, vehicleID string) ([]map[string]any, error) {
@@ -346,6 +349,7 @@ func (s Service) applyArrive(ctx context.Context, profile *authorization.Profile
 	telemetry.DeliverySyncOps.WithLabelValues(domain.ResultApplied).Inc()
 	s.Peers.Publish(ctx, audit.ActionDeliveryStopArrived, actor(profile), "STOP", stopID, map[string]any{"tripId": tripID})
 	s.Peers.Publish(ctx, audit.ActionDeliverySyncApplied, actor(profile), "SYNC", opID, map[string]any{"type": domain.OpArrived})
+	s.refreshArrivalPredictionsAsync(tripID)
 	run, _ = s.Repo.GetByTrip(ctx, tripID)
 	return s.detail(ctx, run)
 }
@@ -457,6 +461,7 @@ func (s Service) applyOutcome(ctx context.Context, profile *authorization.Profil
     }
 	s.Peers.Publish(ctx, audit.ActionDeliveryOutcomeRecorded, actor(profile), "STOP", stopID, auditPayload)
 	s.Peers.Publish(ctx, audit.ActionDeliverySyncApplied, actor(profile), "SYNC", opID, map[string]any{"type": domain.OpStopOutcome})
+	s.refreshArrivalPredictionsAsync(tripID)
 	run, _ = s.Repo.GetByTrip(ctx, tripID)
 	return s.detail(ctx, run)
 }
