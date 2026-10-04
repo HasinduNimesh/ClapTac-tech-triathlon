@@ -4,6 +4,13 @@ A check of the apps against the code (not a runtime audit of a deployed database
 loader app is mock data: every figure on a page comes from an API call to a Go service over Postgres, and the
 services contain no stubs or in-memory stand-ins (no mock, fake or hard-coded responses).
 
+A second pass for values written into a screen that should come from the system found and fixed (in #66 and #67):
+the driver take-back sheet listing sample products and a fixed reason; the order cutoff written as 4:00 PM
+while the service applies the policy's; Kandy trips drawn from the Peliyagoda depot; an invented truck and
+earlier-stop dots and a made-up arrival window on the store manager's tracking map; fixed trips per vehicle and
+operating days in the forecast; and delivery and loading silently keeping proof in memory when no object store is
+configured.
+
 ## Real, from the database through the API
 
 | App | Screens |
