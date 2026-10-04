@@ -1014,3 +1014,35 @@ Object.assign(labels.ta, {
   "Save name": "பெயரைச் சேமி",
   "Saving…": "சேமிக்கிறது…",
 });
+
+// W11 driver offline sync: per-stop status, waiting count, retry, and older-plan notice.
+Object.assign(labels.si, {
+  "Saved on this phone": "මෙම දුරකථනයේ සුරැකිණි",
+  "Sending": "යවමින්",
+  "Sent": "යවන ලදී",
+  "Could not send": "යැවීමට නොහැකි විය",
+  "Got it": "තේරුණා",
+  "{count} waiting": "{count}ක් බලා සිටී",
+  "{count} photo(s) waiting": "ඡායාරූප {count}ක් බලා සිටී",
+  "Saved records are sent first, then photos.": "සුරැකි සටහන් මුලින් යවයි, ඉන්පසු ඡායාරූප.",
+  "This could not be sent. Your record is still saved on this phone.": "මෙය යැවීමට නොහැකි විය. ඔබේ සටහන තවමත් මෙම දුරකථනයේ සුරැකිව ඇත.",
+  "the current plan is": "වත්මන් සැලැස්ම",
+  "Your record was kept; dispatch will review it.": "ඔබේ සටහන තබාගෙන ඇත; යැවීම් අංශය එය සමාලෝචනය කරනු ඇත.",
+});
+Object.assign(labels.ta, {
+  "Saved on this phone": "இந்த ஃபோனில் சேமிக்கப்பட்டது",
+  "Sending": "அனுப்புகிறது",
+  "Sent": "அனுப்பப்பட்டது",
+  "Could not send": "அனுப்ப முடியவில்லை",
+  "Got it": "புரிந்தது",
+  "{count} waiting": "{count} காத்திருக்கிறது",
+  "{count} photo(s) waiting": "{count} புகைப்படம்(கள்) காத்திருக்கின்றன",
+  "Saved records are sent first, then photos.": "சேமித்த பதிவுகள் முதலில் அனுப்பப்படும், பிறகு புகைப்படங்கள்.",
+  "This could not be sent. Your record is still saved on this phone.": "இதை அனுப்ப முடியவில்லை. உங்கள் பதிவு இன்னும் இந்த ஃபோனில் சேமிக்கப்பட்டுள்ளது.",
+  "the current plan is": "தற்போதைய திட்டம்",
+  "Your record was kept; dispatch will review it.": "உங்கள் பதிவு வைத்துக்கொள்ளப்பட்டது; அனுப்பல் குழு அதை மதிப்பாய்வு செய்யும்.",
+});
+countMessages.push(
+  [/^(\d+) waiting$/, "{count} waiting"],
+  [/^(\d+) photo\(s\) waiting$/, "{count} photo(s) waiting"],
+);

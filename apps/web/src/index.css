@@ -1729,3 +1729,12 @@ td {
     padding: 16px 20px;
   }
 }
+
+/* W11 offline sync status. Text colours come from the existing muted/status classes. */
+.sync-waiting { font-weight: 600; }
+.sync-status { display: grid; gap: 0.5rem; margin: 0.35rem 0 0.75rem; }
+.sync-status p { margin: 0; }
+.sync-chip { display: inline-block; justify-self: start; padding: 0.15rem 0.65rem; border: 1px solid currentColor; border-radius: 999px; font-size: 0.875rem; font-weight: 600; }
+.sync-retry { display: grid; gap: 0.5rem; justify-items: start; }
+.sync-conflict { display: grid; gap: 0.5rem; justify-items: start; padding: 0.75rem; border: 2px solid #bf7811; border-radius: 10px; background: #fff8e8; }
+.sync-conflict p { margin: 0; }
