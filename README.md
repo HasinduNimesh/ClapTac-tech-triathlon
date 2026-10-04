@@ -15,9 +15,9 @@
 
 Waypoint connects **Store Managers, Dispatchers, Loaders, and Drivers** in one delivery workflow. Stores place orders, dispatchers allocate the fleet, loaders resolve loading exceptions, drivers record delivery evidence with offline support, and stores confirm what they received.
 
-The platform combines a React PWA, a Flutter loader workspace and driver app, Go domain services, Python assistants, deterministic planning rules, and role- and resource-scoped APIs. Core operations work without an LLM provider.
+The platform combines a React PWA, eight Go services, deterministic planning rules, role- and resource-scoped APIs, and optional AI assistance. Core operations work without an LLM provider.
 
-> **Scope:** this README describes the `main` branch and its local Docker Compose setup. The team’s existing [architecture and AI disclosure](docs/Waypoint%20Architecture%20Data%20Model%20and%20AI%20Tool%20Disclosure%20-%20Team%20ClapTac.pdf) provides the submission reference. Production readiness and live integrations require deployment-specific validation.
+> **Scope of this README:** setup instructions describe this checkout and its Docker Compose stack. The supplied submission PDF describes a broader system; its original diagrams and the differences from this checkout are preserved in the [architecture reference](docs/architecture/system-diagrams.md#submission-reference-and-checkout-differences).
 
 ## Contents
 
@@ -49,7 +49,7 @@ The platform combines a React PWA, a Flutter loader workspace and driver app, Go
 | **Personal automations** | Evidence-based habit suggestions, editable weekly workflows, preview before activation, notifications, and execution history. |
 | **Operations** | Audit records, role isolation, service health endpoints, Prometheus metrics, optional Grafana/OTel, and documented backup procedures. |
 
-English, Sinhala, and Tamil are available in the React interface; the Flutter loader interface is English-only. Maps use recorded outlet locations, falling back to approximate district positions until an exact location is recorded. Truck status comes from operational events, not live GPS. See [outlet locations](docs/outlet-locations.md).
+English, Sinhala, and Tamil are available in the web interface. Maps use approximate outlet positions and reported operational events; they are not live GPS tracking.
 
 ## Quick start
 
@@ -61,10 +61,10 @@ English, Sinhala, and Tamil are available in the React interface; the Flutter lo
 | Docker Engine/Desktop and Docker Compose v2 | Run the complete local application. Docker must be running. |
 | Go 1.22+ | Build, test, or develop backend services outside Docker. |
 | Node.js 20+ and npm | Build or test the React application outside Docker. |
-| Python 3 / Python 3.12 for assistants | Validate and convert seeds; run utility tests. Assistant development uses Python 3.12, FastAPI, and LangGraph. |
-| Flutter | Develop the loader web or driver mobile app outside Docker. The loader Docker build supplies its pinned Flutter SDK. |
+| Python 3 | Validate and convert seed data; run Python utility tests. |
+| Flutter | Only for the optional `apps/driver-mobile` project; not required for the supported web workspaces. |
 
-On Windows, use Docker Desktop with WSL 2 and run the shell commands from WSL. Docker builds supply the application toolchains, including Python for assistants and Flutter for the loader web app.
+On Windows, use Docker Desktop with WSL 2 and run the shell commands from WSL. The Docker build supplies the Go and Node toolchains for the application itself.
 
 ### 2. Clone and configure
 
@@ -86,7 +86,7 @@ docker compose logs --tail=100 migrate seed bootstrap
 
 The first build may take several minutes. `migrate`, `seed`, and `bootstrap` are one-shot jobs: **Exited (0) is success**. Wait for those jobs to finish and for the web/backend health checks to become healthy.
 
-Open **[http://localhost](http://localhost)**, choose **Sign in**, and use a [local account](#local-docker-compose-accounts). The React account profile selects its workspace automatically; sign out before switching roles. For the Flutter Loader workspace, open **[http://localhost/loader-app/](http://localhost/loader-app/)** directly and sign in there.
+Open **[http://localhost](http://localhost)**, choose **Sign in**, and use a [local account](#local-docker-compose-accounts). The account profile selects the workspace automatically; sign out before switching roles.
 
 ```bash
 curl -fsS http://localhost/health/live
@@ -99,8 +99,6 @@ The edge health check confirms NGINX is responding. Use `docker compose ps` to i
 | Component | Address | Availability |
 | --- | --- | --- |
 | Waypoint web/PWA | [localhost](http://localhost) | Default stack |
-| Flutter Loader | [localhost/loader-app/](http://localhost/loader-app/) | Default stack |
-| Agent trace viewer | [localhost:8085](http://localhost:8085) | Optional `agent-traces` profile |
 | Development OIDC provider | [localhost:8090](http://localhost:8090/.well-known/openid-configuration) | Default stack; sign in through the app |
 | PostgreSQL | `127.0.0.1:5432` | Default stack |
 | Redis | `127.0.0.1:6379` | Default stack |
@@ -109,7 +107,7 @@ The edge health check confirms NGINX is responding. Use `docker compose ps` to i
 | Grafana / Prometheus | [localhost:3001](http://localhost:3001) / [localhost:9090](http://localhost:9090) | `observability` profile |
 | OTLP HTTP collector | `http://localhost:4318` | `observability` profile |
 
-Compose binds published ports to loopback by default; `NGINX_BIND` can override the edge binding. The optional `backup-test` profile uses port 9001; the `search` profile uses port 9200.
+Compose binds published ports to loopback. The optional `backup-test` profile uses port 9001; the `search` profile uses port 9200.
 
 ## Configuration
 
@@ -118,15 +116,11 @@ Start with [`.env.example`](.env.example). **[`docker-compose.yml`](docker-compo
 | Area | Variables / defaults | Configuration notes |
 | --- | --- | --- |
 | Runtime | `ENVIRONMENT=local`, `AUTH_DISABLED=false` | Compose explicitly keeps authentication enabled. Disabled authentication is rejected outside the local runtime. |
-| Database | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` = `waypoint`; `DATABASE_URL` | Keep the credentials in the connection URL consistent with PostgreSQL. Migration and seed jobs consume `DATABASE_URL`; the bootstrap job still hardcodes the local connection URL and needs a matching override if these defaults change. |
+| Database | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` = `waypoint`; `DATABASE_URL` | Keep the credentials in the connection URL consistent with PostgreSQL. Migration, seed, and bootstrap jobs currently hardcode the local connection URL. |
 | Identity | `OIDC_ISSUER=http://localhost:8090`, `OIDC_AUDIENCE=waypoint-api` | Services consume these values, but the bundled identity container uses hardcoded local issuer/audience values. Change both sides together. |
-| Internal identity endpoints | JWKS: `http://thunderid:8090/oauth2/jwks`; token: `http://thunderid:8090/oauth2/token` | Override with `OIDC_JWKS_URL` and `OIDC_TOKEN_URL`. Internal service names resolve inside the Compose network. |
+| Internal identity endpoints | JWKS: `http://thunderid:8090/oauth2/jwks`; token: `http://thunderid:8090/oauth2/token` | Set directly in Compose. Internal service names resolve inside the Compose network. |
 | Service authentication | `ORDER_M2M_CLIENT_SECRET`, `PLANNING_M2M_CLIENT_SECRET`, `FLEET_M2M_CLIENT_SECRET`, `LOADING_M2M_CLIENT_SECRET`, `DELIVERY_M2M_CLIENT_SECRET`, `SHARED_M2M_CLIENT_SECRET`, `INTEGRATION_M2M_CLIENT_SECRET` | Local defaults are provided. `FLEET_M2M_CLIENT_SECRET` is supported by Compose but is not listed in `.env.example`. Use distinct credentials with a real provider. |
-| Web build | `VITE_API_BASE_URL`, `VITE_OIDC_ISSUER`, `VITE_OIDC_CLIENT_ID`, `VITE_OIDC_REDIRECT_URI`, `VITE_OIDC_AUDIENCE` | Compose reads these build arguments from the environment, with local defaults. Set them consistently with the identity provider and rebuild `web`; runtime changes do not rewrite compiled frontend assets. |
-| Loader identity | `LOADER_OIDC_CLIENT_ID=waypoint-loader`; shared `VITE_OIDC_ISSUER` and `VITE_OIDC_AUDIENCE` | Rebuild `loader-web` after changes. Register `<origin>/loader-app/auth/callback` for its public PKCE client. |
-| Image and edge settings | `WAYPOINT_IMAGE_PREFIX=waypoint`, `WAYPOINT_TAG=local`, `NGINX_BIND=127.0.0.1:80:80` | Image naming and edge binding for Compose. |
-| Agent traces | `AGENT_TRACE_URL`, `AGENT_TRACE_INGEST_TOKEN`, `AGENT_TRACE_VIEW_TOKEN`, `AGENT_TRACE_MAX` | Optional `agent-traces` profile; set the URL to `http://agent-manager:8085`. Non-local environments require tokens. |
-| Grafana login | `GRAFANA_ADMIN_USER=admin`, `GRAFANA_ADMIN_PASSWORD=admin` | Defaults are local-only; configure credentials for other environments. |
+| Web build | `VITE_API_BASE_URL`, `VITE_OIDC_ISSUER`, `VITE_OIDC_CLIENT_ID`, `VITE_OIDC_REDIRECT_URI` | Current Compose build arguments are fixed to `/api/v1`, the local issuer, `waypoint-web`, and `http://localhost/auth/callback`. Edit/override build arguments and rebuild `web` when changing them. |
 | Cache | `REDIS_URL=redis://redis:6379/0` | Shared cache infrastructure; do not assume every subsystem persists state here. |
 | Evidence storage | `MINIO_ENDPOINT=http://minio:9090`, `MINIO_BUCKET=waypoint-proof` | The service is named `minio`, but local Compose runs `adobe/s3mock`. |
 | Proof retention | `DELIVERY_PROOF_RETENTION_ENABLED=false`, `DELIVERY_PROOF_RETENTION_DAYS=180` | Retention is disabled by default. Review the [retention runbook](docs/operations/proof-retention.md) before enabling deletion. |
@@ -155,10 +149,10 @@ These accounts are defined in [`tools/dev-oidc/main.go`](tools/dev-oidc/main.go)
 | --- | --- | --- | --- | --- |
 | `store-manager` | `waypoint` | Store Manager | Outlet `OUT034` | `/store-manager` |
 | `dispatcher` | `waypoint` | Dispatcher | Planning and dispatch | `/dispatcher` |
-| `loader` | `waypoint` | Loader | `DEPOT_NORTH` | `/loader-app/` |
+| `loader` | `waypoint` | Loader | `DEPOT_NORTH` | `/loader` |
 | `driver` | `waypoint` | Driver | Vehicle `VEH001` | `/driver/trips` |
 | `store-manager-b` | `waypoint` | Store Manager | Outlet `OUT021`; isolation testing | `/store-manager` |
-| `loader-kandy` | `waypoint` | Loader | `DEPOT_SOUTH`; isolation testing | `/loader-app/` |
+| `loader-kandy` | `waypoint` | Loader | `DEPOT_SOUTH`; isolation testing | `/loader` |
 
 ### Team-provided testing accounts
 
@@ -201,14 +195,14 @@ python3 scripts/validate-seeds.py
 docker compose run --rm seed
 ```
 
-This reload updates shared reference data and reloads the calendar/travel tables. It does not create a complete delivery scenario. Seeds also load the product catalog and eight weeks of labelled simulated store trading, with derived AI observations/insights. This history is not evidence of real operations. Create delivery orders, plans, and trips through the product workflow; see [catalog and history seeds](database/README.md).
+This reload updates shared reference data and reloads the calendar/travel tables. It does not create a complete delivery scenario. Fresh seeds contain reference data and identity profiles; create orders and trips through the workflow.
 
 ### End-to-end review
 
 1. **Store Manager:** sign in as `store-manager`, place an order, and note its delivery date. The 4:00 PM cutoff and operating calendar affect scheduling. Add another outlet's order with `store-manager-b` if needed.
 2. **Dispatcher:** open **Order queue**, then **Plan and allocate** for that date. Generate the plan, inspect constraints and vehicle assignments, and resolve unallocated orders with a documented deferral where necessary.
 3. **Dispatcher:** confirm/publish the resolved plan. Review the publication and field acknowledgement status.
-4. **Loader:** open `/loader-app/`, select the trip, record loading outcomes, and report any missing/damaged quantities. Resolve blocking issues before marking the load ready.
+4. **Loader:** open `/loader`, select the trip, record loading outcomes, and report any missing/damaged quantities. Resolve blocking issues before marking the load ready.
 5. **Driver:** open `/driver/trips`. The local driver is scoped to `VEH001`, so use a trip assigned to that vehicle. Start the ready trip, record arrival, evidence, and an outcome.
 6. **Offline check:** after loading the trip online, use browser DevTools to go offline. Record queued work, reconnect, and select **Sync Now**. Confirm server acknowledgement before considering it synchronized; do not clear browser storage.
 7. **Store Manager:** confirm received quantities or report a discrepancy, then inspect the order evidence timeline.
@@ -218,31 +212,60 @@ See [the demo script](docs/demo-script.md) and [offline-sync contract](docs/arch
 
 ## Screenshots
 
-These screenshots are already tracked in the repository. They demonstrate order assistance, dashboard creation, and personal automations using development data. They are illustrations of the recorded demo flows, not evidence that a fresh acceptance run was performed for this README update.
+The gallery covers the main roles, exception handling, delivery evidence, and synchronization. Workflow images were copied unchanged from the existing local demo capture set; the sign-in image was captured from the running local application during this documentation update. They show demonstration data, not a new end-to-end acceptance run. Click an image to inspect it at full size.
 
-### Order capture and clarification
+### Store ordering and dispatcher planning
 
-| Describe an order | Review resolved product lines |
+| Place an order | Review the order queue |
 | --- | --- |
-| ![Store Manager order assistant asks for order details](docs/media/a1-a2/a1-order-helper-question.png) | ![Order assistant presents resolved product lines](docs/media/a1-a2/a1-order-helper-lines.png) |
+| ![Store Manager order form with quantities, weight, volume, and delivery date](docs/media/readme/order-entry.jpg) | ![Dispatcher order queue with order status and planning inputs](docs/media/readme/order-queue.jpg) |
 
-| Clarify a product size | Review the prefilled order |
+| Planned trips | Publish and acknowledge a plan |
 | --- | --- |
-| ![Assistant asks which product size the user intended](docs/media/a1-a2/a1-asks-which-size.png) | ![Order form populated for human review](docs/media/a1-a2/a1-order-form-filled.png) |
+| ![Dispatcher planned trips and vehicle allocation](docs/media/readme/planned-trips.jpg) | ![Plan publication status and field acknowledgements](docs/media/readme/plan-published.jpg) |
 
-### Dashboard creation
+### Loading and offline delivery
 
-| Create a dashboard | Saved dashboard |
+Full-height mobile captures are shown at a compact width; open the image for readable detail. A separate [driver route overview](docs/media/readme/driver-route.jpg) is also available.
+
+<table>
+  <tr><th>Loader workspace</th><th>Driver proof</th><th>Queued work</th><th>After synchronization</th></tr>
+  <tr>
+    <td><a href="docs/media/readme/loading-mobile.jpg"><img src="docs/media/readme/loading-mobile.jpg" alt="Loader trip and order load checks" width="180" /></a></td>
+    <td><a href="docs/media/readme/driver-proof.jpg"><img src="docs/media/readme/driver-proof.jpg" alt="Driver delivery proof capture" width="180" /></a></td>
+    <td><a href="docs/media/readme/driver-queued.jpg"><img src="docs/media/readme/driver-queued.jpg" alt="Driver locally queued operations" width="180" /></a></td>
+    <td><a href="docs/media/readme/driver-synced.jpg"><img src="docs/media/readme/driver-synced.jpg" alt="Driver state after queued operations synchronize" width="180" /></a></td>
+  </tr>
+</table>
+
+### Receipt and evidence
+
+| Confirm receipt | Review the evidence timeline |
 | --- | --- |
-| ![Store Manager dashboard builder](docs/media/a1-a2/a2-create-dashboard.png) | ![Saved Store Manager dashboard](docs/media/a1-a2/a2-saved-dashboard.png) |
+| ![Store receipt confirmation with discrepancy reporting](docs/media/readme/receipt.jpg) | ![Order timeline connecting placement, planning, delivery, and receipt](docs/media/readme/evidence-timeline.jpg) |
 
-### Habits and personal workflows
+<details>
+<summary><strong>More screens: sign-in, exceptions, and personal automations</strong></summary>
+
+| Sign in | Order accepted |
+| --- | --- |
+| <img src="docs/media/readme/sign-in.jpg" alt="Role-based Waypoint sign-in" width="300" /> | ![Order request confirmation](docs/media/readme/order-confirmed.jpg) |
+
+| Capacity constraint | Explain a deferral |
+| --- | --- |
+| ![Capacity constraint in the planning workspace](docs/media/readme/capacity-block.jpg) | ![Dispatcher deferral reason and next-run decision](docs/media/readme/deferral-reason.jpg) |
+
+| Store deferral notice | Loading shortfall |
+| --- | --- |
+| ![Store-facing explanation of a deferred order](docs/media/readme/store-deferral.jpg) | <img src="docs/media/readme/loading-shortfall.jpg" alt="Loader missing or damaged quantity report" width="200" /> |
 
 | Habit suggestion | Workflow preview | Execution history |
 | --- | --- | --- |
 | ![A3 evidence-based habit suggestion](docs/media/a3-a4/a3-habit-suggestion.png) | ![A4 workflow preview before activation](docs/media/a3-a4/a4-preview.png) | ![A4 completed run and notification](docs/media/a3-a4/a4-execution.png) |
 
-The automation captures use the labelled synthetic history described in [the A3/A4 guide](docs/a3-a4-demo.md). For the field workflows, see the [Loader screen guide](apps/loader-web/README.md#screens) and [Driver application guide](apps/driver-mobile/README.md).
+The automation captures use the labelled synthetic history described in [the A3/A4 guide](docs/a3-a4-demo.md).
+
+</details>
 
 ## Architecture
 
@@ -250,21 +273,14 @@ The automation captures use the labelled synthetic history described in [the A3/
 
 ```mermaid
 flowchart TB
-    People["Store Manager · Dispatcher · Driver"] --> Web["React + TypeScript PWA"]
-    Loader["Loader / Flutter web"] --> Edge
-    Mobile["Driver / Flutter mobile"] --> Edge
+    People["Store Manager · Dispatcher · Loader · Driver"] --> Web["React + TypeScript PWA"]
     Web <-->|"OIDC authorization code + PKCE"| Identity["Local ThunderID-compatible OIDC shim"]
     Web -->|"HTTP /api/v1 + bearer token"| Edge["NGINX"]
     Edge --> Domain["Order · Planning · Fleet · Loading · Delivery · Shared"]
     Edge --> Integration["Integration Service"]
     Edge --> Agent["Agent Orchestrator"]
-    Edge --> Assistants["Python / FastAPI / LangGraph assistants"]
-    Assistants -->|"caller-scoped HTTP tools"| Domain
-    Assistants -.-> LLM
-    Agent -.-> Traces["Optional Agent Manager / trace viewer"]
-    Assistants -.-> Traces
     Domain -->|"owned schemas"| DB[("PostgreSQL 16")]
-    Domain -->|"proof and loading-issue media"| S3["S3-compatible storage / local S3Mock"]
+    Domain -->|"delivery proof bytes"| S3["S3-compatible storage / local S3Mock"]
     Domain -.-> Redis[("Redis 7 infrastructure")]
     Web --> Local[("IndexedDB / Dexie offline queue")]
     Agent -->|"allowlisted HTTP tools, caller token"| Domain
@@ -285,8 +301,6 @@ Service-to-service calls use HTTP rather than cross-schema SQL. JWT validation, 
 | Shared | `/api/v1/shared` | Profiles, outlets, calendar, policies, notifications, automations and audit; `shared` + `audit` schemas |
 | Integration | `/api/v1/integrations` | External delivery adapters and callbacks |
 | Agent Orchestrator | `/api/v1/agent` | Optional permission-scoped tools and human approvals |
-| Agent Assistants | `/api/v1/agent/order-assistant/`, `/api/v1/agent/dashboard-assistant/` | Python order/dashboard drafting helpers; caller-scoped APIs, no database connection |
-| Agent Manager | Optional port `8085` | Bounded agent trace collection/viewing; enabled with `agent-traces` |
 
 ### Operational flow
 
@@ -306,90 +320,22 @@ flowchart LR
     Receipt --> Audit["Operational visibility and audit"]
 ```
 
-### Submission architecture diagram
-
-![Waypoint applications, services, identity, and infrastructure](docs/Waypoint%20-%20Architecture%20diagram.png)
-
-### Deployment target
-
-```mermaid
-flowchart LR
-    Browser["Browser / mobile client"] --> Edge["Public TLS edge / NGINX"]
-    Edge --> Gateway["kGateway / Gateway API"]
-    Gateway --> API["Versioned services"]
-    API --> Database[("PostgreSQL / owned schemas")]
-    API --> Storage["Durable object storage"]
-    API --> IdP["Production OIDC provider"]
-```
-
-kGateway is a Kubernetes target component and does not run in local Compose. The manifests require deployment-specific identity, secrets, TLS, image, and storage configuration. See [Architecture A](docs/architecture/architecture-a.md) and [Kubernetes deployment inputs](infrastructure/kubernetes/README.md).
-
-### Driver offline synchronization
-
-```mermaid
-sequenceDiagram
-    actor Driver
-    participant Client as Driver client
-    participant Queue as Local persistent queue
-    participant API as Delivery Service
-    participant Objects as Object storage
-    Driver->>Client: Record arrival, proof, and outcome offline
-    Client->>Queue: Persist work with stable operation IDs
-    Note over Client,API: Connectivity returns
-    Queue-->>Client: Next pending operation
-    Client->>API: ARRIVED via JSON sync
-    API-->>Client: Operation result
-    Client->>API: Proof via multipart upload
-    API->>Objects: Store evidence bytes
-    API-->>Client: Proof result
-    Client->>API: STOP_OUTCOME after proof dependency
-    API-->>Client: Applied, duplicate, conflict, or rejected
-    Client->>Queue: Update status after acknowledgement
-```
-
-The React PWA uses IndexedDB/Dexie; the configured Flutter driver app uses SQLite for queued operations. Trip start and plan acknowledgement require a connection. The Flutter loader is online-only and does not queue offline work. See the [sync contract](docs/architecture/offline-sync.md) and [mobile implementation](apps/driver-mobile/README.md).
-
-### Guarded assistant execution
-
-```mermaid
-flowchart LR
-    User["Authenticated user"] --> Agent["Assistant / orchestrator"]
-    Agent --> Tools["Allowlisted tools and argument validation"]
-    Tools --> Draft["Draft / sensitive proposal"]
-    Draft --> Approval["Human review and approval"]
-    Approval --> API["Business API"]
-    API --> Checks["Current role, resource scope, and domain rules"]
-    Agent -.-> Provider["Optional LLM provider"]
-```
-
-A1/A2 return order/dashboard drafts for review. The Go orchestrator gates its sensitive tools through owner-bound approval. Agents do not determine planning feasibility; the business services enforce deterministic rules.
+**[Complete architecture diagrams](docs/architecture/system-diagrams.md)** include the Kubernetes target, authentication and authorization sequence, service-owned data relationships, driver offline synchronization, optional AI approvals, and **both original diagrams from the submission PDF**.
 
 ## Data model
 
-Waypoint uses one PostgreSQL instance with nine schemas. Seven serve the operational platform; `inventory` and `ai` provide schema foundations and simulated history while their dedicated services remain planned.
+PostgreSQL uses seven owned schemas in this checkout: `shared`, `audit`, `orders`, `planning`, `fleet`, `loading`, and `delivery`. The main chain is:
 
-| Schema | Principal records |
-| --- | --- |
-| `shared` | Users/profiles, outlets/locations, calendar, product catalog/prices, policies, notifications, dashboards, and A3/A4 automations. |
-| `audit` | Operational audit events. |
-| `orders` | Orders and product lines, receipts and receipt lines, issues, and custody events. |
-| `planning` | Plans, trips, allocations, deferrals, publications, acknowledgements, and disruption risks. |
-| `fleet` | Vehicles, availability, fuel, and incidents. |
-| `loading` | Sessions, load outcomes, issues, dispatcher decisions, and versioned snapshots. |
-| `delivery` | Runs, stops, outcomes, proof, temperatures, messages, incidents, and sync operations. |
-| `inventory` | Simulated runs, stock levels/batches, sales, stock counts, and append-only movements. |
-| `ai` | Agent definitions/preferences, observations, insights, suggestions/responses, and runs. |
+**Outlet → order → plan allocation → trip → loading session → delivery run/stop → proof → receipt.**
 
-The main operational chain is **Outlet → order → allocation → trip → load → delivery stop → proof → receipt**. Cross-service references are opaque IDs resolved through APIs. Within each owned schema, migrations define relationships and constraints. Product packs move through logistics; stock inventory uses individual sellable units, converted with `units_per_pack`.
+Cross-service references are opaque IDs resolved through APIs. Within a schema, migrations define database relationships and constraints. Published versions, acknowledgements, stable operation IDs, proof metadata, and audit history preserve operational evidence.
 
-![Waypoint data model and core entity relationships](docs/Waypoint%20-%20Data%20model.png)
-
-- [Database ownership, catalog, inventory, and AI records](database/README.md)
+- [Data relationships and schema inventory](docs/architecture/system-diagrams.md#service-owned-data-model)
+- [Database ownership](database/README.md)
 - [Authoritative SQL migrations](database/migrations/)
 - [Official-data conversion notes](database/seeds/README.md)
-- [Architecture, data model, and AI disclosure PDF](docs/Waypoint%20Architecture%20Data%20Model%20and%20AI%20Tool%20Disclosure%20-%20Team%20ClapTac.pdf)
 
-`inventory.stock_movements` and `ai.observations` have append-only protections. The documented simulation cleanup function is restricted to simulated runs. Schema presence alone does not imply that a production inventory or insights service is deployed.
+Orders in this checkout use aggregate units, weight, volume, and temperature requirements. Product-line orders and the additional `inventory`/`ai` schemas shown in the submission reference are not present in these migrations.
 
 ## API reference
 
@@ -406,7 +352,7 @@ Open **[http://localhost:8092](http://localhost:8092)**. Submission buttons are 
 docker compose -p waypoint-api-docs -f docker-compose.api-docs.yml down
 ```
 
-See [API conventions](docs/api/README.md), [order import/export](docs/api/order-import-export-v1.md), the [automations contract](contracts/openapi/automations.yaml), and the [assistant contract](contracts/openapi/assistants.yaml). The Swagger selector lists nine service contracts; automations is available directly as a YAML file. Service handlers remain the implementation reference where contracts lag behavior.
+See [API conventions](docs/api/README.md), [order import/export](docs/api/order-import-export-v1.md), and the separate [automations contract](contracts/openapi/automations.yaml). The Swagger selector lists eight service contracts; automations is available directly as a YAML file. Service handlers remain the implementation reference where contracts lag behavior.
 
 ## Development and validation
 
@@ -417,7 +363,7 @@ Install web dependencies before running the complete suite:
 make verify
 ```
 
-`make verify` runs uncached Go tests (including PostgreSQL/Testcontainers suites), Go build/vet, the agent database-import guard, Python assistant tests, web tests, the PWA production build, and Python backup/load/location utility tests. Docker is required for database-backed tests. See [`scripts/test.sh`](scripts/test.sh) for the exact sequence.
+`make verify` runs uncached Go tests (including PostgreSQL/Testcontainers suites), Go build/vet, the agent database-import guard, web tests, the PWA production build, and Python backup/load utility tests. Docker is required for database-backed tests. See [`scripts/test.sh`](scripts/test.sh) for the exact sequence.
 
 | Task | Command from repository root |
 | --- | --- |
@@ -425,9 +371,6 @@ make verify
 | Backend build | `make build` |
 | Go static checks | `make lint` |
 | Agent import boundary | `make check-agent-imports` |
-| Python assistant tests | `./scripts/test-agent-assistants.sh` |
-| Loader checks | `cd apps/loader-web && flutter pub get && flutter analyze && flutter test` |
-| Driver checks | `cd apps/driver-mobile && flutter pub get && flutter analyze && flutter test` |
 | Web tests | `cd apps/web && npm test` |
 | Web production build | `cd apps/web && npm run build` |
 | Seed validation | `python3 scripts/validate-seeds.py` |
@@ -468,7 +411,7 @@ docker compose down
 | Offline work does not disappear | Check connectivity, sign-in, conflicts, and dependencies, then retry sync. Do not erase IndexedDB to clear the queue. |
 | Scripts report `\r` or an illegal shell option | Restore LF line endings for shell/config files; preserve local changes. The repository supplies `.gitattributes`. |
 | Schema changes are missing | Apply migrations and rebuild the relevant services. Review migration logs before reseeding. |
-| Maps are blank | Map tiles need internet access. Outlets use recorded locations or a district fallback; truck GPS is not tracked. |
+| Maps are blank | Map tiles need internet access. Outlet positions are approximations, not GPS fixes. |
 
 Backup and retention procedures: [object storage](docs/operations/object-storage-backup.md), [proof retention](docs/operations/proof-retention.md), [`make backup-postgres`](scripts/create-postgres-backup.sh), and [`make backup-object-storage`](scripts/create-object-storage-backup.sh).
 
@@ -476,19 +419,18 @@ Backup and retention procedures: [object storage](docs/operations/object-storage
 
 Human sign-in uses OIDC Authorization Code with PKCE. APIs validate tokens, resolve the subject to a shared profile, enforce permissions and ownership, then validate the domain operation. Service identities are separate from human identities. Demo identity credentials and HTTP transport are for local development only.
 
-The optional Go orchestrator uses fixed, allowlisted tools. Sensitive proposals require approval by the same human actor, expire after five minutes, and are reauthorized by the target service. Planning feasibility remains deterministic. Approval state is currently bounded process memory and does not survive an orchestrator restart.
+The optional assistant uses fixed, allowlisted tools. Sensitive proposals require approval by the same human actor, expire after five minutes, and are reauthorized by the target service. Planning feasibility remains deterministic. Approval state is currently bounded process memory and does not survive an orchestrator restart.
 
 A3 habit suggestions use deterministic evidence thresholds and saved feedback. A4 drafts a supported weekly workflow, previews it, and activates only after user confirmation. Saved workflows execute in Shared Service with current authorization checks; they do not call the LLM on each scheduled run.
 
-The team-provided disclosure identifies **OpenAI Codex and AI coding assistance** for repository analysis, implementation drafts, testing, review, and documentation. The team retains responsibility for product decisions, accepted changes, testing, and release approval. See [AI disclosure](docs/ai-disclosure.md), [security](docs/security.md), [privacy inventory](docs/privacy-data-inventory.md), and the [original submission document](docs/Waypoint%20Architecture%20Data%20Model%20and%20AI%20Tool%20Disclosure%20-%20Team%20ClapTac.pdf).
+The team-provided disclosure identifies **OpenAI Codex and AI coding assistance** for repository analysis, implementation drafts, testing, review, and documentation. The team retains responsibility for product decisions, accepted changes, testing, and release approval. See [AI disclosure](docs/ai-disclosure.md), [security](docs/security.md), [privacy inventory](docs/privacy-data-inventory.md), and the [original submission document](docs/reference/waypoint-architecture-data-model-ai-disclosure.pdf).
 
 ## Repository layout
 
 ```text
 apps/
-  web/                     React + TypeScript PWA and role-based web workspaces
-  loader-web/              Flutter loader web workspace
-  driver-mobile/           Flutter driver mobile application
+  web/                     React + TypeScript PWA and all four web workspaces
+  driver-mobile/           Optional Flutter driver project
 services/
   order-service/           Orders and receipts
   planning-service/        Allocation, constraints, plans, and deferrals
@@ -498,11 +440,10 @@ services/
   shared-service/          Profiles, reference data, audit, and automations
   integration-service/     External notification adapters
   agent-orchestrator/      Guarded optional AI tools
-  agent-assistants/        Python / FastAPI / LangGraph order and dashboard helpers
 pkg/                       Shared Go libraries
 contracts/openapi/         Versioned API specifications
 database/                  SQL migrations and converted reference seeds
-infrastructure/            NGINX, Kubernetes, storage, observability, agent manager
+infrastructure/            NGINX, Kubernetes, storage, and observability
 scripts/                   Bootstrap, datasets, validation, backup, and demos
 tools/dev-oidc/            Local OIDC-compatible identity service
 datathon/                  Separate competition analysis/solver work
@@ -513,8 +454,8 @@ docs/                      Runbooks, architecture, screenshots, and references
 
 - **Planner:** deterministic greedy allocation with hard constraints; no optimality guarantee. Official travel/service-time inputs are simplified by the current converter.
 - **Deployment:** Compose is the documented local path. Kubernetes manifests are target deployment inputs and need real images, identity configuration, secrets, durable storage, DNS, and TLS. A running public deployment was not verified for this README.
-- **Clients:** the React PWA, Flutter loader web app, and Flutter driver mobile app have distinct runtime behavior. Loader web requires connectivity; driver queues support offline work. Consult each client guide for its remaining integration and device-testing limitations.
-- **Inventory/AI foundations:** database schemas and simulated history exist, while dedicated inventory/insights services remain planned. Do not present seeded analytics as live customer evidence.
+- **Clients:** all four supported web roles are in React. The Flutter driver project is optional; there is no `apps/loader-web` directory in this checkout.
+- **Reference differences:** Python/FastAPI/LangGraph assistants, an agent trace manager, inventory/AI schemas, and product-line records appear in the supplied PDF but are absent from this checkout. See the [comparison](docs/architecture/system-diagrams.md#submission-reference-and-checkout-differences).
 - **Storage:** local S3Mock has no persistent volume. A production storage/backup setup is required for durable delivery evidence.
 - **AI and integrations:** provider availability, SMS delivery, and production notification callbacks require external configuration. Do not treat their presence in code as evidence of a tested live integration.
 - **Datathon:** separate solver/data work is documented in [`datathon/README.md`](datathon/README.md); it is not automatically a deployed forecasting pipeline.
@@ -523,7 +464,7 @@ docs/                      Runbooks, architecture, screenshots, and references
 
 Keep changes focused on the affected domain. Maintain service ownership, update API contracts when changing requests/responses, and add migrations for persistent schema changes. Avoid cross-schema reads and client-side-only authorization.
 
-A reviewable PR should state the problem, resulting behavior, affected roles, validation performed, migration/configuration impact, and known limitations. Include screenshots for visible changes and distinguish actual check results from suggested commands.
+A reviewable PR should state the problem, resulting behavior, affected roles, validation performed, migration/configuration impact, and known limitations. Include screenshots for visible changes and distinguish actual check results from suggested commands. See the [pull request template](.github/pull_request_template.md).
 
 No repository-level license file is currently included. The team should choose an explicit license before representing the project as licensed open source.
 
@@ -531,14 +472,12 @@ No repository-level license file is currently included. The team should choose a
 
 | Topic | Reference |
 | --- | --- |
-| Architecture and service boundaries | [Architecture overview](docs/architecture.md) · [Architecture A](docs/architecture/architecture-a.md) |
-| Original team submission | [Architecture, data model, and AI tool disclosure PDF](docs/Waypoint%20Architecture%20Data%20Model%20and%20AI%20Tool%20Disclosure%20-%20Team%20ClapTac.pdf) |
+| Architecture, sequences, ER relationships, and source diagrams | [Complete architecture diagrams](docs/architecture/system-diagrams.md) |
+| Original team submission | [Architecture, data model, and AI tool disclosure PDF](docs/reference/waypoint-architecture-data-model-ai-disclosure.pdf) |
 | Service boundaries | [Architecture A](docs/architecture/architecture-a.md) · [ADR-001](docs/decisions/ADR-001-service-boundaries.md) |
 | Audit delivery | [ADR-002](docs/decisions/ADR-002-audit-delivery.md) |
 | Offline delivery | [Offline behavior](docs/offline-sync.md) · [Sync contract](docs/architecture/offline-sync.md) |
-| Guarded assistants and agent traces | [Agent plane](docs/architecture/agent-plane.md) · [Python assistants](services/agent-assistants/README.md) |
-| Loader workspace | [Flutter loader guide](apps/loader-web/README.md) |
-| Driver app | [Flutter driver guide](apps/driver-mobile/README.md) |
+| Guarded assistant | [Agent plane](docs/architecture/agent-plane.md) |
 | Personal automations | [A3/A4 demo and scope](docs/a3-a4-demo.md) |
 | Security and privacy | [Security](docs/security.md) · [Data inventory](docs/privacy-data-inventory.md) |
 | API contracts | [API reference](docs/api/README.md) |
