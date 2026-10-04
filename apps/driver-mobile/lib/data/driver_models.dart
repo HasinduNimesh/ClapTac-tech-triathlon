@@ -74,6 +74,10 @@ class StopInfo {
 
   String get label => labelWith(' - ');
 
+  /// "Stop 2 · Nugegoda", or just "Stop 2" when the server sent no outlet name and the name is only
+  /// that same fallback.
+  String get sequenceTitle => name == 'Stop $sequence' ? name : 'Stop $sequence · $name';
+
   /// "12 units", or an honest "quantity not recorded".
   String get unitsText => units == null ? 'Quantity not recorded' : '$units $unitLabel';
 }
