@@ -92,7 +92,11 @@ func (s Service) Tracking(profile *authorization.Profile, id string) (domain.Tra
 			return domain.Tracking{}, fmt.Errorf("delivery unavailable: %w", e)
 		}
 	}
+	if t.Delivery != nil && (t.Delivery.Outcome == "DELIVERED" || t.Delivery.Outcome == "PARTIAL") {
+		t.ReceiptDue = s.receiptDeadline(t.Delivery)
+	}
 	if receipt, issues, e := s.Repo.GetReceipt(o.ID); e == nil {
+		t.ReceiptDue = nil
 		t.Receipt = &receipt
 		t.ReceiptIssues = issues
 		if receipt.Status == "confirmed_with_issue" {
@@ -247,7 +251,11 @@ func (s Service) PendingReceipts(profile *authorization.Profile) ([]domain.Recei
 			return nil, e
 		}
 		if t.Delivery != nil && (t.Delivery.Outcome == "DELIVERED" || t.Delivery.Outcome == "PARTIAL") && t.Receipt == nil {
-			out = append(out, domain.ReceiptTask{Order: o, Tracking: t})
+			task := domain.ReceiptTask{Order: o, Tracking: t}
+			if t.ReceiptDue != nil {
+				task.ReportBy, task.ReportState = &t.ReceiptDue.ReportBy, t.ReceiptDue.State
+			}
+			out = append(out, task)
 		}
 	}
 	return out, nil
@@ -299,6 +307,9 @@ func (s Service) ConfirmReceipt(profile *authorization.Profile, id string, req d
 	}
 	if req.ReceivedUnits < o.OrderUnits && req.Issue == nil {
 		return domain.Receipt{}, nil, false, fmt.Errorf("invalid: a discrepancy issue is required when received units are below expected units")
+	}
+	if d.DeliveredUnits != nil && req.ReceivedUnits != *d.DeliveredUnits && req.Issue == nil {
+		return domain.Receipt{}, nil, false, fmt.Errorf("invalid: received units differ from the driver's recorded count; report the discrepancy so the dispatcher can review it")
 	}
 	if req.Issue != nil {
 		req.Issue.IssueType = strings.ToUpper(strings.TrimSpace(req.Issue.IssueType))
@@ -598,63 +609,147 @@ func validateCreate(req domain.CreateRequest) error {
 	return nil
 }
 
+// ReceiptReportWorkingDays is how many working days a store has to report a
+// shortage after the driver records the delivery.
+const ReceiptReportWorkingDays = 2
+
+// operatingCalendar returns the configured operating calendar around from, or
+// the static cutoff calendar when none is available.
+func (s Service) operatingCalendar(from time.Time) *cutoff.Calendar {
+	if s.Calendar == nil {
+		return s.Cutoff
+	}
+	loc, _ := time.LoadLocation(cutoff.Zone)
+	if loc == nil {
+		loc = time.UTC
+	}
+	days, err := s.Calendar.OperatingDays(from.In(loc).Format("2006-01-02"), from.In(loc).AddDate(0, 0, 21).Format("2006-01-02"))
+	if err != nil {
+		return s.Cutoff
+	}
+	configured := make([]cutoff.Day, 0, len(days))
+	for _, d := range days {
+		if parsed, e := time.ParseInLocation("2006-01-02", d.Date, loc); e == nil {
+			configured = append(configured, cutoff.Day{Date: parsed, IsOperating: d.IsOperating})
+		}
+	}
+	if len(configured) == 0 {
+		return s.Cutoff
+	}
+	return cutoff.Load(configured)
+}
+
+func (s Service) receiptDeadline(d *domain.DeliveryTracking) *domain.ReceiptDeadline {
+	at := d.CompletedAt
+	if at == nil {
+		at = d.OccurredAt
+	}
+	if at == nil {
+		return nil
+	}
+	now := time.Now()
+	if s.Now != nil {
+		now = s.Now()
+	}
+	return ComputeReceiptDeadline(s.operatingCalendar(*at), *at, now)
+}
+
+// ComputeReceiptDeadline sets the report-by time to the end of the 2nd working
+// day after delivery and classifies it against now.
+func ComputeReceiptDeadline(cal *cutoff.Calendar, deliveredAt, now time.Time) *domain.ReceiptDeadline {
+	by := cal.AddWorkingDays(deliveredAt, ReceiptReportWorkingDays)
+	state := "open"
+	today := now.In(by.Location())
+	switch {
+	case now.After(by):
+		state = "overdue"
+	case today.Format("2006-01-02") == by.Format("2006-01-02"):
+		state = "due_today"
+	case cal.AddWorkingDays(today, 1).Format("2006-01-02") == by.Format("2006-01-02"):
+		state = "due_tomorrow"
+	}
+	return &domain.ReceiptDeadline{ReportBy: by, State: state}
+}
 
 // CreateDeliveryFollowup reuses the confirmed-order import key so retries cannot
 // create a second order for the same rejected stop.
 func (s Service) CreateDeliveryFollowup(sourceOrderID, stopID, tripDate string, units int, resolution string) (domain.Order, error) {
-    if strings.TrimSpace(stopID) == "" || (resolution != "NEXT_RUN" && resolution != "REQUEST_DEFERRAL") {
-        return domain.Order{}, fmt.Errorf("%w: return follow-up", ErrInvalid)
-    }
-    original, err := s.Repo.Get(sourceOrderID)
-    if err != nil { return domain.Order{}, err }
-    if units < 1 || units > original.OrderUnits {
-        return domain.Order{}, fmt.Errorf("%w: returning units", ErrInvalid)
-    }
-    source := "delivery-reattempt"
-    if resolution == "REQUEST_DEFERRAL" { source = "delivery-deferral-request" }
-    if existing, err := s.Repo.GetImported(source, stopID); err == nil {
-        return existing, nil
-    } else if err.Error() != "not found" {
-        return domain.Order{}, err
-    }
-    day, err := time.Parse(time.DateOnly, tripDate)
-    if err != nil { return domain.Order{}, fmt.Errorf("%w: trip date", ErrInvalid) }
-    next := day.AddDate(0, 0, 1)
-    now := time.Now()
-    if s.Now != nil { now = s.Now() }
-    loc, _ := time.LoadLocation("Asia/Colombo")
-    if loc == nil { loc = time.FixedZone("Sri Lanka", 5*60*60+30*60) }
-    today := now.In(loc)
-    tomorrow := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, loc).AddDate(0, 0, 1)
-    if next.Before(tomorrow) { next = tomorrow }
-    if s.Calendar != nil {
-        days, err := s.Calendar.OperatingDays(next.Format(time.DateOnly), next.AddDate(0, 0, 14).Format(time.DateOnly))
-        if err != nil { return domain.Order{}, fmt.Errorf("%w: operating calendar", ErrUnavailable) }
-        // No calendar rows at all means the calendar is not maintained that far
-        // ahead, not that every day is closed: keep the next day and let the
-        // dispatcher confirm it. Rows that exist and are all closed still block.
-        found := len(days) == 0
-        for _, item := range days {
-            if item.IsOperating && item.Date >= next.Format(time.DateOnly) {
-                next, err = time.Parse(time.DateOnly, item.Date)
-                if err != nil { return domain.Order{}, err }
-                found = true
-                break
-            }
-        }
-        if !found { return domain.Order{}, fmt.Errorf("%w: next operating run", ErrUnavailable) }
-    }
-    ratio := float64(units) / float64(original.OrderUnits)
-    item := domain.Order{
-        OutletID: original.OutletID, Brand: original.Brand,
-        RequestedDeliveryDate: next.Format(time.DateOnly), OrderUnits: units,
-        OrderWeightKg: math.Max(0.001, math.Round(original.OrderWeightKg*ratio*1000)/1000),
-        OrderVolumeM3: math.Max(0.001, math.Round(original.OrderVolumeM3*ratio*1000)/1000),
-        TemperatureRequirement: original.TemperatureRequirement, Status: domain.StatusConfirmed,
-        SourceSystem: source, ExternalOrderID: stopID,
-    }
-    results, err := s.Repo.ImportOrders(source, []domain.Order{item})
-    if err != nil { return domain.Order{}, err }
-    if len(results) != 1 { return domain.Order{}, fmt.Errorf("%w: follow-up result", ErrUnavailable) }
-    return results[0].Order, nil
+	if strings.TrimSpace(stopID) == "" || (resolution != "NEXT_RUN" && resolution != "REQUEST_DEFERRAL") {
+		return domain.Order{}, fmt.Errorf("%w: return follow-up", ErrInvalid)
+	}
+	original, err := s.Repo.Get(sourceOrderID)
+	if err != nil {
+		return domain.Order{}, err
+	}
+	if units < 1 || units > original.OrderUnits {
+		return domain.Order{}, fmt.Errorf("%w: returning units", ErrInvalid)
+	}
+	source := "delivery-reattempt"
+	if resolution == "REQUEST_DEFERRAL" {
+		source = "delivery-deferral-request"
+	}
+	if existing, err := s.Repo.GetImported(source, stopID); err == nil {
+		return existing, nil
+	} else if err.Error() != "not found" {
+		return domain.Order{}, err
+	}
+	day, err := time.Parse(time.DateOnly, tripDate)
+	if err != nil {
+		return domain.Order{}, fmt.Errorf("%w: trip date", ErrInvalid)
+	}
+	next := day.AddDate(0, 0, 1)
+	now := time.Now()
+	if s.Now != nil {
+		now = s.Now()
+	}
+	loc, _ := time.LoadLocation("Asia/Colombo")
+	if loc == nil {
+		loc = time.FixedZone("Sri Lanka", 5*60*60+30*60)
+	}
+	today := now.In(loc)
+	tomorrow := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, loc).AddDate(0, 0, 1)
+	if next.Before(tomorrow) {
+		next = tomorrow
+	}
+	if s.Calendar != nil {
+		days, err := s.Calendar.OperatingDays(next.Format(time.DateOnly), next.AddDate(0, 0, 14).Format(time.DateOnly))
+		if err != nil {
+			return domain.Order{}, fmt.Errorf("%w: operating calendar", ErrUnavailable)
+		}
+		// No calendar rows at all means the calendar is not maintained that far
+		// ahead, not that every day is closed: keep the next day and let the
+		// dispatcher confirm it. Rows that exist and are all closed still block.
+		found := len(days) == 0
+		for _, item := range days {
+			if item.IsOperating && item.Date >= next.Format(time.DateOnly) {
+				next, err = time.Parse(time.DateOnly, item.Date)
+				if err != nil {
+					return domain.Order{}, err
+				}
+				found = true
+				break
+			}
+		}
+		if !found {
+			return domain.Order{}, fmt.Errorf("%w: next operating run", ErrUnavailable)
+		}
+	}
+	ratio := float64(units) / float64(original.OrderUnits)
+	item := domain.Order{
+		OutletID: original.OutletID, Brand: original.Brand,
+		RequestedDeliveryDate: next.Format(time.DateOnly), OrderUnits: units,
+		OrderWeightKg:          math.Max(0.001, math.Round(original.OrderWeightKg*ratio*1000)/1000),
+		OrderVolumeM3:          math.Max(0.001, math.Round(original.OrderVolumeM3*ratio*1000)/1000),
+		TemperatureRequirement: original.TemperatureRequirement, Status: domain.StatusConfirmed,
+		SourceSystem: source, ExternalOrderID: stopID,
+	}
+	results, err := s.Repo.ImportOrders(source, []domain.Order{item})
+	if err != nil {
+		return domain.Order{}, err
+	}
+	if len(results) != 1 {
+		return domain.Order{}, fmt.Errorf("%w: follow-up result", ErrUnavailable)
+	}
+	return results[0].Order, nil
+
 }

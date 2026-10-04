@@ -162,8 +162,17 @@ type ReceiptIssue struct {
 }
 
 type ReceiptTask struct {
-	Order    Order    `json:"order"`
-	Tracking Tracking `json:"tracking"`
+	Order       Order      `json:"order"`
+	Tracking    Tracking   `json:"tracking"`
+	ReportBy    *time.Time `json:"reportBy,omitempty"`
+	ReportState string     `json:"reportState,omitempty"`
+}
+
+// ReceiptDeadline is the store's report-by deadline for an open receipt.
+// State is open, due_tomorrow, due_today or overdue.
+type ReceiptDeadline struct {
+	ReportBy time.Time `json:"reportBy"`
+	State    string    `json:"state"`
 }
 
 type ReceiptIssueView struct {
@@ -243,6 +252,7 @@ type DeliveryTracking struct {
 	CompletedAt             *time.Time     `json:"completedAt,omitempty"`
 	Proofs                  []ProofSummary `json:"proofs"`
 	LoadingShortfallSummary []any          `json:"loadingShortfallSummary"`
+	DeliveredUnits          *int           `json:"deliveredUnits,omitempty"`
 }
 
 type ProofSummary struct {
@@ -260,6 +270,7 @@ type Tracking struct {
 	Planning      PlanningTracking  `json:"planning"`
 	Delivery      *DeliveryTracking `json:"delivery,omitempty"`
 	Receipt       *Receipt          `json:"receipt,omitempty"`
+	ReceiptDue    *ReceiptDeadline  `json:"receiptDue,omitempty"`
 	ReceiptIssues []ReceiptIssue    `json:"receiptIssues"`
 	Custody       []CustodyEvent    `json:"custody"`
 }

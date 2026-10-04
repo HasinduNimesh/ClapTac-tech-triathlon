@@ -1070,6 +1070,27 @@ export function translate(locale, source) {
 }
 
 
+// W12 receipt report-by deadline
+Object.assign(labels.si, {
+  "2 working days after delivery": "බෙදාහැරීමෙන් වැඩ කරන දින 2කට පසු",
+  "Overdue": "කල් ඉකුත් වී ඇත",
+  "Due today": "අද නියමිතයි",
+  "Due tomorrow": "හෙට නියමිතයි",
+  "Report-by deadline passed.": "වාර්තා කළ යුතු අවසාන දිනය පසු වී ඇත.",
+  "Report-by deadline is today.": "වාර්තා කළ යුතු අවසාන දිනය අදයි.",
+  "Report-by deadline is tomorrow.": "වාර්තා කළ යුතු අවසාන දිනය හෙට වේ.",
+});
+Object.assign(labels.ta, {
+  "2 working days after delivery": "டெலிவரிக்குப் பிறகு 2 வேலை நாட்கள்",
+  "Overdue": "காலக்கெடு கடந்தது",
+  "Due today": "இன்று கடைசி நாள்",
+  "Due tomorrow": "நாளை கடைசி நாள்",
+  "Report-by deadline passed.": "அறிக்கையிட வேண்டிய காலக்கெடு முடிந்துவிட்டது.",
+  "Report-by deadline is today.": "அறிக்கையிட வேண்டிய காலக்கெடு இன்று.",
+  "Report-by deadline is tomorrow.": "அறிக்கையிட வேண்டிய காலக்கெடு நாளை.",
+});
+
+
 // W3 deferral rules
 Object.assign(labels.si, {
   "Required. The store is told this date in its deferral notice.": "අවශ්‍යයි. කල් දැමීම් දැනුම්දීමේදී මෙම දිනය වෙළඳසැලට දැනුම් දෙනු ලැබේ.",
@@ -1144,6 +1165,7 @@ const helperLabels = {
 // Registered here rather than in lookupTranslation so other branches can extend that line freely.
 for (const locale of ["si", "ta"]) Object.assign(labels[locale], helperLabels[locale]);
 
+
 Object.assign(labels.si, {
   "Account name": "ගිණුමේ නම",
   "Your name": "ඔබේ නම",
@@ -1167,10 +1189,23 @@ Object.assign(labels.ta, {
   "Saving…": "சேமிக்கிறது…",
 });
 Object.assign(labels.si, {
-  "The helper isn't available right now — you can fill this in by hand.": "සහායකය දැන් නොලැබේ — ඔබට මෙය අතින්ම පිරවිය හැකිය.",
-  "Pick the cards by hand": "කාඩ්පත් අතින් තෝරන්න",
+
+  "Differs from driver record": "රියදුරු වාර්තාවට වෙනස්",
+  "Count differs from the driver's record": "ගණන රියදුරුගේ වාර්තාවට වෙනස් වේ",
+  "you counted": "ඔබ ගණන් කළේ",
+  "Report the difference so the dispatcher can review it before you confirm.": "ඔබ තහවුරු කිරීමට පෙර සම්ප්‍රේෂකයාට සමාලෝචනය කළ හැකි වන පරිදි වෙනස වාර්තා කරන්න.",
+  "Confirm receipt & report difference": "ලැබීම තහවුරු කර වෙනස වාර්තා කරන්න",
 });
 Object.assign(labels.ta, {
+  "Differs from driver record": "ஓட்டுநர் பதிவுடன் வேறுபடுகிறது",
+  "Count differs from the driver's record": "எண்ணிக்கை ஓட்டுநரின் பதிவுடன் வேறுபடுகிறது",
+  "you counted": "நீங்கள் எண்ணியது",
+  "Report the difference so the dispatcher can review it before you confirm.": "நீங்கள் உறுதிப்படுத்தும் முன் அனுப்புநர் மதிப்பாய்வு செய்யும்படி வேறுபாட்டைப் புகாரளிக்கவும்.",
+  "Confirm receipt & report difference": "பெறுதலை உறுதிப்படுத்தி வேறுபாட்டைப் புகாரளிக்கவும்",
   "The helper isn't available right now — you can fill this in by hand.": "உதவியாளர் இப்போது கிடைக்கவில்லை — இதை நீங்களே கைமுறையாக நிரப்பலாம்.",
   "Pick the cards by hand": "அட்டைகளை கைமுறையாகத் தேர்ந்தெடுக்கவும்",
+
+  "The helper isn't available right now — you can fill this in by hand.": "සහායකය දැන් නොලැබේ — ඔබට මෙය අතින්ම පිරවිය හැකිය.",
+  "Pick the cards by hand": "කාඩ්පත් අතින් තෝරන්න",
+
 });

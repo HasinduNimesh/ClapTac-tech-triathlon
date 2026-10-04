@@ -4,6 +4,7 @@ import { apiJSON, Order } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { useLocale } from "../i18n";
 import { REPORT_WINDOW_HOURS, reportBy } from "./DashboardCards";
+import { receiptDiscrepancy } from "./receiptDiscrepancy.mjs";
 import { colomboDate, colomboTime, formatDay } from "./orderStage.mjs";
 import { StoreManagerHero } from "./StoreManagerHero";
 import { Tracking } from "./useOrderTrackings";
@@ -21,7 +22,7 @@ export function ReceiptConfirmPage() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [received, setReceived] = useState("");
-  const [issueType, setIssueType] = useState("MISSING");
+  const [issueChoice, setIssueChoice] = useState("");
   const [note, setNote] = useState("");
   const [custody, setCustody] = useState({ sealId: "", serials: "", condition: "", receiver: "" });
   const [busy, setBusy] = useState(false);
@@ -40,6 +41,7 @@ export function ReceiptConfirmPage() {
     if (!current) return;
     setReceived(String(current.order.orderUnits));
     setNote("");
+    setIssueChoice("");
     const loaded = current.tracking.custody?.[0];
     setCustody({ sealId: loaded?.sealId || "", serials: (loaded?.serialNumbers || []).join(", "), condition: "", receiver: "" });
   }, [current?.order.id]);
@@ -47,21 +49,25 @@ export function ReceiptConfirmPage() {
   const order = current?.order;
   const tracking = current?.tracking;
   const units = Number(received || 0);
-  const short = order ? Math.max(0, order.orderUnits - units) : 0;
   const tech = order?.brand.toLowerCase() === "tech";
   const due = tracking ? reportBy(tracking) : undefined;
   const driverShort = (tracking?.delivery?.loadingShortfallSummary || []).reduce((s, x) => s + (x.affectedUnits || 0), 0);
-  const driverDelivered = order ? order.orderUnits - driverShort : 0;
+  const driverDelivered = order ? (tracking?.delivery?.deliveredUnits ?? order.orderUnits - driverShort) : 0;
+  const disc = receiptDiscrepancy({ ordered: order?.orderUnits ?? 0, received: units, driverDelivered: tracking?.delivery?.deliveredUnits });
+  const short = disc.short;
+  const issueType = issueChoice || disc.suggestedIssueType;
+  const issueBlocked = disc.needsIssue && issueType === "DAMAGED" && !note.trim();
 
   async function confirm(e: FormEvent) {
     e.preventDefault();
     if (!order) return;
     setError(""); setMessage("");
     if (tech && (!custody.sealId.trim() || !custody.serials.trim() || !custody.condition.trim() || !custody.receiver.trim())) { setError(t("Tech receipt requires the seal, serials, received condition, and receiver name.")); return; }
+    if (issueBlocked) return;
     setBusy(true);
     try {
       const payload: { receivedUnits: number; issue?: { issueType: string; affectedUnits: number; note: string; idempotencyKey: string } } = { receivedUnits: units };
-      if (short > 0) payload.issue = { issueType, affectedUnits: short, note, idempotencyKey: key() };
+      if (disc.needsIssue) payload.issue = { issueType, affectedUnits: disc.affectedUnits, note, idempotencyKey: key() };
       await apiJSON(`/orders/${order.id}/receipt/confirm`, token, { method: "POST", headers: { "Idempotency-Key": payload.issue?.idempotencyKey || key() }, body: JSON.stringify(payload) });
       if (tech) {
         const k = key();
@@ -102,16 +108,18 @@ export function ReceiptConfirmPage() {
                         <td><span className="dp-cell-main">{order.orderRef} · {order.temperatureRequirement === "chilled" ? t("Chilled") : t("Ambient")}</span><span className="dp-cell-sub">{order.orderUnits} {t("ordered")} · {formatDay(order.requestedDeliveryDate)}</span></td>
                         <td><span className="dp-tag dp-tag--cool">{driverDelivered} {t("delivered")}</span></td>
                         <td><label className="visually-hidden" htmlFor="received-units">{t("Received units")}</label><input id="received-units" className="sm-receipt-input" type="number" min={0} max={order.orderUnits} value={received} onChange={(e) => setReceived(e.target.value)} required /></td>
-                        <td>{short > 0 ? <span className="dp-tag dp-tag--red">{short} {t("short")}</span> : <span className="dp-tag dp-tag--green">{t("Matched")}</span>}</td>
+                        <td>{short > 0 ? <span className="dp-tag dp-tag--red">{short} {t("short")}</span> : disc.differsFromDriver ? <span className="dp-tag dp-tag--amber">{t("Differs from driver record")}</span> : <span className="dp-tag dp-tag--green">{t("Matched")}</span>}</td>
                       </tr>
                     </tbody>
                   </table>
                 </div>
                 <div className="dp-panel-body dp-stack" style={{ paddingTop: 16 }}>
-                  {short > 0 && <>
-                    <div className="dp-note dp-note--red"><strong>{t("Shortage found")}</strong>{t("Record the exact short quantity and attach evidence before confirming.")}</div>
+                  {disc.needsIssue && <>
+                    {short > 0
+                      ? <div className="dp-note dp-note--red"><strong>{t("Shortage found")}</strong>{t("Record the exact short quantity and attach evidence before confirming.")}</div>
+                      : <div className="dp-note dp-note--amber"><strong>{t("Count differs from the driver's record")}</strong>{`${t("Driver recorded")} ${disc.driverUnits}, ${t("you counted")} ${units}. ${t("Report the difference so the dispatcher can review it before you confirm.")}`}</div>}
                     <label className="dp-field" style={{ maxWidth: 360 }}>{t("Issue reason")}
-                      <select value={issueType} onChange={(e) => setIssueType(e.target.value)}>
+                      <select value={issueType} onChange={(e) => setIssueChoice(e.target.value)}>
                         <option value="MISSING">{t("MISSING")}</option><option value="DAMAGED">{t("DAMAGED")}</option><option value="QUANTITY_MISMATCH">{t("QUANTITY_MISMATCH")}</option><option value="OTHER">{t("OTHER")}</option>
                       </select>
                     </label>
@@ -133,8 +141,8 @@ export function ReceiptConfirmPage() {
                   <div><h3 className="dp-h3">{t("Evidence for this discrepancy")}</h3><p className="dp-panel-sub">{t("Describe what arrived, for example a delivery note number or damage seen.")}</p></div>
                   <label className="dp-field">{t("Note")}<textarea value={note} onChange={(e) => setNote(e.target.value)} maxLength={1000} placeholder={t("e.g. 4 crates of 24 received, seal intact")} /></label>
                   <p className="muted" style={{ margin: 0, fontSize: "0.75rem" }}>{t("Optional for shortages · required for damage")}</p>
-                  <div className="dp-note dp-note--amber"><strong>{t("Report-by deadline")}</strong>{due ? `${formatDay(colomboDate(due))}, ${colomboTime(due)} · ${REPORT_WINDOW_HOURS} ${t("hours after delivery")}` : t("Opens after delivery")}</div>
-                  <button type="submit" className="dp-btn dp-btn--block" disabled={busy || (short > 0 && issueType === "DAMAGED" && !note.trim())}>{short > 0 ? t("Confirm receipt & report shortage") : t("Confirm Receipt")}</button>
+                  <div className="dp-note dp-note--amber"><strong>{t("Report-by deadline")}</strong>{due ? `${formatDay(colomboDate(due))}, ${colomboTime(due)} · ${tracking?.receiptDue ? t("2 working days after delivery") : `${REPORT_WINDOW_HOURS} ${t("hours after delivery")}`}` : t("Opens after delivery")}{tracking?.receiptDue?.state === "overdue" && <span className="dp-tag dp-tag--red" style={{ marginLeft: 8 }}>{t("Overdue")}</span>}{(tracking?.receiptDue?.state === "due_tomorrow" || tracking?.receiptDue?.state === "due_today") && <span className="dp-tag dp-tag--amber" style={{ marginLeft: 8 }}>{tracking.receiptDue.state === "due_today" ? t("Due today") : t("Due tomorrow")}</span>}</div>
+                  <button type="submit" className="dp-btn dp-btn--block" disabled={busy || issueBlocked}>{short > 0 ? t("Confirm receipt & report shortage") : disc.needsIssue ? t("Confirm receipt & report difference") : t("Confirm Receipt")}</button>
                 </div>
               </aside>
             </div>
