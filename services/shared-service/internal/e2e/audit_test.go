@@ -60,6 +60,7 @@ func TestAuditSearchKPIsAndAppendOnly(t *testing.T) {
 	CREATE TABLE shared.users(id text primary key, identity_subject text unique, role text);
 	CREATE TABLE shared.store_manager_profiles(user_id text, outlet_id text);
 	CREATE TABLE shared.loader_profiles(user_id text, depot text);
+	CREATE TABLE shared.dispatcher_profiles(user_id text, depot text);
 	CREATE TABLE shared.driver_profiles(user_id text, vehicle_id text);
 	CREATE TABLE shared.outlets(id text primary key,brand text,name text,district text,depot text,dock_type text,parking_constraint text,mall_window boolean,window_open_time time,window_close_time time,access_instructions text not null default '',access_instructions_updated_by text not null default '',access_instructions_updated_at timestamptz,access_instructions_confirmed_by text not null default '',access_instructions_confirmed_at timestamptz,chilled_temperature_min_c numeric(5,2),chilled_temperature_max_c numeric(5,2),version integer not null default 1);
 	CREATE TABLE shared.operating_calendar(date date primary key,is_operating boolean,version integer not null default 1);

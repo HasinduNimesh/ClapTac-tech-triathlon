@@ -18,12 +18,13 @@ import iconSetting from "../assets/store-manager/icon-setting.svg";
 import iconHelp from "../assets/store-manager/icon-help.svg";
 import iconUser from "../assets/store-manager/icon-user.svg";
 import "./dispatcher.css";
+import { effectiveDepot, readDepotChoice, saveDepotChoice } from "./depotChoice.mjs";
 
 type DepotState = { depot: string; setDepot: (depot: string) => void };
 const DepotContext = createContext<DepotState>({ depot: "", setDepot: () => undefined });
 export function useDepot() { return useContext(DepotContext); }
 
-const DEPOT_KEY = "waypoint.dispatcher.depot";
+function tabStorage(): Storage | undefined { try { return window.sessionStorage; } catch { return undefined; } }
 
 export function DispatcherLayout() {
   const { profile, logout } = useAuth();
@@ -32,8 +33,12 @@ export function DispatcherLayout() {
   const { pathname } = useLocation();
   const [navOpen, setNavOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [depot, setDepotState] = useState(() => { try { return localStorage.getItem(DEPOT_KEY) ?? "DEPOT_NORTH"; } catch { return "DEPOT_NORTH"; } });
-  const setDepot = (next: string) => { setDepotState(next); try { localStorage.setItem(DEPOT_KEY, next); } catch { /* storage is optional */ } };
+  // Start on the depot this dispatcher works from (their profile), or all depots if they have none.
+  // Switching is remembered for this tab only, per person.
+  const homeDepot = profile?.depot || "";
+  const [choice, setChoice] = useState<string | undefined>(() => readDepotChoice(tabStorage(), profile?.userId));
+  const depot = effectiveDepot(homeDepot, choice);
+  const setDepot = (next: string) => { setChoice(next); saveDepotChoice(tabStorage(), profile?.userId, next); };
   const today = todayInSriLanka();
   const orders = useApi<{ items: { status: string }[] }>("/orders?status=confirmed");
   const incidents = useApi<{ items: unknown[] }>("/fleet/incidents?openOnly=true");
@@ -94,7 +99,7 @@ export function DispatcherLayout() {
         <div className="sm-sidebar-avatar" aria-hidden="true"><img src={iconUser} alt="" width={20} height={20} /></div>
         <div>
           <p className="sm-sidebar-user-name">{name}</p>
-          <p className="sm-sidebar-user-role muted">{t("Dispatcher")}{depot && DEPOT_LABELS[depot] ? ` · ${DEPOT_LABELS[depot]}` : ""}</p>
+          <p className="sm-sidebar-user-role muted">{t("Dispatcher")} · {homeDepot ? `${DEPOT_LABELS[homeDepot] || homeDepot} ${t("depot")}` : t("All depots")}</p>
         </div>
       </div>
     </>
@@ -119,7 +124,7 @@ export function DispatcherLayout() {
             <div className="sm-topbar-right">
               <select className="dp-topbar-select" value={depot} onChange={(e) => setDepot(e.target.value)} aria-label={t("Depot")}>
                 <option value="">{t("All depots")}</option>
-                {Object.entries(DEPOT_LABELS).map(([code, label]) => <option key={code} value={code}>{`${label} ${t("depot")}`}</option>)}
+                {Object.entries(DEPOT_LABELS).map(([code, label]) => <option key={code} value={code}>{`${label} ${t("depot")}${code === homeDepot ? ` · ${t("your depot")}` : ""}`}</option>)}
               </select>
               <NavLink to="/dispatcher/notifications" className="dp-bell" aria-label={`${t("Notifications")} · ${alertCount} ${t("open")}`}>
                 <img src={iconBell} alt="" width={16} height={17} />

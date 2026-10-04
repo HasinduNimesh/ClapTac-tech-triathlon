@@ -109,10 +109,11 @@ func (s Store) Resolve(ctx context.Context, subject string) (*authorization.Prof
 
 func (s Store) ProfileBySubject(ctx context.Context, subject string) (*authorization.Profile, error) {
 	row := s.Pool.QueryRow(ctx, `
-		SELECT u.id, u.identity_subject, u.role, COALESCE(p.outlet_id, ''), COALESCE(l.depot, ''), COALESCE(d.vehicle_id, '')
+		SELECT u.id, u.identity_subject, u.role, COALESCE(p.outlet_id, ''), COALESCE(l.depot, dp.depot, ''), COALESCE(d.vehicle_id, '')
 		FROM users u
 		LEFT JOIN store_manager_profiles p ON p.user_id = u.id
 		LEFT JOIN loader_profiles l ON l.user_id = u.id
+		LEFT JOIN dispatcher_profiles dp ON dp.user_id = u.id
 		LEFT JOIN driver_profiles d ON d.user_id = u.id
 		WHERE u.identity_subject = $1
 	`, subject)

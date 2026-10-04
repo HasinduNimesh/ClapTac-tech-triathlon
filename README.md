@@ -50,7 +50,7 @@ Each account has one server-side role; there is no role selector. The local deve
 | Username | Role | Demo scope |
 |---|---|---|
 | `store-manager` | Store Manager | Outlet `OUT034` |
-| `dispatcher` | Dispatcher | Dispatch/plan operations |
+| `dispatcher` | Dispatcher | Dispatch/plan operations; works from the Peliyagoda depot (`dispatcher_profiles`), can switch depots |
 | `loader` | Loader | North depot / Peliyagoda |
 | `driver` | Driver | Vehicle `VEH001` |
 
