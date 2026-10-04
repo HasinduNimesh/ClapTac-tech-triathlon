@@ -32,7 +32,7 @@ func main() {
 	workerCtx, cancelWorker := context.WithCancel(context.Background())
 	defer cancelWorker()
 	go (notifyworker.Runner{Store: sharedStore, Tokens: tokens, IntegrationURL: getenv("INTEGRATION_SERVICE_URL", "http://integration-service:8080"), Logger: app.Logger}).Run(workerCtx)
-	automationTokens := &oauth.TokenSource{TokenURL: getenv("OIDC_TOKEN_URL", "http://thunderid:8090/oauth2/token"), ClientID: getenv("M2M_CLIENT_ID", "waypoint-shared-service"), ClientSecret: os.Getenv("M2M_CLIENT_SECRET"), Scope: "automations:read-internal"}
+	automationTokens := &oauth.TokenSource{TokenURL: getenv("OIDC_TOKEN_URL", "http://thunderid:8090/oauth2/token"), ClientID: getenv("M2M_CLIENT_ID", "waypoint-shared-service"), ClientSecret: os.Getenv("M2M_CLIENT_SECRET"), Scope: "automations:read-internal", Resource: getenv("OIDC_AUDIENCE", "waypoint-api")}
 	automationService := automations.Service{Pool: pool, Profiles: sharedStore, Tokens: automationTokens, PlanningURL: getenv("PLANNING_SERVICE_URL", "http://planning-service:8080")}
 	go func() {
 		ticker := time.NewTicker(15 * time.Second)
