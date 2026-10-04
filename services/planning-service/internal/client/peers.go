@@ -113,12 +113,12 @@ func (p Peers) getJSON(ctx context.Context, url, token string, dest any) error {
 
 // QueueNotification asks shared-service to apply the outlet's consent and alert
 // preferences before it snapshots a message into its deduplicated outbox.
-func (p Peers) QueueNotification(ctx context.Context, eventKey, outletID, kind, orderRef, reason string, delayMinutes int) error {
+func (p Peers) QueueNotification(ctx context.Context, eventKey, outletID, kind, orderRef, reason string, delayMinutes int, nextRun string) error {
 	tok, err := p.m2m(ctx)
 	if err != nil {
 		return err
 	}
-	body, _ := json.Marshal(map[string]any{"eventKey": eventKey, "outletId": outletID, "type": kind, "orderRef": orderRef, "reason": reason, "delayMinutes": delayMinutes})
+	body, _ := json.Marshal(map[string]any{"eventKey": eventKey, "outletId": outletID, "type": kind, "orderRef": orderRef, "reason": reason, "delayMinutes": delayMinutes, "nextRun": nextRun})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.SharedURL+"/api/v1/shared/internal/notifications/enqueue", bytes.NewReader(body))
 	if err != nil {
 		return err

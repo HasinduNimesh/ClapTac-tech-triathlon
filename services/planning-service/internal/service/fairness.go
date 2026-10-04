@@ -55,3 +55,11 @@ func applyFairnessHistory(orders []domain.Order, deferralCounts map[string]int, 
 	}
 	return lastServedErr == nil, nil
 }
+
+// markPriorityNextPlan flags orders whose outlet is deferred on this plan after
+// also being deferred on its previous run (2nd deferral in a row).
+func markPriorityNextPlan(orders []domain.Order, deferredOrderIDs map[string]bool) {
+	for i := range orders {
+		orders[i].PriorityNextPlan = deferredOrderIDs[orders[i].ID] && orders[i].DeferredLastRun
+	}
+}

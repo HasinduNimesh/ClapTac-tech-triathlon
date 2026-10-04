@@ -104,6 +104,7 @@ export type PlanOrder = {
   fairnessScore: number;
   deferredLastRun?: boolean;
   lastDeferralDate?: string;
+  priorityNextPlan?: boolean;
 };
 
 export type PlanDetail = {
