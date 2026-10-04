@@ -997,6 +997,7 @@ Object.assign(labels.si, {
 Object.assign(labels.ta, {
   "Required. The store is told this date in its deferral notice.": "கட்டாயம். ஒத்திவைப்பு அறிவிப்பில் இந்தத் தேதி கடைக்குத் தெரிவிக்கப்படும்.",
   "Priority for next plan": "அடுத்த திட்டத்திற்கு முன்னுரிமை",
+});
 Object.assign(labels.si, {
   "Account name": "ගිණුමේ නම",
   "Your name": "ඔබේ නම",
