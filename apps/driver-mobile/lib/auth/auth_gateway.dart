@@ -1,8 +1,12 @@
+import 'dart:async';
+
 import 'auth_config.dart';
 import 'auth_failure.dart';
 import 'auth_store.dart';
 import 'oidc_client.dart';
 import 'profile_api.dart';
+import 'revocation_queue.dart';
+import 'token_revoker.dart';
 
 class AuthOutcome {
   const AuthOutcome.signedIn(DriverProfile this.profile) : failure = null;
@@ -32,24 +36,38 @@ abstract class AuthGateway {
   Future<String?> accessToken();
 }
 
-class OidcAuthGateway implements AuthGateway {
+/// Gateways that remember refresh tokens still to be revoked at the provider and can try again.
+abstract class RevocationRetry {
+  /// Tries again to revoke the tokens whose revocation could not be done when the driver signed out.
+  /// Never throws: a failure just leaves them for the next try.
+  Future<void> retryPendingRevocations();
+}
+
+class OidcAuthGateway implements AuthGateway, RevocationRetry {
   OidcAuthGateway({
     required AuthConfig config,
     required OidcClient client,
     required ProfileApi profiles,
     required AuthStore store,
+    TokenRevoker? revoker,
+    RevocationQueue? pendingRevocations,
     DateTime Function()? clock,
   })  : _config = config,
         _client = client,
         _profiles = profiles,
         _store = store,
+        _revoker = revoker,
+        _pendingRevocations = pendingRevocations,
         _clock = clock ?? DateTime.now;
 
   final AuthConfig _config;
   final OidcClient _client;
   final ProfileApi _profiles;
   final AuthStore _store;
+  final TokenRevoker? _revoker;
+  final RevocationQueue? _pendingRevocations;
   final DateTime Function() _clock;
+  bool _retrying = false;
 
   /// How long before expiry a token is treated as expired, so it is not used mid-request.
   static const expirySkew = Duration(seconds: 60);
@@ -75,7 +93,9 @@ class OidcAuthGateway implements AuthGateway {
       // The server decides who this person is and what they may do.
       final profile = await _profiles.fetchMe(tokens.accessToken);
       if (!profile.isDriver) {
+        // Not a driver: the tokens it was given are of no use here, so they are discarded and revoked.
         _sessionGeneration++;
+        await _discard(tokens.refreshToken);
         await _store.clear();
         return const AuthOutcome.failed(AuthFailure(AuthFailureKind.accessDenied));
       }
@@ -140,9 +160,63 @@ class OidcAuthGateway implements AuthGateway {
     }
   }
 
+  /// Signs out on this phone at once and always, then asks the provider to revoke the refresh token.
+  ///
+  /// The refresh token is first written to a small pending list, so that if the phone has no signal (or
+  /// the app is closed before the provider answers) the revocation can be repeated later. The sign-out
+  /// never waits for the provider and never fails because of it.
   @override
   Future<void> signOut() async {
     _sessionGeneration++;
+    String? refreshToken;
+    try {
+      refreshToken = (await _store.read())?.tokens.refreshToken;
+    } on Object {
+      refreshToken = null;
+    }
+    await _discard(refreshToken);
     await _store.clear();
+  }
+
+  /// Queues [refreshToken] for revocation and starts trying, without waiting. Revocation is best effort.
+  Future<void> _discard(String? refreshToken) async {
+    final revoker = _revoker;
+    final pending = _pendingRevocations;
+    if (revoker == null || pending == null || refreshToken == null || refreshToken.isEmpty) return;
+    try {
+      await pending.add(refreshToken);
+    } on Object {
+      return;
+    }
+    unawaited(_revoke(refreshToken));
+  }
+
+  Future<void> _revoke(String refreshToken) async {
+    final revoker = _revoker;
+    final pending = _pendingRevocations;
+    if (revoker == null || pending == null) return;
+    try {
+      final outcome = await revoker.revokeRefreshToken(refreshToken);
+      // Done, refused for good, or not offered by this provider: nothing more can be gained by keeping it.
+      if (outcome != RevokeOutcome.retryLater) await pending.remove(refreshToken);
+    } on Object {
+      // Left in the list for the next try.
+    }
+  }
+
+  @override
+  Future<void> retryPendingRevocations() async {
+    final pending = _pendingRevocations;
+    if (_revoker == null || pending == null || _retrying) return;
+    _retrying = true;
+    try {
+      for (final token in await pending.read()) {
+        await _revoke(token);
+      }
+    } on Object {
+      // Nothing to do: the next try picks them up.
+    } finally {
+      _retrying = false;
+    }
   }
 }
