@@ -18,7 +18,7 @@ Master data → *Delivery location* (dispatchers):
 
 1. Open the shop in a map app and copy its latitude and longitude (the pair a map app copies, `6.93441, 79.84281`).
 2. Paste them into *Exact location* and save. *Check this point on OpenStreetMap* opens the point so you can confirm it is the shop.
-3. Clear the field and save to go back to the approximate position.
+3. To go back to the approximate position, tick *Remove the exact location* and save. An empty or unchanged field always keeps the current position.
 
 Positions outside Sri Lanka, swapped values and half a pair are refused. Each change is a versioned, audited outlet
 update; history records the exact position before and after.

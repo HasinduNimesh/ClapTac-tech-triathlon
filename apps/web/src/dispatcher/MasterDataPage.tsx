@@ -34,7 +34,7 @@ export function MasterDataPage() {
   async function updateOutlet(e: FormEvent<HTMLFormElement>) {
     e.preventDefault(); if (!outlet) return; setSaving(true); setError(""); setNotice("");
     const form = new FormData(e.currentTarget);
-    const place = locationChange(String(form.get("locationPair")||""), outlet);
+    const place = locationChange(String(form.get("locationPair")||""), outlet, form.get("removeExactLocation")==="on");
     if (place.change === "invalid") { setError(t(place.message)); setSaving(false); return; }
     const minRaw=String(form.get("chilledTemperatureMinC")||"");const maxRaw=String(form.get("chilledTemperatureMaxC")||"");
     const body = { ...outlet, ...(place.change==='set'?{location:{latitude:place.latitude,longitude:place.longitude}}:place.change==='clear'?{location:null}:{}), name: String(form.get("name")||"").trim(), district: String(form.get("district")||"").trim(), depot: String(form.get("depot")||"").trim(), dockType: String(form.get("dockType")), parkingConstraint: String(form.get("parkingConstraint")), mallWindow: form.get("mallWindow")==="on", windowOpenTime: String(form.get("windowOpenTime")||""), windowCloseTime: String(form.get("windowCloseTime")||""), accessInstructions:String(form.get("accessInstructions")||"").trim(), chilledTemperatureMinC:minRaw===""?null:Number(minRaw),chilledTemperatureMaxC:maxRaw===""?null:Number(maxRaw) };
@@ -87,7 +87,8 @@ export function MasterDataPage() {
       <fieldset><legend>{t("Delivery location")}</legend>
         <p className={outlet.locationApproximate===false?"status-ok":"status-warn"} role="status">{outlet.locationApproximate===false?t("Exact location recorded. Drivers are navigated to this point."):t("Only the approximate district position is known. Drivers are not navigated to it; they search by shop name until an exact location is recorded.")}</p>
         <label>{t("Exact location (latitude, longitude)")}<input name="locationPair" inputMode="decimal" autoComplete="off" placeholder="6.93441, 79.84281" defaultValue={outlet.locationApproximate===false&&outlet.latitude!=null&&outlet.longitude!=null?formatCoordinates(outlet.latitude,outlet.longitude):""}/></label>
-        <p className="muted">{t("Open the shop in a map app, copy its latitude and longitude, and paste them here. Leave blank to keep the current position; clear a recorded position to go back to the approximate one.")}</p>
+        <p className="muted">{t("Open the shop in a map app, copy its latitude and longitude, and paste them here. Leave it unchanged to keep the current position.")}</p>
+        {outlet.locationApproximate===false&&<label><input name="removeExactLocation" type="checkbox"/> {t("Remove the exact location (go back to the approximate position)")}</label>}
         <p>{outlet.locationApproximate===false&&outlet.latitude!=null&&outlet.longitude!=null?<a href={openStreetMapLink(outlet.latitude,outlet.longitude)} target="_blank" rel="noreferrer">{t("Check this point on OpenStreetMap")}</a>:<a href={openStreetMapSearchLink(outlet.name,outlet.district)} target="_blank" rel="noreferrer">{t("Find this shop on OpenStreetMap")}</a>}</p>
       </fieldset>
       <label>{t("Landmark, gate and last 200 metres instructions")}<textarea name="accessInstructions" defaultValue={outlet.accessInstructions} maxLength={1000} rows={4} placeholder={t("Describe the correct entrance, landmark and final approach")}/></label>

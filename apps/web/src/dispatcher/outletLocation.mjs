@@ -32,13 +32,21 @@ export function formatCoordinates(latitude, longitude) {
 }
 
 /**
- * What saving the outlet should do to its position, given what is in the field.
+ * What saving the outlet should do to its position, given what is in the field and whether the person
+ * ticked "remove the exact location". An empty field always keeps the current position: removing one is
+ * an explicit choice, never the side effect of an emptied box.
  * Returns { change: "keep" } | { change: "clear" } | { change: "set", latitude, longitude } | { change: "invalid", message }.
  */
-export function locationChange(text, current) {
+export function locationChange(text, current, removeExact = false) {
   const typed = String(text ?? "").trim();
   const exact = current && current.latitude != null && current.longitude != null && !current.locationApproximate;
-  if (!typed) return exact ? { change: "clear" } : { change: "keep" };
+  if (removeExact) {
+    if (!exact) return { change: "keep" };
+    const sameAsRecorded = !typed || (parseCoordinates(typed).ok && Math.abs(parseCoordinates(typed).latitude - current.latitude) < 1e-9 && Math.abs(parseCoordinates(typed).longitude - current.longitude) < 1e-9);
+    if (!sameAsRecorded) return { change: "invalid", message: "Either enter a new location or remove the recorded one, not both." };
+    return { change: "clear" };
+  }
+  if (!typed) return { change: "keep" };
   const parsed = parseCoordinates(typed);
   if (!parsed.ok) return { change: "invalid", message: parsed.message };
   if (exact && Math.abs(parsed.latitude - current.latitude) < 1e-9 && Math.abs(parsed.longitude - current.longitude) < 1e-9) return { change: "keep" };

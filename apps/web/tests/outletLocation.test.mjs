@@ -16,11 +16,21 @@ test("swapped, foreign, partial and non-numeric positions are refused with a rea
   }
 });
 
-test("saving keeps, sets or clears the position depending on the field", () => {
+test("an empty field keeps the position; removing an exact one is an explicit choice", () => {
   const approximate = { latitude: 6.9, longitude: 79.9, locationApproximate: true };
   const exact = { latitude: 6.93441, longitude: 79.84281, locationApproximate: false };
   assert.deepEqual(locationChange("", approximate), { change: "keep" });
-  assert.deepEqual(locationChange("", exact), { change: "clear" });
+  assert.deepEqual(locationChange("", exact), { change: "keep" }, "an emptied box must not remove a recorded position");
+  assert.deepEqual(locationChange("   ", exact), { change: "keep" });
+  assert.deepEqual(locationChange("", exact, true), { change: "clear" });
+  assert.deepEqual(locationChange(formatCoordinates(6.93441, 79.84281), exact, true), { change: "clear" }, "the pre-filled value plus 'remove' is a removal");
+  assert.equal(locationChange("6.9345, 79.8430", exact, true).change, "invalid", "a new value and 'remove' together is refused, not guessed");
+  assert.deepEqual(locationChange("", approximate, true), { change: "keep" }, "nothing recorded, nothing to remove");
+});
+
+test("a typed position is set, unless it is the one already recorded", () => {
+  const approximate = { latitude: 6.9, longitude: 79.9, locationApproximate: true };
+  const exact = { latitude: 6.93441, longitude: 79.84281, locationApproximate: false };
   assert.deepEqual(locationChange(formatCoordinates(6.93441, 79.84281), exact), { change: "keep" });
   assert.deepEqual(locationChange("6.9345, 79.8430", exact), { change: "set", latitude: 6.9345, longitude: 79.843 });
   assert.deepEqual(locationChange("6.9345, 79.8430", approximate), { change: "set", latitude: 6.9345, longitude: 79.843 });
