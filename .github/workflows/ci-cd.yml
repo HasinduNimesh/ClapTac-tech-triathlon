@@ -1,0 +1,220 @@
+name: CI and production deployment
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: waypoint-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
+
+jobs:
+  changes:
+    name: Select checks
+    runs-on: ubuntu-latest
+    outputs:
+      go: ${{ steps.paths.outputs.go }}
+      web: ${{ steps.paths.outputs.web }}
+      mobile: ${{ steps.paths.outputs.mobile }}
+      docker: ${{ steps.paths.outputs.docker }}
+      targets: ${{ steps.paths.outputs.targets }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Select affected components
+        id: paths
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          go=false web=false mobile=false docker=false
+          backend_image=false web_image=false all_images=false
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            go=true web=true mobile=true docker=true all_images=true
+          else
+            base="$BASE_SHA"
+            if [[ ! "$base" =~ ^[0-9a-f]{40}$ ]] || [[ "$base" =~ ^0+$ ]]; then
+              base="$(git rev-parse "$GITHUB_SHA^")"
+            fi
+            while IFS= read -r path; do
+              case "$path" in
+                .github/workflows/*|Makefile)
+                  go=true web=true mobile=true docker=true all_images=true ;;
+                docker-compose*.yml|infrastructure/*|tools/dev-oidc/*)
+                  docker=true all_images=true ;;
+                apps/driver-mobile/*)
+                  mobile=true ;;
+                apps/web/*)
+                  web=true docker=true web_image=true ;;
+                go.mod|go.sum|Dockerfile|services/*|pkg/*)
+                  go=true docker=true backend_image=true ;;
+                database/*|contracts/*|scripts/*)
+                  go=true ;;
+              esac
+            done < <(git diff --name-only "$base" "$GITHUB_SHA")
+          fi
+          targets=""
+          if [[ "$all_images" == false ]]; then
+            if [[ "$backend_image" == true ]]; then
+              targets="order-service planning-service fleet-service loading-service delivery-service shared-service integration-service agent-orchestrator"
+            fi
+            if [[ "$web_image" == true ]]; then
+              targets="${targets:+$targets }web"
+            fi
+          fi
+          {
+            echo "go=$go"
+            echo "web=$web"
+            echo "mobile=$mobile"
+            echo "docker=$docker"
+            echo "targets=$targets"
+          } >> "$GITHUB_OUTPUT"
+
+  go:
+    name: Go services
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go vet ./...
+      - run: go test ./...
+      - run: go build ./...
+
+  web:
+    name: Web app
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+
+  mobile:
+    name: Driver app
+    needs: changes
+    if: needs.changes.outputs.mobile == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/driver-mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+
+  docker:
+    name: Compose images
+    needs: changes
+    if: needs.changes.outputs.docker == 'true'
+    runs-on: ubuntu-latest
+    env:
+      BUILD_TARGETS: ${{ needs.changes.outputs.targets }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose config --quiet
+      - name: Build affected images
+        shell: bash
+        run: |
+          if [[ -z "$BUILD_TARGETS" ]]; then
+            docker compose build
+          else
+            read -r -a targets <<< "$BUILD_TARGETS"
+            docker compose build "${targets[@]}"
+          fi
+
+  deploy:
+    name: Deploy to Azure VM
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    needs: [changes, go, web, mobile, docker]
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 30
+    env:
+      AZURE_SSH_HOST: ${{ secrets.AZURE_SSH_HOST }}
+      AZURE_SSH_USER: ${{ secrets.AZURE_SSH_USER }}
+      AZURE_SSH_PRIVATE_KEY: ${{ secrets.AZURE_SSH_PRIVATE_KEY }}
+      AZURE_SSH_KNOWN_HOSTS: ${{ secrets.AZURE_SSH_KNOWN_HOSTS }}
+    steps:
+      - name: Deploy checked commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${AZURE_SSH_HOST:?Set AZURE_SSH_HOST in the production environment}"
+          : "${AZURE_SSH_USER:?Set AZURE_SSH_USER in the production environment}"
+          : "${AZURE_SSH_PRIVATE_KEY:?Set AZURE_SSH_PRIVATE_KEY in the production environment}"
+          : "${AZURE_SSH_KNOWN_HOSTS:?Set AZURE_SSH_KNOWN_HOSTS in the production environment}"
+          key_file="$(mktemp)"
+          hosts_file="$(mktemp)"
+          trap 'rm -f "$key_file" "$hosts_file"' EXIT
+          chmod 600 "$key_file" "$hosts_file"
+          printf '%s\n' "$AZURE_SSH_PRIVATE_KEY" > "$key_file"
+          printf '%s\n' "$AZURE_SSH_KNOWN_HOSTS" > "$hosts_file"
+          ssh -i "$key_file" -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$hosts_file" \
+            "$AZURE_SSH_USER@$AZURE_SSH_HOST" bash -s -- "$GITHUB_SHA" <<'REMOTE'
+          set -euo pipefail
+          revision="$1"
+          cd "$HOME/ClapTac-tech-triathlon"
+          test -f .env
+          git fetch origin main
+          test "$(git rev-parse origin/main)" = "$revision"
+          # A fast-forward preserves the VM's existing branch and refuses divergent history.
+          # Git also refuses if an update would overwrite the local Compose port edit.
+          git merge --ff-only "$revision"
+          sudo -n docker compose config --quiet
+          # Refuse a production rebuild that would bake localhost OIDC into the web app
+          # or point API token validation back at the development identity server.
+          sudo -n docker compose config --format json | python3 -c '
+          import json, sys
+          services = json.load(sys.stdin)["services"]
+          expected_issuer = "https://id.waypoint.claptac.dev"
+          expected_app = "https://waypoint.claptac.dev/auth/callback"
+          web_args = services["web"]["build"]["args"]
+          checks = {
+              "web issuer": web_args.get("VITE_OIDC_ISSUER") == expected_issuer,
+              "web redirect": web_args.get("VITE_OIDC_REDIRECT_URI") == expected_app,
+              "API issuer": services["shared-service"]["environment"].get("OIDC_ISSUER") == expected_issuer,
+              "API JWKS": services["shared-service"]["environment"].get("OIDC_JWKS_URL") == expected_issuer + "/oauth2/jwks",
+              "API token endpoint": services["shared-service"]["environment"].get("OIDC_TOKEN_URL") == expected_issuer + "/oauth2/token",
+              "nginx loopback port": any(p.get("host_ip") == "127.0.0.1" and str(p.get("published")) == "8080" and p.get("target") == 80 for p in services["nginx"]["ports"]),
+          }
+          bad = [name for name, ok in checks.items() if not ok]
+          if bad:
+              raise SystemExit("Production Compose identity configuration is incomplete: " + ", ".join(bad))
+          '
+          umask 077
+          backup_path="$HOME/waypoint-before-${revision:0:12}-$(date -u +%Y%m%dT%H%M%SZ).dump"
+          sudo -n docker compose exec -T postgres \
+            sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > "$backup_path"
+          test -s "$backup_path"
+          sudo -n docker compose up -d --build
+          sudo -n docker compose ps
+          curl -fsS --retry 8 --retry-delay 3 https://waypoint.claptac.dev/health/live
+          REMOTE
