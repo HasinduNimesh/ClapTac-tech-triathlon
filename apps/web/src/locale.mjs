@@ -1207,3 +1207,6 @@ const helperLabels = {
 };
 // Registered here rather than in lookupTranslation so other branches can extend that line freely.
 for (const locale of ["si", "ta"]) Object.assign(labels[locale], helperLabels[locale]);
+// W14 audit export
+Object.assign(labels.si, { "Export CSV": "CSV ලෙස අපනයනය" });
+Object.assign(labels.ta, { "Export CSV": "CSV ஆக ஏற்றுமதி" });

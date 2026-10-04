@@ -82,6 +82,25 @@ paths:
       responses:
         "204": { description: Deleted }
         "404": { description: Not found or not owned by the caller }
+  /shared/audit/export.csv:
+    get:
+      operationId: exportAuditEventsCsv
+      security: [{ bearerAuth: [] }]
+      description: Requires audit:read. Same filters as audit search; capped at 5000 rows (X-Export-Truncated header says if more matched). Cells starting with = + - @ are prefixed with an apostrophe.
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+        - { name: action, in: query, schema: { type: string } }
+        - { name: resourceType, in: query, schema: { type: string } }
+        - { name: resourceId, in: query, schema: { type: string } }
+        - { name: actorId, in: query, schema: { type: string } }
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+      responses:
+        "200":
+          description: CSV attachment
+          content: { text/csv: { schema: { type: string } } }
+        "400": { description: Invalid filter }
+        "403": { description: Missing audit:read }
 components:
   securitySchemes:
     bearerAuth:
