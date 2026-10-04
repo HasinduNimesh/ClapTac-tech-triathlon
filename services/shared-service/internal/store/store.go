@@ -191,10 +191,11 @@ type NotificationEvent struct {
 	OrderRef     string `json:"orderRef"`
 	Reason       string `json:"reason,omitempty"`
 	DelayMinutes int    `json:"delayMinutes,omitempty"`
+	NextRun      string `json:"nextRun,omitempty"`
 	OldArrivalAt string `json:"oldArrivalAt,omitempty"`
-	Goods string `json:"goods,omitempty"`
-	Units int `json:"units,omitempty"`
-	Resolution string `json:"resolution,omitempty"`
+	Goods        string `json:"goods,omitempty"`
+	Units        int    `json:"units,omitempty"`
+	Resolution   string `json:"resolution,omitempty"`
 	FollowupDate string `json:"followupDate,omitempty"`
 	NewArrivalAt string `json:"newArrivalAt,omitempty"`
 }
@@ -202,6 +203,13 @@ type NotificationEvent struct {
 type EnqueueResult struct {
 	Status string `json:"status"`
 	ID     int64  `json:"id,omitempty"`
+}
+
+func nextRunText(date string) string {
+	if date == "" {
+		return "to be confirmed"
+	}
+	return date
 }
 
 func (s Store) EnqueueNotification(ctx context.Context, e NotificationEvent) (EnqueueResult, error) {
@@ -220,15 +228,19 @@ func (s Store) EnqueueNotification(ctx context.Context, e NotificationEvent) (En
 		return EnqueueResult{Status: "suppressed"}, nil
 	}
 	var body string
-    if e.Type == "DELIVERY_REJECTED" {
-        action := "re-attempt requested for the next run"
-        if e.Resolution == "REQUEST_DEFERRAL" { action = "dispatcher deferral requested" }
-        body = fmt.Sprintf("Waypoint: order %s rejected; %d unit(s) of %s returned (%s). %s. Follow-up run: %s.",
-            e.OrderRef, e.Units, e.Goods, e.Reason, action, e.FollowupDate)
-    } else if e.Type == "ARRIVAL_CHANGE" {
+	if e.Type == "DELIVERY_REJECTED" {
+		action := "re-attempt requested for the next run"
+		if e.Resolution == "REQUEST_DEFERRAL" {
+			action = "dispatcher deferral requested"
+		}
+		body = fmt.Sprintf("Waypoint: order %s rejected; %d unit(s) of %s returned (%s). %s. Follow-up run: %s.",
+			e.OrderRef, e.Units, e.Goods, e.Reason, action, e.FollowupDate)
+	} else if e.Type == "ARRIVAL_CHANGE" {
 		oldETA, oldErr := time.Parse(time.RFC3339Nano, e.OldArrivalAt)
 		newETA, newErr := time.Parse(time.RFC3339Nano, e.NewArrivalAt)
-		if oldErr != nil || newErr != nil { return EnqueueResult{}, fmt.Errorf("invalid arrival notification") }
+		if oldErr != nil || newErr != nil {
+			return EnqueueResult{}, fmt.Errorf("invalid arrival notification")
+		}
 		colombo := time.FixedZone("Sri Lanka", 5*60*60+30*60)
 		oldText := oldETA.In(colombo).Format("02 Jan 15:04")
 		newText := newETA.In(colombo).Format("02 Jan 15:04")
@@ -245,19 +257,19 @@ func (s Store) EnqueueNotification(ctx context.Context, e NotificationEvent) (En
 		switch locale {
 		case "si":
 			if e.Type == "DEFERRAL" {
-				body = fmt.Sprintf("Waypoint: ඇණවුම %s කල් දමා ඇත. හේතුව: %s. ඊළඟ බෙදාහැරීම සඳහා Dispatcher අමතන්න.", e.OrderRef, reason)
+				body = fmt.Sprintf("Waypoint: ඇණවුම %s කල් දමා ඇත. හේතුව: %s. ඊළඟ බෙදාහැරීම: %s. වැඩිදුර විස්තර සඳහා Dispatcher අමතන්න.", e.OrderRef, reason, nextRunText(e.NextRun))
 			} else {
 				body = fmt.Sprintf("Waypoint: ඇණවුම %s පැමිණීම විනාඩි %dකින් ප්‍රමාද වේ.", e.OrderRef, e.DelayMinutes)
 			}
 		case "ta":
 			if e.Type == "DEFERRAL" {
-				body = fmt.Sprintf("Waypoint: ஆர்டர் %s ஒத்திவைக்கப்பட்டது. காரணம்: %s. அடுத்த விநியோகத்துக்கு Dispatcher-ஐ தொடர்புகொள்ளவும்.", e.OrderRef, reason)
+				body = fmt.Sprintf("Waypoint: ஆர்டர் %s ஒத்திவைக்கப்பட்டது. காரணம்: %s. அடுத்த விநியோகம்: %s. மேலும் விவரங்களுக்கு Dispatcher-ஐ தொடர்புகொள்ளவும்.", e.OrderRef, reason, nextRunText(e.NextRun))
 			} else {
 				body = fmt.Sprintf("Waypoint: ஆர்டர் %s வருகை %d நிமிடங்கள் தாமதமாகும்.", e.OrderRef, e.DelayMinutes)
 			}
 		default:
 			if e.Type == "DEFERRAL" {
-				body = fmt.Sprintf("Waypoint: order %s was deferred (%s). Contact the dispatcher about the next delivery run.", e.OrderRef, reason)
+				body = fmt.Sprintf("Waypoint: order %s was deferred. Reason: %s. Next delivery run: %s. Contact the dispatcher if you need more detail.", e.OrderRef, reason, nextRunText(e.NextRun))
 			} else {
 				body = fmt.Sprintf("Waypoint: order %s is expected to arrive %d minutes later than planned.", e.OrderRef, e.DelayMinutes)
 			}

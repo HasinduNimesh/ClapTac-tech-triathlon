@@ -1069,6 +1069,17 @@ export function translate(locale, source) {
   return source;
 }
 
+
+// W3 deferral rules
+Object.assign(labels.si, {
+  "Required. The store is told this date in its deferral notice.": "අවශ්‍යයි. කල් දැමීම් දැනුම්දීමේදී මෙම දිනය වෙළඳසැලට දැනුම් දෙනු ලැබේ.",
+  "Priority for next plan": "ඊළඟ සැලසුමට ප්‍රමුඛතාව", "Priority outlet": "ප්‍රමුඛතා අලෙවිසැල",
+});
+Object.assign(labels.ta, {
+  "Required. The store is told this date in its deferral notice.": "கட்டாயம். ஒத்திவைப்பு அறிவிப்பில் இந்தத் தேதி கடைக்குத் தெரிவிக்கப்படும்.",
+  "Priority for next plan": "அடுத்த திட்டத்திற்கு முன்னுரிமை", "Priority outlet": "முன்னுரிமை கடை",
+});
+
 // Store Manager order text helper (A1) and saved dashboards.
 const helperLabels = {
   si: {
@@ -1132,6 +1143,7 @@ const helperLabels = {
 };
 // Registered here rather than in lookupTranslation so other branches can extend that line freely.
 for (const locale of ["si", "ta"]) Object.assign(labels[locale], helperLabels[locale]);
+
 Object.assign(labels.si, {
   "Account name": "ගිණුමේ නම",
   "Your name": "ඔබේ නම",
