@@ -16,6 +16,7 @@ import {
   arrivesOn, colomboDate, colomboTime, formatDay, isDeferred, needsReceipt, sortByArrival, statusLabel, statusTone,
 } from "./orderStage.mjs";
 import { StoreManagerHero } from "./StoreManagerHero";
+import { UnavailableOrders } from "./UnavailableOrders";
 import { Tracking, useOrderTrackings } from "./useOrderTrackings";
 
 function Chevron() {
@@ -37,7 +38,7 @@ export function StoreManagerDashboardPage() {
   const cutoffTime = formatCutoff(useOrderCutoff(), locale);
   const { profile } = useAuth();
   const [params, setParams] = useSearchParams();
-  const { rows, loading, loadFailed, skipped, reload } = useOrderTrackings();
+  const { rows, loading, loadFailed, unavailable, reload } = useOrderTrackings();
   const userId = profile?.userId || "anonymous";
   const outletId = profile?.outletIds?.[0] || "outlet";
   const dashboards = loadDashboards(userId, outletId);
@@ -127,7 +128,7 @@ export function StoreManagerDashboardPage() {
           <button type="button" className="tap" onClick={() => void reload()}>{t("Retry")}</button>
         </div>
       )}
-      {skipped > 0 && !loadFailed && <p className="sm-load-note muted" role="status">{t("Some orders could not be loaded and are not shown.")}</p>}
+      {!loadFailed && <UnavailableOrders orders={unavailable} onRetry={() => void reload()} />}
 
       <div className="sm-dashboard-grid">
         <section className="sm-panel" aria-labelledby="arriving-today-heading">
@@ -217,7 +218,7 @@ export function StoreManagerDashboardPage() {
                   <td>{nextStep(row, t)}</td>
                 </tr>
               ))}
-              {!loading && rows.length === 0 && !loadFailed && (
+              {!loading && rows.length === 0 && unavailable.length === 0 && !loadFailed && (
                 <tr><td colSpan={5} className="sm-table-empty muted">{t("No orders yet. Place your first order to get started.")}</td></tr>
               )}
               {loading && <tr><td colSpan={5} className="sm-table-empty muted" role="status">{t("Loading your orders…")}</td></tr>}

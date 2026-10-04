@@ -41,6 +41,7 @@ func main() {
 			ClientID:     os.Getenv("M2M_CLIENT_ID"),
 			ClientSecret: os.Getenv("M2M_CLIENT_SECRET"),
 			Scope:        "loading:read-internal outlets:read-internal audit:write",
+			Resource:     getenv("OIDC_AUDIENCE", "waypoint-api"),
 		},
 	}
 	objects := objectstore.Store(objectstore.S3{

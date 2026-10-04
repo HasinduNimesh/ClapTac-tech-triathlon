@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../data/driver_models.dart';
+import '../maps/map_launcher.dart';
+import '../maps/stop_directions.dart';
 import '../proof/proof_capturer.dart';
 import '../screens/delivery/record_delivery_screen.dart';
 import '../screens/delivery/stop_details_screen.dart';
@@ -23,13 +25,17 @@ import 'driver_session.dart';
 
 /// Signed-out → SignInScreen; signed-in → the tabbed driver home.
 class DriverFlow extends StatelessWidget {
-  const DriverFlow({super.key, required this.session, this.capturer});
+  const DriverFlow({super.key, required this.session, this.capturer, this.mapLauncher});
 
   final DriverSession session;
 
   /// Takes real photos and signatures. Null in demo and test builds, where the proof buttons say
   /// that capture is not available.
   final ProofCapturer? capturer;
+
+  /// Opens directions to a stop in the phone's maps app. Null in tests that do not exercise it, where
+  /// the button says maps are not available.
+  final MapLauncher? mapLauncher;
 
   @override
   Widget build(BuildContext context) {
@@ -49,17 +55,18 @@ class DriverFlow extends StatelessWidget {
             onSignIn: (staffId, password) => session.signIn(),
           );
         }
-        return _DriverHome(session: session, capturer: capturer);
+        return _DriverHome(session: session, capturer: capturer, mapLauncher: mapLauncher);
       },
     );
   }
 }
 
 class _DriverHome extends StatefulWidget {
-  const _DriverHome({required this.session, this.capturer});
+  const _DriverHome({required this.session, this.capturer, this.mapLauncher});
 
   final DriverSession session;
   final ProofCapturer? capturer;
+  final MapLauncher? mapLauncher;
 
   @override
   State<_DriverHome> createState() => _DriverHomeState();
@@ -169,6 +176,24 @@ class _DriverHomeState extends State<_DriverHome> {
     );
   }
 
+  /// Opens the stop in the phone's maps app. An exact recorded position is navigated to; otherwise it
+  /// searches for the shop by name and says the exact location is not recorded (never driving the
+  /// driver to a district centre as if it were the shop).
+  Future<void> _openMaps(StopInfo stop) async {
+    final launcher = widget.mapLauncher;
+    if (launcher == null) {
+      _notify('Maps are not available in this build.');
+      return;
+    }
+    final directions = StopDirections.forStop(stop);
+    if (!directions.exact) {
+      _notify('Exact location not recorded. Searching for ${directions.searchText}; check the name and area before driving, or ask dispatch.');
+    }
+    final opened = await launcher.open(directions.uri);
+    if (!mounted || opened) return;
+    _notify('Could not open a maps app on this phone. Address: ${stop.label}.');
+  }
+
   void _startStop() {
     if (!session.loadResolved) {
       _showLoadCheck();
@@ -182,6 +207,7 @@ class _DriverHomeState extends State<_DriverHome> {
         stop: stop,
         earlyMinutes: 0,
         onTabSelected: _selectTab,
+        onOpenMaps: () => _openMaps(stop),
         onStoppedSafely: () async {
           final navigator = Navigator.of(context);
           await session.markArrived(stop);

@@ -76,6 +76,15 @@ func TestAuditSearchKPIsAndAppendOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Outlet updates now read the outlet back with its position, so the test schema needs the real
+	// location columns and district table.
+	locationMigration, err := os.ReadFile("../../../../database/migrations/0043_outlet_locations.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, string(locationMigration)); err != nil {
+		t.Fatalf("apply location migration: %v", err)
+	}
 	migration, err := os.ReadFile("../../../../database/migrations/0026_shared_notifications.sql")
 	if err != nil {
 		t.Fatal(err)

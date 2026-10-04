@@ -122,6 +122,12 @@ type Stop struct {
 	OutcomeReceivedAt           *time.Time           `json:"outcomeReceivedAt,omitempty"`
 	CompletedAt                 *time.Time           `json:"completedAt,omitempty"`
 	Version                     int                  `json:"version"`
+	// Where the stop is, read from the outlet when the trip is served (not stored with the stop, so a
+	// corrected position reaches trips already prepared). LocationApproximate is true when only the
+	// district position is known; a driver must not be navigated to that as if it were the shop.
+	Latitude            *float64 `json:"latitude,omitempty"`
+	Longitude           *float64 `json:"longitude,omitempty"`
+	LocationApproximate bool     `json:"locationApproximate,omitempty"`
 }
 
 type TemperatureReading struct {
@@ -274,6 +280,11 @@ type Outlet struct {
 	AccessInstructionsUpdatedAt *time.Time `json:"accessInstructionsUpdatedAt"`
 	ChilledTemperatureMinC      *float64   `json:"chilledTemperatureMinC,omitempty"`
 	ChilledTemperatureMaxC      *float64   `json:"chilledTemperatureMaxC,omitempty"`
+	// Latitude/Longitude are the outlet's position as shared-service reports it: exact once a
+	// dispatcher has recorded it, otherwise the approximate district position.
+	Latitude            *float64 `json:"latitude,omitempty"`
+	Longitude           *float64 `json:"longitude,omitempty"`
+	LocationApproximate bool     `json:"locationApproximate"`
 }
 
 type SyncRequest struct {
