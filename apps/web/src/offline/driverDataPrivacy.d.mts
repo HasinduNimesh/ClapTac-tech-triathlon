@@ -13,3 +13,10 @@ export function clearableCompletedTripIds(input: {
   markers: { key: string; value: string }[];
   details: DeliveryTripDetail[];
 }): string[];
+
+export function otherDayTripIds(input: {
+  trips?: DeliveryTripSummary[];
+  details?: DeliveryTripDetail[];
+  queuedTripIds?: string[];
+  today: string;
+}): string[];
