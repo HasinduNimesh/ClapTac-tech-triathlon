@@ -635,8 +635,10 @@ class DriverSession extends ChangeNotifier {
     // Signing out removes the saved route, like the tokens: it is only meant for the driver who is
     // signed in, and it cannot be opened again without signing in (which needs a connection).
     final user = identity?.userId;
-    if (user != null && user.isNotEmpty) await routeStore?.clear(user);
+    // Forget the driver first, so a save asked for after this point has nobody to save for.
+    identity = null;
     showingSavedRoute = false;
+    if (user != null && user.isNotEmpty) await routeStore?.clear(user);
     _stopMessagePolling();
     worker?.stop();
     signedIn = false;
@@ -701,8 +703,11 @@ class DriverSession extends ChangeNotifier {
   /// The stored sign-in is no longer accepted: go back to sign-in instead of showing a dead end.
   Future<void> _signInExpired(String? message) async {
     final user = identity?.userId;
-    if (user != null && user.isNotEmpty) await routeStore?.clear(user);
+    // Forget the driver first: a save asked for after this point finds nobody to save for, and one
+    // asked for before it is already queued ahead of the clear below, so it cannot outlive it.
+    identity = null;
     showingSavedRoute = false;
+    if (user != null && user.isNotEmpty) await routeStore?.clear(user);
     _stopMessagePolling();
     worker?.stop();
     signedIn = false;

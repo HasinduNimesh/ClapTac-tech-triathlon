@@ -66,19 +66,21 @@ class StopInfo {
   final String goods;
   final String orderRef;
 
+  /// Reads a stop saved with [toJson]. Anything of the wrong type throws [FormatException], never a
+  /// cast error, so a damaged saved route is recognised and ignored.
   factory StopInfo.fromJson(Map<String, Object?> json) => StopInfo(
-        stopId: json['stopId'] as String? ?? '',
-        sequence: (json['sequence'] as num?)?.toInt() ?? 0,
-        outletCode: json['outletCode'] as String? ?? '',
-        name: json['name'] as String? ?? '',
-        windowStart: json['windowStart'] as String? ?? '',
-        windowEnd: json['windowEnd'] as String? ?? '',
-        units: (json['units'] as num?)?.toInt(),
-        unitLabel: json['unitLabel'] as String? ?? 'units',
-        accessNote: json['accessNote'] as String? ?? '',
-        contactNote: json['contactNote'] as String? ?? '',
-        goods: json['goods'] as String? ?? '',
-        orderRef: json['orderRef'] as String? ?? '',
+        stopId: _text(json, 'stopId'),
+        sequence: _whole(json, 'sequence'),
+        outletCode: _text(json, 'outletCode'),
+        name: _text(json, 'name'),
+        windowStart: _text(json, 'windowStart'),
+        windowEnd: _text(json, 'windowEnd'),
+        units: _wholeOrNull(json, 'units'),
+        unitLabel: _text(json, 'unitLabel', 'units'),
+        accessNote: _text(json, 'accessNote'),
+        contactNote: _text(json, 'contactNote'),
+        goods: _text(json, 'goods'),
+        orderRef: _text(json, 'orderRef'),
       );
 
   Map<String, Object?> toJson() => {
@@ -153,22 +155,31 @@ class TripInfo {
   /// Reads a trip saved with [toJson]. Throws [FormatException] when what is stored is not a trip, so a
   /// damaged saved route is ignored instead of crashing the app.
   factory TripInfo.fromJson(Map<String, Object?> json) {
+    final tripId = _text(json, 'tripId');
     final stops = json['stops'];
-    if (stops is! List || (json['tripId'] as String? ?? '').isEmpty) throw const FormatException('saved trip');
+    if (tripId.isEmpty || stops is! List) throw const FormatException('saved trip');
+    final doneIds = json['completedStopIds'];
+    if (doneIds != null && doneIds is! List) throw const FormatException('completedStopIds is not a list');
     return TripInfo(
-      tripId: json['tripId'] as String,
-      runId: json['runId'] as String? ?? '',
-      vehicleCode: json['vehicleCode'] as String? ?? '',
-      plate: json['plate'] as String? ?? '',
-      tripRef: json['tripRef'] as String? ?? '',
-      depot: json['depot'] as String? ?? '',
-      window: json['window'] as String? ?? '',
-      stops: [for (final stop in stops) if (stop is Map) StopInfo.fromJson(stop.cast<String, Object?>())],
-      completedStops: (json['completedStops'] as num?)?.toInt() ?? 0,
-      completedStopIds: {for (final id in (json['completedStopIds'] as List<Object?>? ?? const [])) id.toString()},
-      planId: json['planId'] as String? ?? '',
-      planVersion: (json['planVersion'] as num?)?.toInt() ?? 0,
-      runStatus: json['runStatus'] as String? ?? '',
+      tripId: tripId,
+      runId: _text(json, 'runId'),
+      vehicleCode: _text(json, 'vehicleCode'),
+      plate: _text(json, 'plate'),
+      tripRef: _text(json, 'tripRef'),
+      depot: _text(json, 'depot'),
+      window: _text(json, 'window'),
+      stops: [
+        for (final stop in stops)
+          if (stop is Map<String, Object?>) StopInfo.fromJson(stop) else throw const FormatException('a stop is not an object'),
+      ],
+      completedStops: _whole(json, 'completedStops'),
+      completedStopIds: {
+        for (final id in (doneIds as List<Object?>? ?? const []))
+          if (id is String) id else throw const FormatException('a completed stop id is not text'),
+      },
+      planId: _text(json, 'planId'),
+      planVersion: _whole(json, 'planVersion'),
+      runStatus: _text(json, 'runStatus'),
     );
   }
 
@@ -233,6 +244,24 @@ class DeliveryDraft {
 
   /// The captured files to upload before the outcome. Empty when nothing was captured.
   final List<CapturedProof> proofs;
+}
+
+String _text(Map<String, Object?> json, String key, [String fallback = '']) {
+  final value = json[key];
+  if (value == null) return fallback;
+  if (value is String) return value;
+  throw FormatException('$key is not text');
+}
+
+int _whole(Map<String, Object?> json, String key) => _wholeOrNull(json, key) ?? 0;
+
+/// A whole number. JSON may write one as `3.0`, which is accepted; text or a fraction is not.
+int? _wholeOrNull(Map<String, Object?> json, String key) {
+  final value = json[key];
+  if (value == null) return null;
+  if (value is int) return value;
+  if (value is double && value == value.truncateToDouble()) return value.toInt();
+  throw FormatException('$key is not a whole number');
 }
 
 const _weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];

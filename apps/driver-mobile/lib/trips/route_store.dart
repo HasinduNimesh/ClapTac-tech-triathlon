@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -40,6 +41,30 @@ class FileRouteStore implements RouteStore {
 
   final Future<Directory> Function() _directory;
 
+  /// What each driver's file is busy with. Reads, writes and clears for one driver run one after the
+  /// other, in the order they were asked for: two saves cannot share the temporary file, an older
+  /// snapshot cannot overwrite a newer one, and a save still in progress cannot bring the route back
+  /// after a clear (sign-out). Different drivers do not wait on each other.
+  final Map<String, Future<void>> _tails = {};
+
+  Future<T> _serial<T>(String userId, Future<T> Function() operation) {
+    final previous = _tails[userId] ?? Future<void>.value();
+    final result = Completer<T>();
+    final tail = previous.then((_) async {
+      try {
+        result.complete(await operation());
+      } on Object catch (error, stack) {
+        // The caller gets the error; the queue carries on for whoever is next.
+        result.completeError(error, stack);
+      }
+    });
+    _tails[userId] = tail;
+    unawaited(tail.whenComplete(() {
+      if (identical(_tails[userId], tail)) _tails.remove(userId);
+    }));
+    return result.future;
+  }
+
   static Future<Directory> _defaultDirectory() async {
     final root = await getApplicationDocumentsDirectory();
     return Directory('${root.path}/routes');
@@ -51,40 +76,44 @@ class FileRouteStore implements RouteStore {
   Future<File> _file(String userId) async => File('${(await _directory()).path}/${fileName(userId)}');
 
   @override
-  Future<SavedRoute?> read(String userId) async {
-    try {
-      final file = await _file(userId);
-      if (!file.existsSync()) return null;
-      final decoded = jsonDecode(await file.readAsString());
-      if (decoded is! Map) return null;
-      return SavedRoute.fromJson(decoded.cast<String, Object?>());
-    } on FormatException {
-      return null;
-    } on FileSystemException {
-      return null;
-    }
-  }
+  Future<SavedRoute?> read(String userId) => _serial(userId, () async {
+        try {
+          final file = await _file(userId);
+          if (!file.existsSync()) return null;
+          final decoded = jsonDecode(await file.readAsString());
+          if (decoded is! Map) return null;
+          return SavedRoute.fromJson(decoded.cast<String, Object?>());
+        } on FormatException {
+          return null;
+        } on FileSystemException {
+          return null;
+        } on TypeError {
+          // Valid JSON of the wrong shape. The models report this as a FormatException, but whatever
+          // is wrong with a saved file, the answer is "no saved route", never a failed start-up.
+          return null;
+        }
+      });
 
   @override
-  Future<void> write(String userId, SavedRoute route) async {
-    final directory = await _directory();
-    await directory.create(recursive: true);
-    final file = await _file(userId);
-    // Written to a temporary file first so a crash mid-write cannot leave half a route behind.
-    final temporary = File('${file.path}.tmp');
-    await temporary.writeAsString(jsonEncode(route.toJson()), flush: true);
-    await temporary.rename(file.path);
-  }
+  Future<void> write(String userId, SavedRoute route) => _serial(userId, () async {
+        final directory = await _directory();
+        await directory.create(recursive: true);
+        final file = await _file(userId);
+        // Written to a temporary file first so a crash mid-write cannot leave half a route behind.
+        final temporary = File('${file.path}.tmp');
+        await temporary.writeAsString(jsonEncode(route.toJson()), flush: true);
+        await temporary.rename(file.path);
+      });
 
   @override
-  Future<void> clear(String userId) async {
-    try {
-      final file = await _file(userId);
-      if (file.existsSync()) await file.delete();
-    } on FileSystemException {
-      // Nothing more to do: a leftover file for another day is ignored anyway.
-    }
-  }
+  Future<void> clear(String userId) => _serial(userId, () async {
+        try {
+          final file = await _file(userId);
+          if (file.existsSync()) await file.delete();
+        } on FileSystemException {
+          // Nothing more to do: a leftover file for another day is ignored anyway.
+        }
+      });
 }
 
 class MemoryRouteStore implements RouteStore {
