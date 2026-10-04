@@ -1,3 +1,4 @@
+import '../auth/auth_failure.dart';
 import '../auth/auth_gateway.dart';
 import '../data/driver_models.dart';
 import 'trips_api.dart';
@@ -47,7 +48,13 @@ class ApiTripSource implements TripSource {
 
   @override
   Future<TripLoad> loadToday() async {
-    final token = await auth.accessToken();
+    final String? token;
+    try {
+      token = await auth.accessToken();
+    } on AuthFailure catch (failure) {
+      // A refresh was needed and Waypoint could not be reached: the sign-in is still good.
+      return TripLoad.failed(failure.message ?? 'Could not reach Waypoint. Check your connection and try again.');
+    }
     if (token == null) return const TripLoad.failed('Your sign-in expired. Sign in again.', signInExpired: true);
     try {
       final trips = await api.tripsFor(dateKey(_clock()), token);
