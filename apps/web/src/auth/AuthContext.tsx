@@ -1,5 +1,5 @@
 import { User } from "oidc-client-ts";
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { userManager } from "./userManager";
 import { clearCachedProfile, loadAuthenticatedProfile, saveCachedProfile } from "./profileCache.mjs";
 
@@ -18,6 +18,7 @@ type AuthState = {
   profile: Profile | null;
   profileLoading: boolean;
   login: () => Promise<void>;
+  completeLogin: (user: User) => void;
   logout: () => Promise<void>;
   updateDisplayName: (name: string) => Promise<void>;
 };
@@ -31,6 +32,7 @@ const AuthContext = createContext<AuthState>({
   profile: null,
   profileLoading: true,
   login: async () => undefined,
+  completeLogin: () => undefined,
   logout: async () => undefined,
   updateDisplayName: async () => undefined,
 });
@@ -39,13 +41,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
+  const authRevision = useRef(0);
+  const completeLogin = useCallback((authenticatedUser: User) => {
+    authRevision.current += 1;
+    setUser(authenticatedUser);
+  }, []);
 
   useEffect(() => {
+    const revision = authRevision.current;
     userManager.getUser()
-      .then((u) => setUser(u && !u.expired ? u : null))
-      .catch(() => setUser(null))
-      .finally(() => setProfileLoading(false));
-    return userManager.events.addUserLoaded((u) => setUser(u));
+      .then((u) => { if (authRevision.current === revision) setUser(u && !u.expired ? u : null); })
+      .catch(() => { if (authRevision.current === revision) setUser(null); })
+      .finally(() => {
+        if (authRevision.current === revision) {
+          setProfileLoading(false);
+        }
+      });
+    return userManager.events.addUserLoaded((u) => {
+      authRevision.current += 1;
+      setUser(u);
+    });
   }, []);
 
   useEffect(() => {
@@ -76,6 +91,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         profile,
         profileLoading,
         login: () => userManager.signinRedirect(),
+        completeLogin,
         updateDisplayName: async (name) => {
           if (!user?.access_token) throw new Error("Sign in before changing your name.");
           const response = await fetch("/api/v1/shared/profiles/me/display-name", {
@@ -90,6 +106,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           saveCachedProfile(profileStorage(), user.profile.sub, body.profile);
         },
         logout: async () => {
+          authRevision.current += 1;
           await userManager.removeUser();
           clearCachedProfile(profileStorage());
           setUser(null);

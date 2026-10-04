@@ -50,6 +50,9 @@ func main() {
 		Region:    getenv("MINIO_REGION", "us-east-1"),
 	})
 	if os.Getenv("MINIO_ENDPOINT") == "" {
+		if err := objectstore.RequireDurable(app.Config.IsLocal(), ""); err != nil {
+			log.Fatal(err)
+		}
 		objects = &objectstore.Memory{}
 	}
 	h := handler.Handler{
