@@ -47,7 +47,9 @@ export function WaypointMap({ markers, lines, height = 520, label, fitKey }: { m
   useEffect(() => {
     if (!host.current || map.current) return;
     map.current = L.map(host.current, { zoomControl: true, attributionControl: true }).setView([7.0, 80.2], 9);
-    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 18, attribution: "© OpenStreetMap contributors" }).addTo(map.current);
+    // The site sends "Referrer-Policy: same-origin", which strips the Referer from tile requests, and
+    // OpenStreetMap's tile servers refuse those ("Access blocked", 403). Tiles send the site's origin only.
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 18, attribution: "© OpenStreetMap contributors", referrerPolicy: "strict-origin-when-cross-origin" }).addTo(map.current);
     layer.current = L.layerGroup().addTo(map.current);
     return () => { map.current?.remove(); map.current = null; };
   }, []);
