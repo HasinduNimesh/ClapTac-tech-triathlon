@@ -13,7 +13,17 @@ const (
 
 	IssueMissing = "MISSING"
 	IssueDamaged = "DAMAGED"
+
+	// Dispatcher decisions on a loader shortfall.
+	DecisionPartialLoad    = "PARTIAL_LOAD"
+	DecisionHold           = "HOLD"
+	DecisionMoveToNextRun  = "MOVE_TO_NEXT_RUN"
 )
+
+// DecisionAllowsDeparture reports whether a decided shortfall lets the trip leave.
+func DecisionAllowsDeparture(decision string) bool {
+	return decision == DecisionPartialLoad || decision == DecisionMoveToNextRun
+}
 
 type Session struct {
 	ID                           string     `json:"id"`
@@ -57,8 +67,12 @@ type Issue struct {
 	IssueType      string `json:"type"`
 	AffectedUnits  int    `json:"affectedUnits"`
 	Note           string `json:"note,omitempty"`
-	ReportedBy     string `json:"reportedBy"`
-	IdempotencyKey string `json:"idempotencyKey,omitempty"`
+	ReportedBy     string     `json:"reportedBy"`
+	IdempotencyKey string     `json:"idempotencyKey,omitempty"`
+	Decision       string     `json:"decision,omitempty"`
+	DecisionNote   string     `json:"decisionNote,omitempty"`
+	DecidedBy      string     `json:"decidedBy,omitempty"`
+	DecidedAt      *time.Time `json:"decidedAt,omitempty"`
 }
 
 type PlanningTrip struct {
