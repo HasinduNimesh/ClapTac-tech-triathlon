@@ -46,6 +46,7 @@ type Outlet struct {
 type Order struct {
 	ID                  string     `json:"id"`
 	OrderRef            string     `json:"orderRef"`
+	SourceSystem string `json:"sourceSystem,omitempty"`
 	OutletID            string     `json:"outletId"`
 	Brand               string     `json:"brand"`
 	Temp                string     `json:"temperatureRequirement"`

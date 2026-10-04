@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
+import { PriorityReviews } from "../automations/PriorityReviews";
 import { Link } from "react-router-dom";
 import { ApiError, apiJSON } from "../api/client";
 import { todayInSriLanka } from "../api/date.mjs";
@@ -205,6 +206,7 @@ export function PlanningPage() {
       <div className={`dp-body${detail ? "" : " dp-body--flush"}`}>
         {error && <p className="dp-note dp-note--red" role="alert">{error}</p>}
         {info && <p className="dp-note dp-note--green" role="status">{info}</p>}
+        <PriorityReviews />
         {!detail && (
           <Panel title={loadingPlan ? t("Loading plan…") : `${t("No plan yet for")} ${dayLabel(date)}`} sub={t("Create the plan to pull in every confirmed order for this date, then generate allocations.")}>
             <div className="dp-row"><button type="button" className="dp-btn" onClick={() => void createPlan()} disabled={loadingPlan}>{t("Create or load plan")}</button></div>
@@ -252,7 +254,7 @@ export function PlanningPage() {
                           const order = ordersById.get(u.orderId);
                           return (
                             <tr key={u.orderId} className={order?.deferredLastRun ? "is-alert" : undefined}>
-                              <td><span className="dp-cell-main">{u.orderRef || order?.orderRef || u.orderId}</span>{order?.priorityNextPlan && <span className="dp-cell-sub"><Tag tone="red">{t("Priority outlet")}</Tag></span>}<span className="dp-cell-sub">{order ? `${isChilled(order.temperatureRequirement) ? t("Chilled") : t("Ambient")} · ${m3(order.orderVolumeM3)}` : ""}</span></td>
+                              <td><span className="dp-cell-main">{u.orderRef || order?.orderRef || u.orderId}</span>{order?.priorityNextPlan && <span className="dp-cell-sub"><Tag tone="red">{t("Priority outlet")}</Tag></span>}{order?.sourceSystem === "delivery-deferral-request" && <span className="dp-cell-sub dp-cell-sub--amber">{t("Dispatcher deferral requested")}</span>}{order?.sourceSystem === "delivery-reattempt" && <span className="dp-cell-sub">{t("Re-attempt on next run")}</span>}<span className="dp-cell-sub">{order ? `${isChilled(order.temperatureRequirement) ? t("Chilled") : t("Ambient")} · ${m3(order.orderVolumeM3)}` : ""}</span></td>
                               <td><span className="dp-cell-main">{outletLabel(order)}</span><span className="dp-cell-sub">{DEPOT_LABELS[depotOf(order) || ""] || ""}</span></td>
                               <td>{order && <Tag tone={brandTone(order.brand)}>{t(order.brand)}</Tag>}</td>
                               <td><span className="dp-cell-main">{order ? kg(order.orderWeightKg) : "—"}</span><span className="dp-cell-sub">{order ? m3(order.orderVolumeM3) : ""}</span></td>

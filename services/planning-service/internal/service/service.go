@@ -202,7 +202,9 @@ func (s Service) Generate(ctx context.Context, profile *authorization.Profile, i
 		return domain.GenerateResult{}, err
 	}
 	start := time.Now()
-	out := allocate.Generate(world)
+    allocWorld, deferralRequests := holdDispatcherDeferrals(world)
+    out := allocate.Generate(allocWorld)
+    out.Unallocated = append(out.Unallocated, deferralRequests...)
 	telemetry.AllocationDuration.Observe(time.Since(start).Seconds())
 	for _, as := range out.Assignments {
 		if err := s.persistAssignment(ctx, pl.ID, as); err != nil {
@@ -235,7 +237,9 @@ func (s Service) Simulate(ctx context.Context, id string) (domain.GenerateResult
 	if err != nil {
 		return domain.GenerateResult{}, err
 	}
-	out := allocate.Generate(world)
+    allocWorld, deferralRequests := holdDispatcherDeferrals(world)
+    out := allocate.Generate(allocWorld)
+    out.Unallocated = append(out.Unallocated, deferralRequests...)
 	return domain.GenerateResult{Allocated: len(out.Assignments), Unallocated: len(out.Unallocated), Failures: out.Unallocated, FairnessSignalAvailable: world.FairnessSignalAvailable, FairnessPolicy: allocate.FairnessPolicyWithPolicy(world.FairnessSignalAvailable, world.Policy)}, nil
 }
 
@@ -1305,6 +1309,7 @@ func actorID(p *authorization.Profile) string {
 	return p.UserID
 }
 
+
 // validateDeferral enforces the three required parts of a deferral: a known
 // reason code, a decider, and a next-run date after the plan's delivery date.
 // It returns the normalised next-run date.
@@ -1328,4 +1333,21 @@ func validateDeferral(decider, code, nextRunTarget, planDeliveryDate string) (st
 		return "", fmt.Errorf("invalid: nextRunTarget")
 	}
 	return nextRunTarget, nil
+
+
+// The driver's deferral choice is a request. W3 remains the only action that
+// records an actual plan deferral; generation leaves these orders for review.
+func holdDispatcherDeferrals(world allocate.Input) (allocate.Input, []domain.ConstraintFailure) {
+    candidates := make([]domain.Order, 0, len(world.Orders))
+    pending := []domain.ConstraintFailure{}
+    for _, order := range world.Orders {
+        if order.SourceSystem == "delivery-deferral-request" {
+            pending = append(pending, domain.ConstraintFailure{OrderID:order.ID, ReasonCode:domain.ReasonManualDeferral})
+        } else {
+            candidates = append(candidates, order)
+        }
+    }
+    world.Orders = candidates
+    return world, pending
+
 }

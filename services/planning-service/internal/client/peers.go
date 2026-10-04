@@ -146,7 +146,7 @@ func (p Peers) Orders(ctx context.Context, date string) ([]domain.Order, error) 
 	}
 	var out struct {
 		Items []struct {
-			ID, OrderRef, OutletID, Brand, TemperatureRequirement, RequestedDeliveryDate string
+			ID, OrderRef, OutletID, Brand, TemperatureRequirement, RequestedDeliveryDate, SourceSystem string
 			OrderWeightKg, OrderVolumeM3                                                 float64
 		} `json:"items"`
 	}
@@ -156,7 +156,7 @@ func (p Peers) Orders(ctx context.Context, date string) ([]domain.Order, error) 
 	var orders []domain.Order
 	for _, it := range out.Items {
 		orders = append(orders, domain.Order{
-			ID: it.ID, OrderRef: it.OrderRef, OutletID: it.OutletID, Brand: it.Brand,
+			ID: it.ID, OrderRef: it.OrderRef, OutletID: it.OutletID, Brand: it.Brand, SourceSystem: it.SourceSystem,
 			Temp: it.TemperatureRequirement, WeightKg: it.OrderWeightKg, VolumeM3: it.OrderVolumeM3,
 		})
 	}

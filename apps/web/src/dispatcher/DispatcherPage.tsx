@@ -8,6 +8,7 @@ import { useDepot } from "./DispatcherLayout";
 import { Availability, Incident, Outlet, ReceiptIssue, Vehicle, availabilityOf, isRefrigerated, outletMap } from "./types";
 import { BRAND_COLORS, Donut, DpHero, Meter, Panel, Stat, StatRow, Tag } from "./ui";
 import { clock, dayLabel, isChilled, minutesAgo, pct, useApi } from "./useApi";
+import { splitByDeliveryDate } from "./orderTiming.mjs";
 
 type Exception = { key: string; tone: "red" | "amber" | "primary"; icon: string; title: string; text: string; when?: string; to: string };
 
@@ -33,6 +34,7 @@ export function DispatcherPage() {
   const readyTrips = trips.filter((trip) => /ready/i.test(trip.loadingStatus || ""));
   const unallocated = plan.data?.unallocated || [];
   const brandCounts = ["Fresh", "Style", "Tech"].map((brand) => ({ brand, count: queue.filter((o) => o.brand.toLowerCase() === brand.toLowerCase()).length }));
+  const timing = splitByDeliveryDate(queue, date);
   const chilled = queue.filter((o) => isChilled(o.temperatureRequirement)).length;
   const depotCounts = Object.entries(DEPOT_LABELS).map(([code, label]) => ({ code, label, count: (orders.data?.items || []).filter((o) => sameDepot(outletById.get(o.outletId)?.depot, code)).length }));
   const maxDepot = Math.max(1, ...depotCounts.map((d) => d.count));
@@ -46,6 +48,7 @@ export function DispatcherPage() {
   if (windowRisk.length) exceptions.push({ key: "window", tone: "amber", icon: "!", title: t("Missed delivery window risk"), text: `${windowRisk.length} ${t("orders may miss their delivery window.")}`, to: "/dispatcher/planning" });
   for (const trip of trips.filter((item) => (item.shortfallCount || 0) > 0)) exceptions.push({ key: `short-${trip.tripId}`, tone: "amber", icon: "!", title: `${t("Loading shortfall")} · ${trip.vehicleId || trip.planRef}`, text: `${trip.shortfallCount} ${t("order(s) short before departure")}`, to: "/dispatcher/notifications" });
   for (const [index, item] of (receipts.data?.items || []).slice(0, 3).entries()) exceptions.push({ key: `receipt-${index}`, tone: "primary", icon: "i", title: `${t("Receipt issue")} · ${item.outletId}`, text: `${item.orderRef} · ${t(item.issue.issueType)} · ${item.issue.affectedUnits} ${t("units")}`, when: item.issue.createdAt, to: "/dispatcher/notifications" });
+  if (timing.overdue > 0) exceptions.push({ key: "overdue", tone: "amber", icon: "!", title: t("Overdue orders"), text: `${timing.overdue} ${t("confirmed orders are past their delivery date and have not been planned.")}`, to: "/dispatcher/orders" });
   if (!plan.data && !plan.loading) exceptions.push({ key: "noplan", tone: "amber", icon: "!", title: t("No plan for today yet"), text: t("Create a plan to allocate confirmed orders to vehicles."), to: "/dispatcher/planning" });
 
   const groups = new Map<string, { label: string; total: number; free: number; reefer: boolean }>();
@@ -71,7 +74,7 @@ export function DispatcherPage() {
       </StatRow>
       <div className="dp-body">
         <div className="dp-grid-2">
-          <Panel title={t("Today's planning snapshot")} sub={t("Key volumes for today's plan across brands, product types and depots.")} actions={<Tag tone="primary">{dayLabel(date)}</Tag>}>
+          <Panel title={t("Orders awaiting planning")} sub={t("Confirmed orders not yet planned, by brand, product type and depot.")} actions={<Tag tone={timing.overdue > 0 ? "amber" : "primary"}>{timing.overdue} {t("overdue")} · {timing.dueToday} {t("due today")} · {timing.later} {t("later")}</Tag>}>
             <div className="dp-grid-3">
               <div className="dp-subcard">
                 <h3 className="dp-subcard-title">{t("Orders by brand")}</h3>

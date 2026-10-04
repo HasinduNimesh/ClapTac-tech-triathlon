@@ -1,0 +1,20 @@
+CREATE TABLE IF NOT EXISTS delivery.returned_goods (
+    stop_id UUID PRIMARY KEY REFERENCES delivery.stops(id),
+    run_id UUID NOT NULL REFERENCES delivery.runs(id),
+    order_id TEXT NOT NULL,
+    order_ref TEXT NOT NULL,
+    outlet_id TEXT NOT NULL,
+    operation_id TEXT NOT NULL UNIQUE,
+    goods TEXT NOT NULL,
+    units INTEGER NOT NULL CHECK (units > 0),
+    reason TEXT NOT NULL,
+    note TEXT NOT NULL DEFAULT '',
+    resolution TEXT NOT NULL CHECK (resolution IN ('NEXT_RUN','REQUEST_DEFERRAL')),
+    driver_id TEXT NOT NULL,
+    occurred_at TIMESTAMPTZ NOT NULL,
+    recorded_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    followup_order_id TEXT NOT NULL DEFAULT '',
+    followup_order_ref TEXT NOT NULL DEFAULT '',
+    followup_date DATE,
+    dispatcher_notified_at TIMESTAMPTZ
+);
