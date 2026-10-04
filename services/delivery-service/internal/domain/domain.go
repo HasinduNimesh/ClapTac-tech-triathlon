@@ -47,6 +47,10 @@ const (
 	ResultConflict  = "CONFLICT"
 	ResultRejected  = "REJECTED"
 	ResultDuplicate = "DUPLICATE"
+	// ResultRetry means the operation is applied on the server but the plan
+	// conflict for the dispatcher could not be stored. The driver app keeps the
+	// item queued and sends it again; the repeat completes the conflict.
+	ResultRetry = "RETRY"
 
 	MaxSignatureBytes = 512 * 1024
 	MaxPhotoBytes     = 4 * 1024 * 1024
@@ -350,4 +354,7 @@ type SyncOperation struct {
 	OccurredAt           string         `json:"occurredAt"`
 	DependsOnOperationID string         `json:"dependsOnOperationId"`
 	Payload              map[string]any `json:"payload"`
+	// PlanVersion is the plan version the driver app was showing when the
+	// record was made offline. Optional; zero means unknown.
+	PlanVersion int `json:"planVersion,omitempty"`
 }

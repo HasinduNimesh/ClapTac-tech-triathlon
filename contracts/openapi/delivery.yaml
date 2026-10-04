@@ -244,9 +244,46 @@ paths:
                       stopId: { type: string, description: "Optional for INCIDENT_REPORT; not every incident happens at a stop." }
                       occurredAt: { type: string, format: date-time }
                       dependsOnOperationId: { type: string }
+                      planVersion: { type: integer, minimum: 1, description: "Plan version the driver app showed when the record was made offline. If older than the current version the record is still applied and a sync conflict is recorded; the result then carries conflict.{recordedPlanVersion,currentPlanVersion}." }
                       payload: { type: object, description: "STOP_OUTCOME: { code, reason, note, deliveredUnits? }; INCIDENT_REPORT: { category: VEHICLE|ROAD|OUTLET|GOODS|SAFETY|OTHER, description: string }" }
       responses:
-        "200": { description: Per-operation APPLIED, DUPLICATE, CONFLICT, or REJECTED }
+        "200": { description: "Per-operation APPLIED, DUPLICATE, CONFLICT, REJECTED, or RETRY. RETRY means the operation is applied on the server but its plan-version conflict for the dispatcher could not be stored; the result carries originalStatus APPLIED and a detail. The client must keep the item queued and send it again. The repeat is answered as DUPLICATE with originalStatus APPLIED, creates the missing conflict once, and carries conflict.{recordedPlanVersion,currentPlanVersion,detail}. A DUPLICATE of an APPLIED operation recorded on an older plan carries the same conflict info." }
+  /delivery/sync-conflicts:
+    get:
+      operationId: listSyncConflicts
+      description: Offline records made on an older plan version. The records were applied and nothing was overwritten. Requires deliveries:view-all (dispatcher).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: date, in: query, required: false, schema: { type: string, format: date }, description: Filter by run delivery date }
+        - { name: status, in: query, required: false, schema: { type: string, enum: [open] }, description: "open returns only unsettled conflicts" }
+      responses:
+        "200":
+          description: Conflicts, newest first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/SyncConflict" } }
+        "403": { description: Not a dispatcher }
+  /delivery/sync-conflicts/{id}/settle:
+    post:
+      operationId: settleSyncConflict
+      description: Marks the conflict settled by the calling dispatcher. Idempotent; settling again returns the stored row.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Settled conflict
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  conflict: { $ref: "#/components/schemas/SyncConflict" }
+        "403": { description: Not a dispatcher }
+        "404": { description: Unknown conflict }
   /delivery/telemetry/offline-queue:
     post:
       operationId: reportOfflineQueueHealth
@@ -281,6 +318,23 @@ paths:
         "403": { description: Missing internal-read scope }
 components:
   schemas:
+    SyncConflict:
+      type: object
+      required: [id, runId, operationId, recordedPlanVersion, currentPlanVersion, detail, createdAt]
+      properties:
+        id: { type: string }
+        runId: { type: string }
+        tripId: { type: string }
+        vehicleId: { type: string }
+        deliveryDate: { type: string }
+        stopId: { type: string }
+        operationId: { type: string }
+        recordedPlanVersion: { type: integer }
+        currentPlanVersion: { type: integer }
+        detail: { type: string }
+        createdAt: { type: string, format: date-time }
+        settledBy: { type: string }
+        settledAt: { type: string, format: date-time }
     DeliveryStop:
       type: object
       description: One immutable delivery stop prepared from a loading READY order.

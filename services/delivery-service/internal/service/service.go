@@ -631,7 +631,7 @@ func (s Service) ReportOfflineQueueHealth(profile *authorization.Profile, report
 func (s Service) Sync(ctx context.Context, profile *authorization.Profile, req domain.SyncRequest) []map[string]any {
 	var out []map[string]any
 	for _, op := range req.Operations {
-		out = append(out, s.syncOne(ctx, profile, op))
+		out = append(out, s.flagOlderPlanVersion(ctx, op, s.syncOne(ctx, profile, op)))
 	}
 	if out == nil {
 		out = []map[string]any{}

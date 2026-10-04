@@ -82,6 +82,7 @@ test("shared text, status, guidance, and action colors meet WCAG AA contrast aga
     ["error status", color(rule(".status-bad"), "color"), cardBackground],
     ["sync status", color(rule(".status-syncing"), "color"), cardBackground],
     ["agent approval text", pageText, approvalBackground],
+    ["sync older-plan notice text", pageText, color(rule(".sync-conflict"), "background")],
     ["stop guidance values", pageText, guidanceBackground],
     ["stop guidance labels", color(rule(".stop-guidance dt"), "color"), guidanceBackground],
     ["next-stop action text", pageText, nextStopBackground],

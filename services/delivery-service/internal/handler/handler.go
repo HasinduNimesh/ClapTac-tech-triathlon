@@ -78,6 +78,7 @@ func (h Handler) Routes(r chi.Router) {
 		r.With(complete).Post("/trips/{tripId}/complete", h.complete)
 		r.With(sync).Post("/telemetry/offline-queue", h.offlineQueueHealth)
 		r.With(sync).Post("/sync", h.sync)
+		h.conflictRoutes(r)
 		r.With(internal).Get("/internal/orders/{orderId}", h.internalOrder)
 		r.With(internal).Get("/internal/outlets/last-served", h.outletLastServed)
 		r.With(internal).Get("/internal/outlets/last-attempted", h.outletLastAttempted)
