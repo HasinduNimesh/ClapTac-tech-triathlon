@@ -41,6 +41,11 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
+        <!-- Open in maps hands a web address to the phone's maps app or browser. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https"/>
+        </intent>
         <!-- The photo button opens the phone's camera app; Android 11+ needs this to find it. -->
         <intent>
             <action android:name="android.media.action.IMAGE_CAPTURE"/>

@@ -194,5 +194,13 @@ StopInfo _stopFromJson(Map<String, Object?> json) {
     contactNote: site,
     goods: text('temperatureRequirement').isEmpty ? 'Goods' : text('temperatureRequirement'),
     orderRef: text('orderRef'),
+    district: text('district'),
+    latitude: _coordinate(json['latitude']),
+    longitude: _coordinate(json['longitude']),
+    locationApproximate: json['locationApproximate'] == true,
   );
 }
+
+/// A coordinate the server sent, or null when it is missing or not a number (the stop is then
+/// searched for by name instead of navigated to).
+double? _coordinate(Object? value) => value is num && value.isFinite ? value.toDouble() : null;
