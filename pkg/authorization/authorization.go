@@ -17,13 +17,14 @@ const profileKey contextKey = "waypoint.profile"
 // Profile is application-owned identity mapping. Outlet membership and
 // driver assignments are resolved here, not from JWT claims.
 type Profile struct {
-	UserID    string   `json:"userId"`
-	Subject   string   `json:"subject"`
-	Roles     []string `json:"roles"`
-	OutletIDs []string `json:"outletIds,omitempty"`
-	DriverID  string   `json:"driverId,omitempty"`
-	Depot     string   `json:"depot,omitempty"`
-	VehicleID string   `json:"vehicleId,omitempty"`
+	UserID      string   `json:"userId"`
+	Subject     string   `json:"subject"`
+	DisplayName string   `json:"displayName"`
+	Roles       []string `json:"roles"`
+	OutletIDs   []string `json:"outletIds,omitempty"`
+	DriverID    string   `json:"driverId,omitempty"`
+	Depot       string   `json:"depot,omitempty"`
+	VehicleID   string   `json:"vehicleId,omitempty"`
 }
 
 type ProfileResolver interface {
