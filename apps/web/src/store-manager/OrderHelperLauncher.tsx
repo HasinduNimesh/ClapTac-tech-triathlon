@@ -46,15 +46,15 @@ export function OrderHelperLauncher({ token, onFill }: { token: string; onFill: 
         ref={button}
         type="button"
         className="sm-ai-fab"
-        aria-label={t("Paste or type your order")}
-        title={t("Paste or type your order")}
+        aria-label={t("Paste, type or speak your order")}
+        title={t("Paste, type or speak your order")}
         aria-expanded={open}
         aria-controls="order-helper-panel"
         onClick={() => setOpen((value) => !value)}
       >
         <SparklesIcon />
       </button>
-      <aside id="order-helper-panel" className={`sm-ai-drawer${open ? " open" : ""}`} aria-label={t("Paste or type your order")} hidden={!open}>
+      <aside id="order-helper-panel" className={`sm-ai-drawer${open ? " open" : ""}`} aria-label={t("Paste, type or speak your order")} hidden={!open}>
         <button type="button" className="sm-ai-drawer-close" aria-label={t("Close")} onClick={() => { setOpen(false); button.current?.focus(); }}>×</button>
         <OrderTextHelper token={token} onUnavailable={() => setOff(true)} onFill={(fill, neededBy) => { onFill(fill, neededBy); setOpen(false); }} />
       </aside>
