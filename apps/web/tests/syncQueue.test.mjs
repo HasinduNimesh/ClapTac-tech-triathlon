@@ -4,6 +4,7 @@ import { drainFIFOQueue } from "../src/offline/fifoQueue.mjs";
 import { translate } from "../src/locale.mjs";
 import { createSyncProgress } from "../src/offline/syncProgress.mjs";
 import {
+  classifySyncResult,
   conflictMessage,
   conflictsForStop,
   deriveStopSyncStatus,
@@ -242,4 +243,49 @@ test("the waiting counts translate with the number kept", () => {
     assert.notEqual(translate(locale, "2 photo(s) waiting"), "2 photo(s) waiting");
   }
   assert.equal(translate("en", "3 waiting"), "3 waiting");
+});
+
+test("a RETRY result is not success: the queue item stays and shows Could not send", async () => {
+  assert.deepEqual(classifySyncResult({ status: "APPLIED" }), { applied: true, retry: false, detail: "" });
+  assert.equal(classifySyncResult({ status: "DUPLICATE", originalStatus: "APPLIED" }).applied, true);
+  assert.equal(classifySyncResult({ status: "DUPLICATE", originalStatus: "REJECTED" }).applied, false);
+  const retry = classifySyncResult({ status: "RETRY", originalStatus: "APPLIED", detail: "Send it again." });
+  assert.deepEqual(retry, { applied: false, retry: true, detail: "Send it again." });
+  assert.equal(classifySyncResult({ status: "RETRY" }).applied, false);
+  assert.equal(classifySyncResult(undefined).applied, false);
+
+  // Drive the real drain loop the way sync.ts does: the RETRY item must not be removed.
+  const progress = createSyncProgress();
+  let queue = [item("op-old", "STOP_OUTCOME", { id: 1, stopId: "s1" })];
+  const removed = [];
+  const recovered = { status: "DUPLICATE", originalStatus: "APPLIED", conflict: { recordedPlanVersion: 3, currentPlanVersion: 4, detail: "x" } };
+  const responses = [{ status: "RETRY", originalStatus: "APPLIED", detail: "Send it again." }, recovered];
+  const run = () => drainFIFOQueue({
+    list: async () => queue,
+    remove: async (id) => { removed.push(id); queue = queue.filter((q) => q.id !== id); },
+    apply: async (queued) => {
+      progress.markSending(queued.operationId);
+      const outcome = classifySyncResult(responses.shift());
+      if (!outcome.applied) {
+        progress.markFailed(queued.operationId, outcome.detail);
+        return { applied: false, detail: outcome.detail };
+      }
+      return { applied: true };
+    },
+    onFailure: async () => ({ kind: "error", text: "failed" }),
+  });
+
+  const first = await run();
+  assert.equal(first.kind, "error");
+  assert.deepEqual(removed, []);
+  assert.equal(queue.length, 1);
+  const status = deriveStopSyncStatus({ stopId: "s1", queue, failed: progress.snapshot().failed });
+  assert.equal(status.state, "failed");
+  assert.equal(syncStateLabel(status.state), "Could not send");
+
+  progress.clearFailed("op-old");
+  const second = await run();
+  assert.equal(second.kind, "ok");
+  assert.deepEqual(removed, [1]);
+  assert.equal(readSyncConflict(recovered).currentPlanVersion, 4);
 });

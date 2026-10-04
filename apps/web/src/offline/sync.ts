@@ -3,7 +3,7 @@ import { DeliveryTripDetail } from "../api/delivery";
 import { isPaused, listQueue, putCachedDetail, putSyncConflictNotice, setPaused, shiftQueue } from "./db";
 import { drainFIFOQueue } from "./fifoQueue.mjs";
 import { singleFlight } from "./singleFlight.mjs";
-import { orderForSync, readSyncConflict, syncOperationBody } from "./syncQueue.mjs";
+import { classifySyncResult, orderForSync, readSyncConflict, syncOperationBody } from "./syncQueue.mjs";
 import { createSyncProgress } from "./syncProgress.mjs";
 
 const base = import.meta.env.VITE_API_BASE_URL || "/api/v1";
@@ -101,12 +101,12 @@ async function drainQueueSerial(token: string, ownerId: string): Promise<SyncBan
         }
         const response = (await res.json()) as { results?: SyncResult[] };
         const result = response.results?.find((r) => r.operationId === item.operationId);
-        const applied = result?.status === "APPLIED" ||
-          (result?.status === "DUPLICATE" && result.originalStatus === "APPLIED");
-        if (!applied) {
-          const reason = result?.detail || `operation status: ${result?.status || "missing result"}`;
-          syncProgress.markFailed(item.operationId, reason);
-          return { applied: false, detail: reason };
+        // RETRY (applied, conflict not yet listed for dispatch) and every other
+        // non-success status keep the item queued and show Could not send / Retry.
+        const outcome = classifySyncResult(result);
+        if (!outcome.applied) {
+          syncProgress.markFailed(item.operationId, outcome.detail);
+          return { applied: false, detail: outcome.detail };
         }
         // The record was kept. When it was made on an older plan, remember the
         // notice so the driver can still read it after the queue entry is gone.

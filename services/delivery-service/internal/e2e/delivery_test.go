@@ -556,8 +556,23 @@ func TestDeliveryWorkflow(t *testing.T) {
 		t.Fatalf("stale-version op must apply and report the newer version %d %s", staleOp.status, staleOp.body)
 	}
 	staleReplay := do(t, srv, http.MethodPost, "/api/v1/delivery/sync", "usr-driver", []byte(`{"operations":[{"operationId":"offline-v3-incident","type":"INCIDENT_REPORT","tripId":"trip-north","planVersion":3}]}`), "")
-	if !strings.Contains(staleReplay.body, `"DUPLICATE"`) {
+	if !strings.Contains(staleReplay.body, `"DUPLICATE"`) || !strings.Contains(staleReplay.body, `"recordedPlanVersion":3`) {
 		t.Fatalf("replay %s", staleReplay.body)
+	}
+	// If the conflict row was never written (the insert failed after the op was
+	// applied), the retry arrives as a DUPLICATE and must create it exactly once.
+	if _, err := pool.Exec(ctx, `DELETE FROM delivery.sync_conflicts WHERE operation_id='offline-v3-incident'`); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		repaired := do(t, srv, http.MethodPost, "/api/v1/delivery/sync", "usr-driver", []byte(`{"operations":[{"operationId":"offline-v3-incident","type":"INCIDENT_REPORT","tripId":"trip-north","planVersion":3}]}`), "")
+		if !strings.Contains(repaired.body, `"DUPLICATE"`) || !strings.Contains(repaired.body, `"currentPlanVersion":4`) || strings.Contains(repaired.body, `"RETRY"`) {
+			t.Fatalf("retry %d must recover the conflict %s", i, repaired.body)
+		}
+	}
+	var conflictRows int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM delivery.sync_conflicts WHERE operation_id='offline-v3-incident'`).Scan(&conflictRows); err != nil || conflictRows != 1 {
+		t.Fatalf("missing conflict must be recreated exactly once: %d %v", conflictRows, err)
 	}
 	if code := do(t, srv, http.MethodGet, "/api/v1/delivery/sync-conflicts", "usr-driver", nil, "").status; code != http.StatusForbidden {
 		t.Fatalf("driver must not list sync conflicts: %d", code)

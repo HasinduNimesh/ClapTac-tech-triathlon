@@ -19,12 +19,16 @@ func scanConflict(row pgx.Row) (domain.SyncConflict, error) {
 	return c, err
 }
 
-// InsertSyncConflict records a conflict once per operation id.
-func (p Postgres) InsertSyncConflict(ctx context.Context, c domain.SyncConflict) error {
-	_, err := p.Pool.Exec(ctx, `INSERT INTO delivery.sync_conflicts (run_id, stop_id, operation_id, recorded_plan_version, current_plan_version, detail)
+// InsertSyncConflict records a conflict once per operation id. It reports
+// whether a new row was written; a repeat for the same operation is a no-op.
+func (p Postgres) InsertSyncConflict(ctx context.Context, c domain.SyncConflict) (bool, error) {
+	tag, err := p.Pool.Exec(ctx, `INSERT INTO delivery.sync_conflicts (run_id, stop_id, operation_id, recorded_plan_version, current_plan_version, detail)
 		VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (operation_id) DO NOTHING`,
 		c.RunID, nullIfEmpty(c.StopID), c.OperationID, c.RecordedPlanVersion, c.CurrentPlanVersion, c.Detail)
-	return err
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
 }
 
 // ListSyncConflicts returns conflicts newest first, optionally for one delivery date.
