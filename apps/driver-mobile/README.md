@@ -48,10 +48,42 @@ Configure it per build with `--dart-define` (see `lib/auth/auth_config.dart`):
 | `OIDC_RESOURCE` | the API the token is for, an absolute URI such as `https://waypoint.claptac.dev/api/v1`; sent as the `resource` parameter (ThunderID rejected the bare `waypoint-api` value) |
 | `OIDC_CLIENT_ID` | default `waypoint-driver` |
 | `OIDC_REDIRECT_URI` | default `dev.claptac.waypointdriver:/oauth2redirect`; the scheme must match `appAuthRedirectScheme` in `android/app/build.gradle.kts` and may not contain an underscore |
+| `OIDC_SCOPES` | space-separated scopes, default `openid profile`. Add `offline_access` (`"openid profile offline_access"`) so the provider issues a refresh token, once the ThunderID client allows it; see "Staying signed in" below |
 
 Without `OIDC_ISSUER` and `API_BASE_URL`, sign-in is disabled. Plain HTTP is only accepted in debug builds, for a local identity server; release builds refuse it. The identity provider side is described in `infrastructure/thunder/README.md`.
 
 The demo switches `DEMO_AUTH` (any credentials, no identity provider), `DEMO_ROUTE` (show the sample route after a real sign-in) and `DEMO_UPDATES` (a sample plan update) are forced off in release builds, whatever is passed.
+
+## Staying signed in
+
+When the identity provider issues a refresh token (normally only if `offline_access` is requested, see `OIDC_SCOPES`), the app keeps it in secure storage next to the access token and uses it instead of sending the driver back to the browser:
+
+- an expired access token, or one within 60 seconds of expiring, is refreshed before it is used; the rotated tokens are stored, and simultaneous callers (the sync worker, loading the route, starting the trip) share one refresh
+- if the provider refuses the refresh token (revoked, already used, expired) the session ends and the driver signs in again
+- if there is no connection when a refresh is needed, that is treated as being offline, not as a sign-out: queued updates stay on the phone and the refresh is retried on the next attempt
+- the app opens with an expired access token as long as there is a refresh token, so it works without signal and refreshes when something needs the server
+
+Without a refresh token (the default scopes against a provider that does not issue one without `offline_access`), an expired access token still means signing in again. Signing out removes the tokens from the phone but does not revoke the refresh token at the provider.
+
+## No signal
+
+`lib/connectivity` follows the phone's network (`connectivity_plus`). When the phone has none, or the last attempt to reach Waypoint failed:
+
+- signing in shows the no-signal variant ("Waiting for signal…") and switches back by itself when the signal returns, because the browser sign-in needs the network
+- the route and the stop screen show that there is no connection and that what the driver records is saved on the phone and sent later; the stop screen switches to its offline variant and back while it is open
+- when the network returns the app sends what is waiting and retries a route that failed to load and a trip that could not start, instead of waiting for the next timer tick
+
+Nothing the driver does needs the network: the app opens with a stored session (see "Staying signed in"), records deliveries and proof on the phone, and sends them later.
+
+## Messages from dispatch
+
+Dispatch can send a message about the trip, or about one stop. The app reads them (`GET /api/v1/delivery/trips/{id}/messages`) when the route loads and every 30 seconds while signed in, and:
+
+- lists them in the **Updates** tab, unread first and newest first, with times on Waypoint's clock (Asia/Colombo)
+- tells the driver, wherever they are in the app, when a new one arrives (what was already waiting at sign-in is not announced)
+- opens one in full, with which stop it is about, and lets the driver **acknowledge** it (`POST .../messages/{id}/ack`; repeating it is harmless)
+
+A missed refresh never removes what was already shown. **Acknowledging needs a connection:** offline, the message stays unread and the dialog says so; it is not queued for later like deliveries and proof are. Messages are not shown before the trip has a run on the server.
 
 ## Not built yet
 
@@ -63,8 +95,8 @@ Do not describe this build as connected to the cloud: sign-in and loading the ro
 - **Proof.** Photo and signature capture does not exist: the buttons explain that and store nothing, and no proof is queued. The server requires a finalized proof (a separate multipart upload) for DELIVERED and PARTIAL, so those outcomes would be rejected if sent today.
 - **Server gaps.** Until PR #28 is in the app's base branch, partial quantity remains in the `note`; no distinct "re-attempt next run" or "defer" operation exists (also in the `note`), and there is no structured driver load-discrepancy workflow (a missing item is a `GOODS` incident). Contracts and RBAC for these need deciding before they can work as the screens show.
 - **Load check.** Confirming only marks the load confirmed on this phone. Reporting a missing item keeps the route locked until the driver confirms again or explicitly departs anyway, which is queued as a second incident.
-- **Plan and messages.** Plan acknowledgement (`POST /api/v1/planning/plans/{id}/acknowledgements`) and dispatcher trip messages exist on the server but are not used. The plan review screen ("send both versions for review") has no matching API and is demo-only.
-- Connectivity is not detected, so the no-signal sign-in variant is not triggered automatically. Tokens are not refreshed: when the access token expires the driver signs in again.
+- **Plan changes.** The plan is acknowledged when the trip starts, but a plan that changes mid-trip is not detected. The plan review screen ("send both versions for review") has no matching API and is demo-only.
+- Detecting connectivity tells the app only whether the phone has a network, not whether Waypoint is reachable (a Wi-Fi network with no internet counts as connected); failed requests are treated as offline too. Tokens are not refreshed: when the access token expires the driver signs in again.
 
 ## Layout
 
