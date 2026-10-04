@@ -1007,6 +1007,7 @@ Object.assign(labels.ta, {
   "Report-by deadline passed.": "அறிக்கையிட வேண்டிய காலக்கெடு முடிந்துவிட்டது.",
   "Report-by deadline is today.": "அறிக்கையிட வேண்டிய காலக்கெடு இன்று.",
   "Report-by deadline is tomorrow.": "அறிக்கையிட வேண்டிய காலக்கெடு நாளை.",
+});
 Object.assign(labels.si, {
   "Account name": "ගිණුමේ නම",
   "Your name": "ඔබේ නම",
