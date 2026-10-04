@@ -160,6 +160,12 @@ func authorize(w http.ResponseWriter, r *http.Request) {
 	if redir == "" {
 		redir = q.Get("redirect_uri")
 	}
+	// The Flutter field app signs in from its own form (also as a web build,
+	// where a redirect cannot be read), so it asks for the code as JSON.
+	if r.FormValue("response_mode") == "json" {
+		writeJSON(w, map[string]any{"code": code, "state": r.FormValue("state"), "redirect_uri": redir})
+		return
+	}
 	http.Redirect(w, r, fmt.Sprintf("%s?code=%s&state=%s", redir, code, r.FormValue("state")), http.StatusFound)
 }
 

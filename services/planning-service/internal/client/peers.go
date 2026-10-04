@@ -257,8 +257,8 @@ func (p Peers) Outlets(ctx context.Context) (map[string]domain.Outlet, error) {
 	}
 	var out struct {
 		Items []struct {
-			ID, Brand, District, Depot, ParkingConstraint, WindowOpenTime, WindowCloseTime string
-			MallWindow                                                                     bool
+			ID, Brand, Name, District, Depot, DockType, ParkingConstraint, WindowOpenTime, WindowCloseTime string
+			MallWindow                                                                                     bool
 		} `json:"items"`
 	}
 	if err := p.getJSON(ctx, p.SharedURL+"/api/v1/shared/outlets", tok, &out); err != nil {
@@ -267,7 +267,7 @@ func (p Peers) Outlets(ctx context.Context) (map[string]domain.Outlet, error) {
 	m := map[string]domain.Outlet{}
 	for _, o := range out.Items {
 		m[o.ID] = domain.Outlet{
-			ID: o.ID, Brand: o.Brand, District: o.District, Depot: o.Depot,
+			ID: o.ID, Brand: o.Brand, Name: o.Name, District: o.District, Depot: o.Depot, DockType: o.DockType,
 			ParkingConstraint: o.ParkingConstraint, MallWindow: o.MallWindow,
 			WindowOpen: o.WindowOpenTime, WindowClose: o.WindowCloseTime,
 		}
