@@ -6,17 +6,36 @@ import '../../widgets/svg_icon.dart';
 import 'delivery_assets.dart';
 
 class TakeBackItem {
-  const TakeBackItem({required this.name, required this.quantity, required this.note});
+  const TakeBackItem({required this.name, this.quantity, this.unit = 'units', required this.note});
 
   final String name;
-  final int quantity;
+
+  /// Null when the server does not know the order's quantity.
+  final int? quantity;
+  final String unit;
   final String note;
+
+  /// What goes back after a failed or rejected delivery: the stop's order, all of it. The server
+  /// holds orders by quantity, not by product line, so the order is the item.
+  factory TakeBackItem.forStop(StopInfo stop) => TakeBackItem(
+        name: stop.orderRef.isNotEmpty ? 'Order ${stop.orderRef}' : 'This order',
+        quantity: stop.units,
+        unit: stop.unitLabel,
+        note: stop.goods.toLowerCase().contains('chill') ? 'Keep in the chilled zone' : 'Goes back on this vehicle',
+      );
+
+  String get title => quantity == null ? '$name · taking back all of it' : '$name · taking back $quantity $unit';
 }
 
-const sampleTakeBackItems = [
-  TakeBackItem(name: 'Yoghurt cup 80g', quantity: 96, note: 'Keep in the chilled zone'),
-  TakeBackItem(name: 'Fresh milk 1L', quantity: 24, note: 'Keep in the chilled zone'),
-];
+/// The driver's reason in words, from the server's reason code (the code the app is about to send).
+String takeBackReasonText(String? code) => switch (code) {
+      'OUTLET_CLOSED' => 'the outlet was closed',
+      'ACCESS_BLOCKED' => 'the driver could not get access',
+      'RECEIVER_UNAVAILABLE' => 'nobody was available to receive it',
+      'GOODS_REJECTED' => 'the goods were rejected',
+      'VEHICLE_ISSUE' => 'a vehicle problem',
+      _ => 'another reason',
+    };
 
 /// "Rejected: record what goes back" (Figma 412:778). [onSave] receives true
 /// to re-attempt on tomorrow's first run, false to ask dispatch to defer.
@@ -25,8 +44,8 @@ Future<void> showTakeBackSheet(
   required StopInfo stop,
   required String orderRef,
   required ValueChanged<bool> onSave,
-  String reason = 'store closed, arrived after the receiving window',
-  List<TakeBackItem> items = sampleTakeBackItems,
+  required String reason,
+  List<TakeBackItem>? items,
 }) {
   return showModalBottomSheet<void>(
     context: context,
@@ -39,7 +58,7 @@ Future<void> showTakeBackSheet(
       stop: stop,
       orderRef: orderRef,
       reason: reason,
-      items: items,
+      items: items ?? [TakeBackItem.forStop(stop)],
       onSave: (reattempt) {
         Navigator.of(sheetContext).pop();
         onSave(reattempt);
@@ -98,7 +117,7 @@ class _TakeBackSheetState extends State<_TakeBackSheet> {
                 ),
                 for (final item in widget.items) ...[
                   const SizedBox(height: 10),
-                  _CheckLine(title: '${item.name} · taking back ${item.quantity}', caption: item.note),
+                  _CheckLine(title: item.title, caption: item.note),
                 ],
                 const SizedBox(height: 10),
                 Semantics(header: true, child: Text('What happens next', style: _t(15, FontWeight.w600, DeliveryColors.sheetInk))),

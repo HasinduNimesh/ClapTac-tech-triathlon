@@ -109,16 +109,17 @@ func (s Store) Resolve(ctx context.Context, subject string) (*authorization.Prof
 
 func (s Store) ProfileBySubject(ctx context.Context, subject string) (*authorization.Profile, error) {
 	row := s.Pool.QueryRow(ctx, `
-		SELECT u.id, u.identity_subject, u.role, COALESCE(p.outlet_id, ''), COALESCE(l.depot, ''), COALESCE(d.vehicle_id, '')
+		SELECT u.id, u.identity_subject, u.display_name, u.role, COALESCE(p.outlet_id, ''), COALESCE(l.depot, dp.depot, ''), COALESCE(d.vehicle_id, '')
 		FROM users u
 		LEFT JOIN store_manager_profiles p ON p.user_id = u.id
 		LEFT JOIN loader_profiles l ON l.user_id = u.id
+		LEFT JOIN dispatcher_profiles dp ON dp.user_id = u.id
 		LEFT JOIN driver_profiles d ON d.user_id = u.id
 		WHERE u.identity_subject = $1
 	`, subject)
 	var p authorization.Profile
 	var role, outlet, depot, vehicle string
-	if err := row.Scan(&p.UserID, &p.Subject, &role, &outlet, &depot, &vehicle); err != nil {
+	if err := row.Scan(&p.UserID, &p.Subject, &p.DisplayName, &role, &outlet, &depot, &vehicle); err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, fmt.Errorf("not found")
 		}
@@ -131,6 +132,17 @@ func (s Store) ProfileBySubject(ctx context.Context, subject string) (*authoriza
 	p.Depot = depot
 	p.VehicleID = vehicle
 	return &p, nil
+}
+
+// SetDisplayName only changes the user represented by the authenticated token subject.
+func (s Store) SetDisplayName(ctx context.Context, subject, name string) error {
+	var id string
+	err := s.Pool.QueryRow(ctx, `UPDATE shared.users SET display_name=$2, updated_at=now()
+		WHERE identity_subject=$1 RETURNING id`, subject, name).Scan(&id)
+	if err == pgx.ErrNoRows {
+		return fmt.Errorf("not found")
+	}
+	return err
 }
 
 type Outlet struct {
@@ -504,7 +516,42 @@ func (s Store) CreatePolicy(ctx context.Context, p PlanningPolicy, expectedVersi
 	return p, nil
 }
 
+// LocationChange says what an outlet update does to the outlet's exact position. The zero value
+// leaves it alone; Set stores Latitude/Longitude as the verified position; Clear removes it, so the
+// outlet goes back to the approximate district position.
+type LocationChange struct {
+	Set       bool
+	Clear     bool
+	Latitude  float64
+	Longitude float64
+}
+
+// Sri Lanka's extent with a margin. A position outside it is almost always swapped or mistyped.
+const (
+	minLatitude, maxLatitude   = 5.5, 10.0
+	minLongitude, maxLongitude = 79.3, 82.2
+)
+
+// ValidateLocation rejects a position that cannot be a place in Sri Lanka.
+func ValidateLocation(latitude, longitude float64) error {
+	if latitude != latitude || longitude != longitude || latitude < minLatitude || latitude > maxLatitude || longitude < minLongitude || longitude > maxLongitude {
+		return fmt.Errorf("location must be a latitude between %.1f and %.1f and a longitude between %.1f and %.1f (Sri Lanka); check the two are not swapped", minLatitude, maxLatitude, minLongitude, maxLongitude)
+	}
+	return nil
+}
+
 func (s Store) UpdateOutlet(ctx context.Context, o Outlet, expected int, ev audit.Event) (Outlet, error) {
+	return s.UpdateOutletLocation(ctx, o, expected, LocationChange{}, ev)
+}
+
+// UpdateOutletLocation is UpdateOutlet that can also set or clear the outlet's exact position in the
+// same versioned, audited change.
+func (s Store) UpdateOutletLocation(ctx context.Context, o Outlet, expected int, loc LocationChange, ev audit.Event) (Outlet, error) {
+	if loc.Set {
+		if err := ValidateLocation(loc.Latitude, loc.Longitude); err != nil {
+			return Outlet{}, fmt.Errorf("invalid: %w", err)
+		}
+	}
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
 		return Outlet{}, err
@@ -518,6 +565,10 @@ func (s Store) UpdateOutlet(ctx context.Context, o Outlet, expected int, ev audi
 	if before.Version != expected {
 		return Outlet{}, fmt.Errorf("conflict: outlet version changed")
 	}
+	var beforeLat, beforeLng *float64
+	if err = tx.QueryRow(ctx, `SELECT latitude, longitude FROM outlets WHERE id=$1`, o.ID).Scan(&beforeLat, &beforeLng); err != nil {
+		return Outlet{}, err
+	}
 	var updated Outlet
 	err = tx.QueryRow(ctx, `UPDATE shared.outlets SET brand=$2,name=$3,district=$4,depot=$5,dock_type=$6,parking_constraint=$7,mall_window=$8,
 	window_open_time=NULLIF($9,'')::time,window_close_time=NULLIF($10,'')::time,
@@ -527,17 +578,24 @@ func (s Store) UpdateOutlet(ctx context.Context, o Outlet, expected int, ev audi
 	access_instructions_confirmed_by=CASE WHEN access_instructions IS DISTINCT FROM $11 THEN '' ELSE access_instructions_confirmed_by END,
 	access_instructions_confirmed_at=CASE WHEN access_instructions IS DISTINCT FROM $11 THEN NULL ELSE access_instructions_confirmed_at END,
 	chilled_temperature_min_c=$13,chilled_temperature_max_c=$14,
+	latitude=CASE WHEN $15 THEN $16::double precision WHEN $18 THEN NULL ELSE latitude END,
+	longitude=CASE WHEN $15 THEN $17::double precision WHEN $18 THEN NULL ELSE longitude END,
 	version=version+1
 	WHERE id=$1 RETURNING id,brand,name,COALESCE(district,''),COALESCE(depot,''),COALESCE(dock_type,''),COALESCE(parking_constraint,''),mall_window,
-	COALESCE(window_open_time::text,''),COALESCE(window_close_time::text,''),COALESCE(access_instructions,''),COALESCE(access_instructions_updated_by,''),access_instructions_updated_at,COALESCE(access_instructions_confirmed_by,''),access_instructions_confirmed_at,chilled_temperature_min_c,chilled_temperature_max_c,version`, o.ID, o.Brand, o.Name, o.District, o.Depot, o.DockType, o.ParkingConstraint, o.MallWindow, o.WindowOpenTime, o.WindowCloseTime, o.AccessInstructions, ev.ActorID, o.ChilledTemperatureMinC, o.ChilledTemperatureMaxC).
+	COALESCE(window_open_time::text,''),COALESCE(window_close_time::text,''),COALESCE(access_instructions,''),COALESCE(access_instructions_updated_by,''),access_instructions_updated_at,COALESCE(access_instructions_confirmed_by,''),access_instructions_confirmed_at,chilled_temperature_min_c,chilled_temperature_max_c,version`, o.ID, o.Brand, o.Name, o.District, o.Depot, o.DockType, o.ParkingConstraint, o.MallWindow, o.WindowOpenTime, o.WindowCloseTime, o.AccessInstructions, ev.ActorID, o.ChilledTemperatureMinC, o.ChilledTemperatureMaxC, loc.Set, loc.Latitude, loc.Longitude, loc.Clear).
 		Scan(&updated.ID, &updated.Brand, &updated.Name, &updated.District, &updated.Depot, &updated.DockType, &updated.ParkingConstraint, &updated.MallWindow, &updated.WindowOpenTime, &updated.WindowCloseTime, &updated.AccessInstructions, &updated.AccessInstructionsUpdatedBy, &updated.AccessInstructionsUpdatedAt, &updated.AccessInstructionsConfirmedBy, &updated.AccessInstructionsConfirmedAt, &updated.ChilledTemperatureMinC, &updated.ChilledTemperatureMaxC, &updated.Version)
 	if err != nil {
 		return Outlet{}, err
 	}
+	// Answer with the outlet as every read shows it, including its position, so a client that replaces
+	// its copy with this response does not lose the map position.
+	if updated, err = scanOutlet(tx.QueryRow(ctx, outletReadSelect+` WHERE id=$1`, o.ID)); err != nil {
+		return Outlet{}, err
+	}
 	prev, _ := json.Marshal(before)
 	next, _ := json.Marshal(updated)
-	ev.PreviousState = map[string]any{"outlet": json.RawMessage(prev)}
-	ev.NewState = map[string]any{"outlet": json.RawMessage(next)}
+	ev.PreviousState = map[string]any{"outlet": json.RawMessage(prev), "exactLocation": exactLocation(beforeLat, beforeLng)}
+	ev.NewState = map[string]any{"outlet": json.RawMessage(next), "exactLocation": exactLocation(ifExact(updated.Latitude, updated.LocationApproximate), ifExact(updated.Longitude, updated.LocationApproximate))}
 	if err = s.insertAuditTx(ctx, tx, ev); err != nil {
 		return Outlet{}, err
 	}
@@ -545,6 +603,22 @@ func (s Store) UpdateOutlet(ctx context.Context, o Outlet, expected int, ev audi
 		return Outlet{}, err
 	}
 	return updated, nil
+}
+
+// exactLocation is how audit history records a verified position: the pair, or nil when the outlet
+// only has the approximate district position.
+func exactLocation(latitude, longitude *float64) any {
+	if latitude == nil || longitude == nil {
+		return nil
+	}
+	return map[string]float64{"latitude": *latitude, "longitude": *longitude}
+}
+
+func ifExact(value *float64, approximate bool) *float64 {
+	if approximate {
+		return nil
+	}
+	return value
 }
 
 func (s Store) ConfirmOutletAccessInstructions(ctx context.Context, outletID string, expected int, ev audit.Event) (Outlet, error) {

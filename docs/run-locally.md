@@ -57,7 +57,7 @@ The seed loads outlets, vehicles and the operating calendar, but **no orders**. 
 
 **Store Manager:** Dashboard with the *Dashboard* menu and *Create new dashboard* (assistant + live preview) · saved dashboards · Track order (map) · Confirm delivery receipt · Order evidence timeline · Notifications (receipts, ETA changes, deferrals) · Settings → Language & display.
 
-**Maps:** Live operations → *Map* and Store Manager → *Track order* use OpenStreetMap tiles (internet access needed). Outlet positions are approximate (district centre plus a small offset; migration `0043_outlet_locations.sql`) and a truck is shown at its last reported stop, not a GPS position.
+**Maps:** Live operations → *Map* and Store Manager → *Track order* use OpenStreetMap tiles (internet access needed). An outlet's position is the exact one a dispatcher recorded in Master data, or an approximate one (district centre plus a small offset; migration `0043_outlet_locations.sql`) until then ([docs/outlet-locations.md](outlet-locations.md)); a truck is shown at its last reported stop, not a GPS position.
 
 ## 5. Stop or reset
 

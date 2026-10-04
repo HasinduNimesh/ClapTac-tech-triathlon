@@ -278,7 +278,8 @@ jobs:
           : "${AZURE_SSH_KNOWN_HOSTS:?Set AZURE_SSH_KNOWN_HOSTS in the production environment}"
           key_file="$(mktemp)"
           hosts_file="$(mktemp)"
-          trap 'rm -f "$key_file" "$hosts_file"' EXIT
+          deploy_log="$(mktemp)"
+          trap 'rm -f "$key_file" "$hosts_file" "$deploy_log"' EXIT
           chmod 600 "$key_file" "$hosts_file"
           printf '%s\n' "$AZURE_SSH_PRIVATE_KEY" > "$key_file"
           printf '%s\n' "$AZURE_SSH_KNOWN_HOSTS" > "$hosts_file"
@@ -287,14 +288,16 @@ jobs:
           audience='${{ vars.PROD_OIDC_AUDIENCE || 'https://waypoint.claptac.dev/api/v1' }}'
           ssh -i "$key_file" -o BatchMode=yes -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile="$hosts_file" \
-            "$AZURE_SSH_USER@$AZURE_SSH_HOST" bash -s -- "$GITHUB_SHA" "$registry_prefix" "$audience" <<'REMOTE'
+            "$AZURE_SSH_USER@$AZURE_SSH_HOST" bash -s -- "$GITHUB_SHA" "$registry_prefix" "$audience" <<'REMOTE' | tee "$deploy_log"
           set -euo pipefail
           revision="$1"
           prefix="$2"
           audience="$3"
           services="order-service planning-service fleet-service loading-service delivery-service shared-service integration-service agent-orchestrator web loader-web"
           # Every compose call sees the image tag being deployed without editing .env first.
-          dc() { sudo -n env WAYPOINT_IMAGE_PREFIX="$prefix" WAYPOINT_TAG="$revision" docker compose "$@"; }
+          # The remote shell reads this script from stdin. Compose must not consume
+          # the rest of it while pulling images or starting containers.
+          dc() { sudo -n env WAYPOINT_IMAGE_PREFIX="$prefix" WAYPOINT_TAG="$revision" docker compose "$@" </dev/null; }
           cd "$HOME/ClapTac-tech-triathlon"
           test -f .env
           branch="$(git rev-parse --abbrev-ref HEAD)"
@@ -332,7 +335,7 @@ jobs:
           # another environment.
           check_image() {
             sudo -n docker run --rm --entrypoint sh "$prefix/$1:$revision" -c \
-              "grep -rqF 'https://id.waypoint.claptac.dev' $2 && grep -rqF '$audience' $2" \
+              "grep -rqF 'https://id.waypoint.claptac.dev' $2 && grep -rqF '$audience' $2" </dev/null \
               || { echo "Image $1:$revision was not built for production sign-in and API audience" >&2; exit 1; }
           }
           check_image web /usr/share/nginx/html
@@ -360,6 +363,10 @@ jobs:
             echo "To roll back images: set WAYPOINT_TAG to it in .env and run: sudo docker compose up -d --no-build" >&2
             exit 1
           }
+          # nginx.conf is a single-file bind mount. Recreate nginx to pick up the
+          # current file after the checkout changes; this briefly interrupts traffic.
+          dc up -d --no-build --no-deps --force-recreate nginx \
+            || rollback_hint "nginx could not be recreated with the updated routing configuration."
           # Every service must report healthy, not just nginx.
           for service in $services nginx; do
             container="$(dc ps -q "$service")"
@@ -374,10 +381,15 @@ jobs:
           done
           curl -fsS --retry 8 --retry-delay 3 https://waypoint.claptac.dev/health/live >/dev/null \
             || rollback_hint "https://waypoint.claptac.dev/health/live failed."
-          curl -fsS --retry 3 --retry-delay 3 -o /dev/null https://waypoint.claptac.dev/loader-app/ \
-            || rollback_hint "https://waypoint.claptac.dev/loader-app/ failed."
+          # The web app answers unknown paths with its own page (HTTP 200), so require the loader's own page.
+          curl -fsS --retry 3 --retry-delay 3 https://waypoint.claptac.dev/loader-app/ | grep -q flutter_bootstrap.js \
+            || rollback_hint "https://waypoint.claptac.dev/loader-app/ did not return the loader app."
           curl -fsS --retry 3 --retry-delay 3 https://id.waypoint.claptac.dev/.well-known/openid-configuration \
             | python3 -c 'import json,sys; assert json.load(sys.stdin)["issuer"] == "https://id.waypoint.claptac.dev"' \
             || rollback_hint "Identity discovery failed or names another issuer."
           echo "Deployed $revision."
           REMOTE
+          grep -Fqx "Deployed $GITHUB_SHA." "$deploy_log" || {
+            echo "Deployment stopped before the final health checks; the VM was not fully updated." >&2
+            exit 1
+          }

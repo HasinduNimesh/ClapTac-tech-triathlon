@@ -6,6 +6,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -229,4 +230,14 @@ func (s S3) Open(ctx context.Context, key string) (io.ReadCloser, error) {
 		return nil, fmt.Errorf("s3 GET %s: %d %s", key, resp.StatusCode, strings.TrimSpace(string(b)))
 	}
 	return resp.Body, nil
+}
+
+// RequireDurable refuses to run on the in-memory store outside local development. The in-memory store
+// keeps proof photos and signatures only until the process restarts, so a deployment with no
+// MINIO_ENDPOINT would silently lose proof; it must fail to start instead.
+func RequireDurable(local bool, endpoint string) error {
+	if endpoint == "" && !local {
+		return errors.New("MINIO_ENDPOINT is required outside local development: without it proof files are kept in memory and lost on restart")
+	}
+	return nil
 }

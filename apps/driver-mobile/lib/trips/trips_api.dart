@@ -6,12 +6,15 @@ import 'package:http/http.dart' as http;
 
 import '../data/driver_models.dart';
 
-enum TripsFailureKind { unauthorized, forbidden, notFound, unavailable }
+enum TripsFailureKind { unauthorized, forbidden, notFound, unavailable, serverProblem }
 
 class TripsFailure implements Exception {
-  const TripsFailure(this.kind);
+  const TripsFailure(this.kind, [this.status]);
 
   final TripsFailureKind kind;
+
+  /// The HTTP status Waypoint answered with, for [TripsFailureKind.serverProblem].
+  final int? status;
 
   String get message {
     switch (kind) {
@@ -23,6 +26,9 @@ class TripsFailure implements Exception {
         return 'That trip could not be found.';
       case TripsFailureKind.unavailable:
         return 'Could not reach Waypoint. Check your connection and try again.';
+      case TripsFailureKind.serverProblem:
+        // Waypoint answered, so the phone's connection is fine; blaming it would send the driver hunting for signal.
+        return 'Waypoint had a problem loading your route${status == null ? '' : ' (error $status)'}. Try again in a minute. If it keeps happening, tell dispatch.';
     }
   }
 
@@ -105,6 +111,7 @@ class TripsApi {
       case 404:
         throw const TripsFailure(TripsFailureKind.notFound);
       default:
+        if (response.statusCode >= 500) throw TripsFailure(TripsFailureKind.serverProblem, response.statusCode);
         throw const TripsFailure(TripsFailureKind.unavailable);
     }
   }
@@ -187,5 +194,13 @@ StopInfo _stopFromJson(Map<String, Object?> json) {
     contactNote: site,
     goods: text('temperatureRequirement').isEmpty ? 'Goods' : text('temperatureRequirement'),
     orderRef: text('orderRef'),
+    district: text('district'),
+    latitude: _coordinate(json['latitude']),
+    longitude: _coordinate(json['longitude']),
+    locationApproximate: json['locationApproximate'] == true,
   );
 }
+
+/// A coordinate the server sent, or null when it is missing or not a number (the stop is then
+/// searched for by name instead of navigated to).
+double? _coordinate(Object? value) => value is num && value.isFinite ? value.toDouble() : null;
