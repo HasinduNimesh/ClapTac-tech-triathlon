@@ -122,6 +122,8 @@ class DriverSession extends ChangeNotifier {
   /// The network is back: send what is waiting and retry what failed for lack of it, instead of
   /// waiting for the next timer tick.
   Future<void> _onReconnected() async {
+    final gateway = auth;
+    if (gateway is RevocationRetry) unawaited((gateway as RevocationRetry).retryPendingRevocations());
     if (!signedIn) return;
     if ((tripsError != null && !hasRoute) || showingSavedRoute) await loadTrips();
     if (tripStartState == TripStartState.waiting && loadResolved) await startTrip();
@@ -406,6 +408,8 @@ class DriverSession extends ChangeNotifier {
   Future<void> restore() async {
     final gateway = auth;
     if (gateway == null) return;
+    // Tokens left over from an earlier sign-out without signal can be revoked now.
+    if (gateway is RevocationRetry) unawaited((gateway as RevocationRetry).retryPendingRevocations());
     restoring = true;
     notifyListeners();
     final profile = await gateway.restore();

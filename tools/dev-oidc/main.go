@@ -84,6 +84,7 @@ func main() {
 	http.HandleFunc("/oauth2/jwks", jwks)
 	http.HandleFunc("/oauth2/authorize", authorize)
 	http.HandleFunc("/oauth2/token", token)
+	http.HandleFunc("/oauth2/revoke", revoke)
 	http.HandleFunc("/admin/users", adminUsers)
 	http.HandleFunc("/admin/users.tsv", adminUsersTSV)
 	http.HandleFunc("/health/live", func(w http.ResponseWriter, _ *http.Request) {
@@ -99,6 +100,7 @@ func discovery(w http.ResponseWriter, _ *http.Request) {
 		"issuer":                                issuer,
 		"authorization_endpoint":                issuer + "/oauth2/authorize",
 		"token_endpoint":                        issuer + "/oauth2/token",
+		"revocation_endpoint":                   issuer + "/oauth2/revoke",
 		"jwks_uri":                              issuer + "/oauth2/jwks",
 		"response_types_supported":              []string{"code"},
 		"code_challenge_methods_supported":      []string{"S256"},
@@ -270,6 +272,27 @@ func signFor(sub, scope, aud string, extra map[string]any, ttl time.Duration) (s
 	t := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 	t.Header["kid"] = kid
 	return t.SignedString(key)
+}
+
+// revoke implements RFC 7009 for refresh tokens: the token is removed and the answer is 200 whether or
+// not it was known (so a client cannot probe for valid tokens). A request without a token is an error.
+func revoke(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	_ = r.ParseForm()
+	token := r.FormValue("token")
+	if token == "" {
+		oauthError(w, http.StatusBadRequest, "invalid_request", "token is required")
+		return
+	}
+	log.Printf("revoke token_type_hint=%s client_id=%s", r.FormValue("token_type_hint"), r.FormValue("client_id"))
+	mu.Lock()
+	delete(refreshTokens, token)
+	mu.Unlock()
+	w.WriteHeader(http.StatusOK)
 }
 
 func hasScope(scope, want string) bool {

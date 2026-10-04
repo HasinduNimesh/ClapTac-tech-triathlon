@@ -65,7 +65,20 @@ When the identity provider issues a refresh token (normally only if `offline_acc
 - if there is no connection when a refresh is needed, that is treated as being offline, not as a sign-out: queued updates stay on the phone and the refresh is retried on the next attempt
 - the app opens with an expired access token as long as there is a refresh token, so it works without signal and refreshes when something needs the server
 
-Without a refresh token (the default scopes against a provider that does not issue one without `offline_access`), an expired access token still means signing in again. Signing out removes the tokens from the phone but does not revoke the refresh token at the provider.
+Without a refresh token (the default scopes against a provider that does not issue one without `offline_access`), an expired access token still means signing in again.
+
+### Signing out revokes the refresh token
+
+Signing out always signs the driver out on the phone at once, then asks the identity provider to revoke the refresh token (RFC 7009, the `revocation_endpoint` in the provider's discovery document, sending only the token, its type and the client id, as the app is a public client), so a copy that leaks afterwards is worthless:
+
+- the sign-out never waits for the provider and never fails because of it
+- the token is first written to a small pending list in secure storage, so if the phone has no signal, or the app is closed before the provider answers, the revocation is tried again when the app starts and when the connection returns; the list keeps only the newest 10 tokens
+- a token is dropped from the list once the provider has revoked it, refused it for good (a client error), or turned out not to offer revocation; it stays only while the provider could not be reached
+- the token is never sent over plain HTTP, except to a local identity server in a debug build
+- a sign-in that does not end in a kept session has its refresh token revoked as well: an account that is not a driver, an account Waypoint does not know (404), a profile call that is rejected or cannot connect, or storage refusing the write; the provider has issued the tokens by then, and nothing would ever use them
+- if the pending list itself cannot be written (secure storage refusing it), the provider is still asked straight away, since the network may be fine; only the retry later cannot be promised
+
+Revocation ends the refresh token, not the person's session at the identity provider (ThunderID's own login cookie): the app always asks for the password at sign-in (`prompt=login`), so a shared phone does not sign the next person in.
 
 ## No signal
 

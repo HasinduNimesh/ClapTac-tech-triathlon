@@ -10,6 +10,8 @@ import 'auth/auth_gateway.dart';
 import 'auth/auth_store.dart';
 import 'auth/oidc_client.dart';
 import 'auth/profile_api.dart';
+import 'auth/revocation_queue.dart';
+import 'auth/token_revoker.dart';
 import 'messages/messages.dart';
 import 'offline/local_database.dart';
 import 'proof/proof_capturer.dart';
@@ -31,6 +33,8 @@ import 'theme/app_theme.dart';
     client: AppAuthOidcClient(config),
     profiles: ProfileApi(client: http.Client(), baseUrl: config.apiBaseUrl),
     store: SecureAuthStore(),
+    revoker: HttpTokenRevoker(client: http.Client(), config: config),
+    pendingRevocations: SecureRevocationQueue(),
   );
   final queue = SqliteSyncQueue();
   return (
