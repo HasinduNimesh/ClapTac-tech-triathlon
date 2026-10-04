@@ -622,7 +622,10 @@ func (s Service) CreateDeliveryFollowup(sourceOrderID, stopID, tripDate string, 
     if s.Calendar != nil {
         days, err := s.Calendar.OperatingDays(next.Format(time.DateOnly), next.AddDate(0, 0, 14).Format(time.DateOnly))
         if err != nil { return domain.Order{}, fmt.Errorf("%w: operating calendar", ErrUnavailable) }
-        found := false
+        // No calendar rows at all means the calendar is not maintained that far
+        // ahead, not that every day is closed: keep the next day and let the
+        // dispatcher confirm it. Rows that exist and are all closed still block.
+        found := len(days) == 0
         for _, item := range days {
             if item.IsOperating && item.Date >= next.Format(time.DateOnly) {
                 next, err = time.Parse(time.DateOnly, item.Date)
