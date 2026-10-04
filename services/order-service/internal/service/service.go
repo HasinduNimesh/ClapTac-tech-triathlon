@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -595,4 +596,65 @@ func validateCreate(req domain.CreateRequest) error {
 		return fmt.Errorf("%w: %s", ErrInvalid, err)
 	}
 	return nil
+}
+
+
+// CreateDeliveryFollowup reuses the confirmed-order import key so retries cannot
+// create a second order for the same rejected stop.
+func (s Service) CreateDeliveryFollowup(sourceOrderID, stopID, tripDate string, units int, resolution string) (domain.Order, error) {
+    if strings.TrimSpace(stopID) == "" || (resolution != "NEXT_RUN" && resolution != "REQUEST_DEFERRAL") {
+        return domain.Order{}, fmt.Errorf("%w: return follow-up", ErrInvalid)
+    }
+    original, err := s.Repo.Get(sourceOrderID)
+    if err != nil { return domain.Order{}, err }
+    if units < 1 || units > original.OrderUnits {
+        return domain.Order{}, fmt.Errorf("%w: returning units", ErrInvalid)
+    }
+    source := "delivery-reattempt"
+    if resolution == "REQUEST_DEFERRAL" { source = "delivery-deferral-request" }
+    if existing, err := s.Repo.GetImported(source, stopID); err == nil {
+        return existing, nil
+    } else if err.Error() != "not found" {
+        return domain.Order{}, err
+    }
+    day, err := time.Parse(time.DateOnly, tripDate)
+    if err != nil { return domain.Order{}, fmt.Errorf("%w: trip date", ErrInvalid) }
+    next := day.AddDate(0, 0, 1)
+    now := time.Now()
+    if s.Now != nil { now = s.Now() }
+    loc, _ := time.LoadLocation("Asia/Colombo")
+    if loc == nil { loc = time.FixedZone("Sri Lanka", 5*60*60+30*60) }
+    today := now.In(loc)
+    tomorrow := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, loc).AddDate(0, 0, 1)
+    if next.Before(tomorrow) { next = tomorrow }
+    if s.Calendar != nil {
+        days, err := s.Calendar.OperatingDays(next.Format(time.DateOnly), next.AddDate(0, 0, 14).Format(time.DateOnly))
+        if err != nil { return domain.Order{}, fmt.Errorf("%w: operating calendar", ErrUnavailable) }
+        // No calendar rows at all means the calendar is not maintained that far
+        // ahead, not that every day is closed: keep the next day and let the
+        // dispatcher confirm it. Rows that exist and are all closed still block.
+        found := len(days) == 0
+        for _, item := range days {
+            if item.IsOperating && item.Date >= next.Format(time.DateOnly) {
+                next, err = time.Parse(time.DateOnly, item.Date)
+                if err != nil { return domain.Order{}, err }
+                found = true
+                break
+            }
+        }
+        if !found { return domain.Order{}, fmt.Errorf("%w: next operating run", ErrUnavailable) }
+    }
+    ratio := float64(units) / float64(original.OrderUnits)
+    item := domain.Order{
+        OutletID: original.OutletID, Brand: original.Brand,
+        RequestedDeliveryDate: next.Format(time.DateOnly), OrderUnits: units,
+        OrderWeightKg: math.Max(0.001, math.Round(original.OrderWeightKg*ratio*1000)/1000),
+        OrderVolumeM3: math.Max(0.001, math.Round(original.OrderVolumeM3*ratio*1000)/1000),
+        TemperatureRequirement: original.TemperatureRequirement, Status: domain.StatusConfirmed,
+        SourceSystem: source, ExternalOrderID: stopID,
+    }
+    results, err := s.Repo.ImportOrders(source, []domain.Order{item})
+    if err != nil { return domain.Order{}, err }
+    if len(results) != 1 { return domain.Order{}, fmt.Errorf("%w: follow-up result", ErrUnavailable) }
+    return results[0].Order, nil
 }
