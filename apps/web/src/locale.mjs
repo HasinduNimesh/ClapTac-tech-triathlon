@@ -1070,6 +1070,11 @@ export function translate(locale, source) {
 }
 
 
+// W14 audit export
+Object.assign(labels.si, { "Export CSV": "CSV ලෙස අපනයනය" });
+Object.assign(labels.ta, { "Export CSV": "CSV ஆக ஏற்றுமதி" });
+
+
 // W12 receipt report-by deadline
 Object.assign(labels.si, {
   "2 working days after delivery": "බෙදාහැරීමෙන් වැඩ කරන දින 2කට පසු",
@@ -1164,6 +1169,7 @@ const helperLabels = {
 };
 // Registered here rather than in lookupTranslation so other branches can extend that line freely.
 for (const locale of ["si", "ta"]) Object.assign(labels[locale], helperLabels[locale]);
+
 
 
 Object.assign(labels.si, {
