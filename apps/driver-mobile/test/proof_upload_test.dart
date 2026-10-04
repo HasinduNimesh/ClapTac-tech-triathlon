@@ -180,21 +180,30 @@ void main() {
     test('a proof the server refuses is blocked with its reason, and later updates wait behind it', () async {
       final photo = await proofFile(ProofKind.photo);
       await queueProof('proof-op', photo);
-      await queue.enqueue(Operations.incident(operationId: 'later', trip: _trip, category: 'ROAD', description: 'Road closed', occurredAt: _at).toSyncEvent());
-      var syncCalls = 0;
+      // DR-6: a status update queued after a photo that has not been sent yet goes first.
+      await queue.enqueue(Operations.incident(operationId: 'earlier-status', trip: _trip, category: 'ROAD', description: 'Road closed', occurredAt: _at).toSyncEvent());
+      final synced = <String>[];
       final worker = _worker(queue, MockClient((request) async {
         if (request.method == 'GET') return http.Response(jsonEncode({'run': {'status': 'in_progress'}}), 200);
-        if (request.url.path.endsWith('/sync')) syncCalls++;
+        if (request.url.path.endsWith('/sync')) {
+          final id = ((jsonDecode(request.body) as Map)['operations'] as List).single['operationId'] as String;
+          synced.add(id);
+          return http.Response(jsonEncode({'results': [{'operationId': id, 'status': 'APPLIED'}]}), 200);
+        }
         return http.Response(jsonEncode({'detail': 'invalid: file content does not match PNG or JPEG'}), 400);
       }));
       final attention = _nextProgress(worker, SyncProgress.needsAttention);
       worker.start();
       await attention;
+      expect(synced, ['earlier-status'], reason: 'the status update went ahead of the unsent photo');
+      // Once the photo is refused it is blocked, and nothing queued after it overtakes it.
+      await queue.enqueue(Operations.incident(operationId: 'later', trip: _trip, category: 'ROAD', description: 'Still closed', occurredAt: _at).toSyncEvent());
+      await worker.syncNow();
       worker.stop();
-      final first = (await queue.first())!;
+      final first = (await queue.next())!;
       expect(first.state, 'blocked');
       expect(first.failure, contains('does not match PNG or JPEG'));
-      expect(syncCalls, 0, reason: 'the later incident is not sent past a blocked proof');
+      expect(synced, ['earlier-status'], reason: 'the later incident is not sent past a blocked proof');
       expect(File(photo.path).existsSync(), isTrue);
     });
 

@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:sqflite/sqflite.dart';
 
+import 'operations.dart';
 import 'sync.dart';
 
 /// SQLite keeps an operation ID and its exact request body across app restarts.
@@ -90,6 +91,21 @@ class SqliteSyncQueue implements SyncQueue {
     return QueuedOperation(_event(row['event_json'] as String), row['state'] as String, row['failure'] as String);
   }
 
+  /// DR-6: status first, photos after. The item to send next: a blocked item at the front still stops
+  /// everything, but otherwise the oldest status update (arrival, a failed or refused outcome) that is
+  /// not waiting on an unsent proof goes ahead of photo and signature uploads, so the dispatcher sees
+  /// what happened at a stop before a large photo has finished uploading on a weak signal.
+  Future<QueuedOperation?> next() async {
+    final rows = await (await db).query('operations',
+        columns: ['event_json', 'state', 'failure'],
+        where: 'owner_id = ? AND state != ?',
+        whereArgs: [owner, 'synced'],
+        orderBy: 'sequence ASC');
+    if (rows.isEmpty) return null;
+    final items = [for (final row in rows) QueuedOperation(_event(row['event_json'] as String), row['state'] as String, row['failure'] as String)];
+    return items[statusFirstIndex(items)];
+  }
+
   @override
   Future<void> markSynced(String idempotencyKey) => _setState(idempotencyKey, 'synced', '');
 
@@ -113,6 +129,26 @@ class SqliteSyncQueue implements SyncQueue {
       occurredAt: occurred == null ? null : DateTime.parse(occurred),
     );
   }
+}
+
+/// Which of the unsent items (oldest first) [SqliteSyncQueue.next] sends. Proof uploads give way to a
+/// later status update unless that update depends on an unsent proof; finishing the route never
+/// overtakes anything; a blocked item at the front is returned so it keeps everything behind it.
+int statusFirstIndex(List<QueuedOperation> items) {
+  if (items.isEmpty || items.first.state == 'blocked') return 0;
+  if (items.first.event.payload['type'] != OperationType.proofUpload) return 0;
+  final unsent = {for (final item in items) item.event.idempotencyKey};
+  for (var i = 1; i < items.length; i++) {
+    final operation = items[i].event.payload;
+    final type = operation['type'];
+    if (items[i].state == 'blocked') break;
+    if (type == OperationType.proofUpload) continue;
+    if (type == OperationType.routeCompleted) break;
+    final dependsOn = operation['dependsOnOperationId'] as String?;
+    if (dependsOn != null && dependsOn.isNotEmpty && unsent.contains(dependsOn)) continue;
+    return i;
+  }
+  return 0;
 }
 
 class QueuedOperation {
