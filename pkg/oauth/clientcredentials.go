@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -17,7 +18,11 @@ type TokenSource struct {
 	ClientID     string
 	ClientSecret string
 	Scope        string
-	HTTP         *http.Client
+	// Resource is the API the token is for (RFC 8707), for example the API's identifier. A real
+	// identity provider that defines scopes on a resource server refuses a scope request that does not
+	// name it (HTTP 400), so every service that asks for scopes sets it.
+	Resource string
+	HTTP     *http.Client
 
 	mu    sync.Mutex
 	token string
@@ -38,6 +43,9 @@ func (s *TokenSource) Token(ctx context.Context) (string, error) {
 	if s.Scope != "" {
 		form.Set("scope", s.Scope)
 	}
+	if s.Resource != "" {
+		form.Set("resource", s.Resource)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.TokenURL, strings.NewReader(form.Encode()))
 	if err != nil {
 		return "", err
@@ -54,7 +62,10 @@ func (s *TokenSource) Token(ctx context.Context) (string, error) {
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("client_credentials: %s", strings.TrimSpace(string(body)))
+		detail := strings.TrimSpace(string(body))
+		// Without this a refused token shows up only as a bare 500 from whatever needed the token.
+		slog.Error("client_credentials_refused", "client_id", s.ClientID, "token_url", s.TokenURL, "scope", s.Scope, "resource", s.Resource, "status", resp.StatusCode, "response", detail)
+		return "", fmt.Errorf("client_credentials: %s", detail)
 	}
 	var out struct {
 		AccessToken string `json:"access_token"`
