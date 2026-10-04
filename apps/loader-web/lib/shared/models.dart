@@ -183,3 +183,36 @@ class DockAlert {
   DateTime? get createdAt => _t(raw, 'createdAt');
   DateTime? get resolvedAt => _t(raw, 'resolvedAt');
 }
+
+/// LD-6: how an order number reached the "Check an order number" box. A label
+/// scanner types the whole code in one quick burst; a person types it slowly.
+/// A typed number must say why the label could not be scanned.
+class LoadEntry {
+  const LoadEntry.scan() : method = 'SCAN', reasonCode = '', note = '';
+  const LoadEntry.manual(this.reasonCode, {this.note = ''}) : method = 'MANUAL';
+  final String method;
+  final String reasonCode;
+  final String note;
+
+  bool get manual => method == 'MANUAL';
+  bool get complete => !manual || manualReasons.containsKey(reasonCode);
+
+  Map<String, Object> toJson() => {
+        'entryMethod': method,
+        if (manual) 'reasonCode': reasonCode,
+        if (manual && note.trim().isNotEmpty) 'note': note.trim(),
+      };
+
+  static const manualReasons = {
+    'DAMAGED_LABEL': 'Label damaged or torn',
+    'UNREADABLE': 'Label will not scan',
+    'NO_CAMERA': 'No scanner on this tablet',
+    'OTHER': 'Other reason',
+  };
+
+  /// A scanner delivers a code of 4+ characters in well under 60 ms a character.
+  static bool looksScanned(String code, Duration typingTime) {
+    final length = code.trim().length;
+    return length >= 4 && typingTime.inMilliseconds <= length * 60;
+  }
+}
