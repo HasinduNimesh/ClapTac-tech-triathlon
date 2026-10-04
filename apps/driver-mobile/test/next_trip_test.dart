@@ -23,6 +23,20 @@ const _driver = DriverProfile(userId: 'USR006', subject: 'usr-driver', roles: ['
 const _stopA = StopInfo(stopId: 'stop-a', sequence: 1, outletCode: 'OUTA', name: 'Dehiwala', windowStart: '', windowEnd: '', units: 10, accessNote: '', contactNote: '', goods: 'G');
 const _stopB1 = StopInfo(stopId: 'stop-b1', sequence: 1, outletCode: 'OUTB', name: 'Nugegoda', windowStart: '', windowEnd: '', units: 5, accessNote: '', contactNote: '', goods: 'G');
 const _tripA = TripInfo(tripId: 'trip-a', runId: 'run-a', vehicleCode: 'VEH001', tripRef: 'PLAN-A', depot: 'D', window: '', stops: [_stopA], runStatus: 'in_progress');
+
+/// Trip A as the server reports it after the app was restarted with every stop already done.
+const _tripAAllDone = TripInfo(
+  tripId: 'trip-a',
+  runId: 'run-a',
+  vehicleCode: 'VEH001',
+  tripRef: 'PLAN-A',
+  depot: 'D',
+  window: '',
+  stops: [_stopA],
+  runStatus: 'in_progress',
+  completedStops: 1,
+  completedStopIds: {'stop-a'},
+);
 const _tripB = TripInfo(tripId: 'trip-b', runId: 'run-b', vehicleCode: 'VEH001', tripRef: 'PLAN-B', depot: 'D', window: '', stops: [_stopB1], runStatus: 'prepared', planId: 'p', planVersion: 1);
 
 class _Auth implements AuthGateway {
@@ -37,13 +51,14 @@ class _Auth implements AuthGateway {
   Future<String?> accessToken() async => 'tok';
 }
 
-/// The first read is trip A; later reads answer with whatever [then] holds.
+/// The first read is trip A (or [first]); later reads answer with whatever [then] holds.
 class _Source implements TripSource {
-  _Source(this.then);
+  _Source(this.then, {this.first = const TripLoad.loaded(_tripA)});
   TripLoad then;
+  final TripLoad first;
   int calls = 0;
   @override
-  Future<TripLoad> loadToday() async => calls++ == 0 ? const TripLoad.loaded(_tripA) : then;
+  Future<TripLoad> loadToday() async => calls++ == 0 ? first : then;
 }
 
 void main() {
@@ -86,6 +101,15 @@ void main() {
       return s;
     }
 
+    /// Every ROUTE_COMPLETED ever stored for this driver, synced or not, and what is still waiting.
+    Future<({int completions, int waiting})> storedAfterSignOut() async {
+      final rows = await (await queue.db).query('operations', columns: ['event_json', 'state']);
+      final completions = rows.where((row) => (row['event_json']! as String).contains('"action":"ROUTE_COMPLETED"')).length;
+      await queue.useOwner('USR006');
+      final waiting = (await queue.pending()).length;
+      return (completions: completions, waiting: waiting);
+    }
+
     Future<void> doTheOnlyStop(DriverSession s) async {
       await s.markArrived(_stopA);
       await s.recordDelivery(_stopA, const DeliveryDraft(outcome: DeliveryOutcome.failed, reason: 'OUTLET_CLOSED'));
@@ -98,6 +122,7 @@ void main() {
       await doTheOnlyStop(s);
       final result = await s.completeTrip();
       expect(result.kind, TripWrapUp.nextTrip);
+      expect((await (await queue.db).query('operations', columns: ['event_json'])).where((row) => (row['event_json']! as String).contains('ROUTE_COMPLETED')), hasLength(1));
       expect(result.finished?.tripRef, 'PLAN-A');
       expect(result.next?.tripRef, 'PLAN-B');
       expect(sent, ['ARRIVED', 'STOP_OUTCOME', 'ROUTE_COMPLETED'], reason: 'the finished trip was sent before the next one opened');
@@ -119,7 +144,34 @@ void main() {
       expect(result.kind, TripWrapUp.signedOut);
       expect(s.signedIn, isFalse);
       expect(auth.signOuts, 1);
-      expect(sent, contains('ROUTE_COMPLETED'));
+      expect(sent.where((type) => type == 'ROUTE_COMPLETED'), hasLength(1));
+      final stored = await storedAfterSignOut();
+      expect(stored.completions, 1, reason: 'the completion is queued once, not again at sign-out');
+      expect(stored.waiting, 0, reason: 'nothing is left in the queue');
+    });
+
+    test('a trip reloaded with every stop already done is completed once, even with no next trip', () async {
+      // The app was restarted after the last stop and before Finish trip: the server already shows every
+      // stop completed, so the route counts as finished without anything being recorded in this session.
+      final s = session(_Source(const TripLoad.none(), first: const TripLoad.loaded(_tripAAllDone)));
+      await s.signIn();
+      expect(s.routeComplete, isTrue);
+      final result = await s.completeTrip();
+      expect(result.kind, TripWrapUp.signedOut);
+      expect(sent.where((type) => type == 'ROUTE_COMPLETED'), hasLength(1));
+      final stored = await storedAfterSignOut();
+      expect(stored.completions, 1, reason: 'one completion, not a second one queued at sign-out and never sent');
+      expect(stored.waiting, 0);
+    });
+
+    test('the same when the next trip could not be checked', () async {
+      final s = session(_Source(const TripLoad.failed('Could not reach Waypoint.'), first: const TripLoad.loaded(_tripAAllDone)));
+      await s.signIn();
+      final result = await s.completeTrip();
+      expect(result.kind, TripWrapUp.signedOut);
+      final stored = await storedAfterSignOut();
+      expect(stored.completions, 1);
+      expect(stored.waiting, 0);
     });
 
     test('does not loop on the trip it just finished', () async {
@@ -128,6 +180,9 @@ void main() {
       await doTheOnlyStop(s);
       expect((await s.completeTrip()).kind, TripWrapUp.signedOut);
       expect(s.signedIn, isFalse);
+      final stored = await storedAfterSignOut();
+      expect(stored.completions, 1);
+      expect(stored.waiting, 0);
     });
 
     test('signs out when the next trip could not be checked, because everything is already sent', () async {
@@ -136,7 +191,10 @@ void main() {
       await doTheOnlyStop(s);
       final result = await s.completeTrip();
       expect(result.kind, TripWrapUp.signedOut);
-      expect(sent, contains('ROUTE_COMPLETED'));
+      expect(sent.where((type) => type == 'ROUTE_COMPLETED'), hasLength(1));
+      final stored = await storedAfterSignOut();
+      expect(stored.completions, 1);
+      expect(stored.waiting, 0);
     });
 
     test('keeps the driver signed in, with the same trip, when updates could not be sent', () async {
