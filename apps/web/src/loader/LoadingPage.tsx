@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import { ApiError, apiJSON } from "../api/client";
 import { todayLocal } from "../api/date";
 import { depotLabel, isIncomplete, LoadingTripDetail, LoadingTripSummary, newIdempotencyKey } from "../api/loading";
+import { TruckCheckout } from "../api/delivery";
 import { useAuth } from "../auth/AuthContext";
 import { useLocale } from "../i18n";
 import { enqueueLoader, bindLoaderOwner, cacheLoaderDetail, cacheLoaderTrips, getCachedLoaderDetail, getCachedLoaderTrips, listLoaderQueue } from "./offlineDb";
@@ -32,9 +33,26 @@ export function LoadingPage() {
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scannerMessage, setScannerMessage] = useState("");
   const [online, setOnline] = useState(() => navigator.onLine);
+  const [checkoutAlert, setCheckoutAlert] = useState<TruckCheckout | null>(null);
   const [queueCount, setQueueCount] = useState(0);
   const [syncState, setSyncState] = useState<LoaderSyncState>({ kind: "ok", text: "" });
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    if (!detail?.tripId || !token || !online) { setCheckoutAlert(null); return; }
+    setCheckoutAlert(null);
+    let active = true;
+    const tripId = detail.tripId;
+    const loadAlert = async () => {
+      try {
+        const result = await apiJSON<{ checkout: TruckCheckout | null }>("/delivery/trips/" + encodeURIComponent(tripId) + "/checkout", token);
+        if (active) setCheckoutAlert(result.checkout?.status === "blocked" ? result.checkout : null);
+      } catch { if (active) setCheckoutAlert(null); }
+    };
+    void loadAlert();
+    const timer = window.setInterval(() => { void loadAlert(); }, 15_000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [detail?.tripId, token, online]);
 
   useEffect(() => {
     let active = true;
