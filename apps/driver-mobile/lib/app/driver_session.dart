@@ -90,6 +90,10 @@ class DriverSession extends ChangeNotifier {
   int newMessageSerial = 0;
   final Set<String> _seenMessageIds = {};
 
+  /// Whether the messages of the current trip have been read at least once. Only then is a message that
+  /// shows up news; what was already waiting on the first read is not, even when that read was empty.
+  bool _hasReadMessages = false;
+
   int get unreadMessages => messages.where((message) => !message.acknowledged).length;
 
   /// Reads the trip's messages. Called when the route loads, on a timer, and when the connection
@@ -101,7 +105,12 @@ class DriverSession extends ChangeNotifier {
     _fetchingMessages = true;
     final result = await source.load(tripId);
     _fetchingMessages = false;
-    if (!signedIn || _baseTrip?.tripId != tripId) return;
+    if (!signedIn) return;
+    if (_baseTrip?.tripId != tripId) {
+      // The route changed while this was in flight: the answer is for the old trip. Read the new one.
+      if (_baseTrip != null) unawaited(refreshMessages());
+      return;
+    }
     final loaded = result.messages;
     if (loaded == null) {
       if (result.signInExpired) await _signInExpired(result.failure);
@@ -109,11 +118,11 @@ class DriverSession extends ChangeNotifier {
       return;
     }
     // The first read after signing in is not news: only messages that arrive afterwards are.
-    final firstRead = _seenMessageIds.isEmpty && messages.isEmpty;
     var arrived = false;
     for (final message in loaded) {
-      if (_seenMessageIds.add(message.id) && !message.acknowledged && !firstRead) arrived = true;
+      if (_seenMessageIds.add(message.id) && !message.acknowledged && _hasReadMessages) arrived = true;
     }
+    _hasReadMessages = true;
     messages = loaded;
     if (arrived) newMessageSerial++;
     notifyListeners();
@@ -148,8 +157,15 @@ class DriverSession extends ChangeNotifier {
   void _stopMessagePolling() {
     _messageTimer?.cancel();
     _messageTimer = null;
+    _resetMessages();
+  }
+
+  /// Forgets the messages of the trip the driver was on, so a different trip never shows or announces
+  /// them.
+  void _resetMessages() {
     messages = const [];
     _seenMessageIds.clear();
+    _hasReadMessages = false;
   }
 
   final LocalDatabase database;
@@ -338,6 +354,10 @@ class DriverSession extends ChangeNotifier {
     if (loaded != null) {
       final sameTrip = _baseTrip?.tripId == loaded.tripId;
       _baseTrip = loaded;
+      // A different trip has its own messages: drop the old trip's the moment the route changes, so they
+      // are never shown against the new one, and what the new trip already has waiting is read silently
+      // the first time instead of being announced as new.
+      if (!sameTrip) _resetMessages();
       if (loaded.started) {
         // Already started (the app was restarted mid-run): do not ask for the load check again.
         loadCheck = LoadCheck.confirmed;

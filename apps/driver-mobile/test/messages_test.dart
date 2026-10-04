@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -65,6 +66,32 @@ class _Trips implements TripSource {
   Future<TripLoad> loadToday() async => const TripLoad.loaded(_trip);
 }
 
+const _tripB = TripInfo(tripId: 'trip-b', runId: 'run-b', vehicleCode: 'VEH001', tripRef: 'PLAN-B', depot: 'D', window: '', stops: [_stop], runStatus: 'in_progress');
+
+/// Trip A for the first read of the route, trip B afterwards (the driver was moved on to the next trip).
+class _SwitchingTrips implements TripSource {
+  int calls = 0;
+  @override
+  Future<TripLoad> loadToday() async => TripLoad.loaded(calls++ == 0 ? _trip : _tripB);
+}
+
+/// Messages kept per trip, as the server does; a read of one trip can be held to model a slow answer.
+class _PerTripSource implements MessageSource {
+  final byTrip = <String, List<DispatcherMessage>>{};
+  final holds = <String, Completer<void>>{};
+  final asked = <String>[];
+
+  @override
+  Future<MessageLoad> load(String tripId) async {
+    asked.add(tripId);
+    await holds[tripId]?.future;
+    return MessageLoad.loaded(List.of(byTrip[tripId] ?? const []));
+  }
+
+  @override
+  Future<MessageAck> acknowledge(String tripId, String messageId) async => const MessageAck.done();
+}
+
 class _Source implements MessageSource {
   List<DispatcherMessage> messages = [];
   MessageLoad? failure;
@@ -91,6 +118,15 @@ DriverSession _session(_Source source, {_Auth? auth, Duration poll = const Durat
     DriverSession(database: InMemoryLocalDatabase(), queue: InMemorySyncQueue(), auth: auth ?? _Auth(), trips: _Trips(), messageSource: source, messagePollInterval: poll);
 
 Future<void> _settle() => Future<void>.delayed(const Duration(milliseconds: 40));
+
+/// Waits until [condition] holds (up to two seconds), instead of sleeping for a fixed time that a slow
+/// machine could overrun.
+Future<void> _until(bool Function() condition) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 2));
+  while (!condition() && DateTime.now().isBefore(deadline)) {
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+  }
+}
 
 void main() {
   setUpAll(loadAppFonts);
@@ -228,9 +264,9 @@ void main() {
       await _settle();
       expect(session.newMessageSerial, 0, reason: 'what was already waiting on sign-in');
       source.messages = [_message('a'), _message('b')];
-      await Future<void>.delayed(const Duration(milliseconds: 120));
+      await _until(() => session.newMessageSerial == 1);
       expect(session.newMessageSerial, 1);
-      await Future<void>.delayed(const Duration(milliseconds: 120));
+      await Future<void>.delayed(const Duration(milliseconds: 150));
       expect(session.newMessageSerial, 1, reason: 'the same message is not announced twice');
     });
 
@@ -241,9 +277,22 @@ void main() {
       await session.signIn();
       await _settle();
       source.messages = [_message('done', acknowledged: true)];
-      await Future<void>.delayed(const Duration(milliseconds: 120));
+      await _until(() => session.messages.length == 1);
       expect(session.newMessageSerial, 0);
       expect(session.messages, hasLength(1));
+    });
+
+    test('a message that arrives after an empty first read is announced', () async {
+      final source = _Source();
+      final session = _session(source, poll: const Duration(milliseconds: 30));
+      addTearDown(session.dispose);
+      await session.signIn();
+      await _settle();
+      expect(session.messages, isEmpty);
+      expect(session.newMessageSerial, 0);
+      source.messages = [_message('first')];
+      await _until(() => session.newMessageSerial == 1);
+      expect(session.newMessageSerial, 1, reason: 'the first read was empty, so this is news');
     });
 
     test('a failed read keeps what was already shown', () async {
@@ -318,6 +367,77 @@ void main() {
       await session.refreshMessages();
       expect(session.messages, isEmpty);
       expect(await session.acknowledgeMessage('x'), contains('no longer available'));
+    });
+  });
+
+  group('when the route moves to a different trip', () {
+    DriverSession switching(_PerTripSource source) => DriverSession(
+          database: InMemoryLocalDatabase(),
+          queue: InMemorySyncQueue(),
+          auth: _Auth(),
+          trips: _SwitchingTrips(),
+          messageSource: source,
+          messagePollInterval: const Duration(hours: 1),
+        );
+
+    test('the old trip\'s messages go at once, and the new trip\'s are read silently', () async {
+      final source = _PerTripSource()
+        ..byTrip['trip-1'] = [_message('a-old', body: 'about trip A')]
+        ..byTrip['trip-b'] = [_message('b-waiting', body: 'already waiting on trip B')];
+      final session = switching(source);
+      addTearDown(session.dispose);
+      await session.signIn();
+      await _settle();
+      expect(session.messages.map((m) => m.id), ['a-old']);
+
+      // Everything the screen could have shown once the route was on trip B.
+      final seen = <List<String>>[];
+      session.addListener(() {
+        if (session.trip.tripId == 'trip-b') seen.add([for (final m in session.messages) m.id]);
+      });
+      await session.loadTrips();
+      await _settle();
+
+      expect(session.trip.tripId, 'trip-b');
+      expect(session.messages.map((m) => m.id), ['b-waiting']);
+      expect(seen, isNotEmpty);
+      expect(seen.any((ids) => ids.contains('a-old')), isFalse, reason: 'the old trip\'s message was never shown against the new trip');
+      expect(session.newMessageSerial, 0, reason: 'what trip B already had is not announced as new');
+    });
+
+    test('a message that then arrives for the new trip is announced', () async {
+      final source = _PerTripSource()..byTrip['trip-1'] = [_message('a-old')];
+      final session = switching(source);
+      addTearDown(session.dispose);
+      await session.signIn();
+      await _settle();
+      await session.loadTrips();
+      await _settle();
+      expect(session.newMessageSerial, 0);
+      source.byTrip['trip-b'] = [_message('b-new', body: 'sent after the switch')];
+      await session.refreshMessages();
+      expect(session.newMessageSerial, 1);
+      expect(session.messages.map((m) => m.id), ['b-new']);
+    });
+
+    test('an answer for the old trip that arrives late is thrown away, and the new trip is read', () async {
+      final source = _PerTripSource()
+        ..byTrip['trip-1'] = [_message('a-old')]
+        ..byTrip['trip-b'] = [_message('b-waiting')];
+      final hold = Completer<void>();
+      source.holds['trip-1'] = hold;
+      final session = switching(source);
+      addTearDown(session.dispose);
+      await session.signIn();
+      await _settle();
+      expect(source.asked, ['trip-1'], reason: 'trip A\'s read is still waiting');
+      await session.loadTrips();
+      await _settle();
+      hold.complete();
+      await _settle();
+      expect(session.messages.map((m) => m.id), ['b-waiting'], reason: 'the late answer for trip A did not replace trip B\'s messages');
+      expect(source.asked, contains('trip-b'));
+      expect(session.newMessageSerial, 0);
     });
   });
 
