@@ -66,6 +66,7 @@ func (s Service) List(ctx context.Context, profile *authorization.Profile, date 
 			loads, _ := s.Repo.ListLoads(ctx, sess.ID)
 			item["loadingStatus"] = sess.Status
 			item["loadedCount"], item["shortfallCount"], item["pendingCount"] = counts(loads)
+			item["manualEntryCount"] = manualEntryCount(loads)
 			item["planRef"] = sess.PlanRef
 			item["preparedPlanVersion"] = sess.PlanVersion
 			item["planChanged"] = sess.Status == domain.SessionInProgress && sess.PlanVersion < t.PlanVersion
@@ -73,6 +74,7 @@ func (s Service) List(ctx context.Context, profile *authorization.Profile, date 
 		} else {
 			item["loadingStatus"] = domain.SessionPending
 			item["loadedCount"], item["shortfallCount"], item["pendingCount"] = 0, 0, len(t.Allocations)
+			item["manualEntryCount"] = 0
 		}
 		item["acknowledgedVersion"] = acknowledgedVersion(t, profile)
 		item["acknowledgedAt"] = acknowledgedAt(t, profile)
@@ -281,7 +283,15 @@ func (s Service) SyncPlanVersion(ctx context.Context, profile *authorization.Pro
 	return s.detailFromSession(ctx, profile, updated)
 }
 
-func (s Service) MarkLoaded(ctx context.Context, profile *authorization.Profile, tripID, orderID string) error {
+// MarkLoaded confirms one line loaded. entry says how: a scanned label (SCAN) or an
+// order ID typed because the label could not be scanned (MANUAL, which needs a
+// reason). A client that sends nothing is recorded as unknown. Repeating the call
+// on a line that is already loaded changes nothing, so the first record stands.
+func (s Service) MarkLoaded(ctx context.Context, profile *authorization.Profile, tripID, orderID string, entry domain.LoadEntry) error {
+	entry, err := domain.NormalizeEntry(entry.Method, entry.ReasonCode, entry.Note)
+	if err != nil {
+		return err
+	}
 	sess, load, err := s.mutableLoad(ctx, profile, tripID, orderID)
 	if err != nil {
 		return err
@@ -293,12 +303,25 @@ func (s Service) MarkLoaded(ctx context.Context, profile *authorization.Profile,
 	if load.Status == domain.LoadLoaded {
 		return nil
 	}
-	if err := s.Repo.SetLoadStatus(ctx, load.ID, domain.LoadLoaded, actor(profile)); err != nil {
+	if err := s.Repo.SetLoaded(ctx, load.ID, actor(profile), entry); err != nil {
 		return err
 	}
 	telemetry.LoadingOrdersCompleted.Inc()
-	s.Peers.Publish(ctx, audit.ActionOrderLoaded, actor(profile), "ORDER", orderID, map[string]any{"tripId": sess.TripID})
+	s.Peers.Publish(ctx, audit.ActionOrderLoaded, actor(profile), "ORDER", orderID, loadedAuditDetail(sess.TripID, entry))
 	return nil
+}
+
+// loadedAuditDetail is the audit payload of a load confirmation: the trip and how
+// the line was entered, so a typed ID and its reason can be found later.
+func loadedAuditDetail(tripID string, e domain.LoadEntry) map[string]any {
+	d := map[string]any{"tripId": tripID, "entryMethod": first(e.Method, domain.EntryUnknown)}
+	if e.Manual() {
+		d["reasonCode"] = e.ReasonCode
+		if e.Note != "" {
+			d["note"] = e.Note
+		}
+	}
+	return d
 }
 
 func validIssueType(typ string) bool {
@@ -767,6 +790,7 @@ func (s Service) detailFromSession(ctx context.Context, profile *authorization.P
 			"weightKg": ord.OrderWeightKg, "volumeM3": ord.OrderVolumeM3,
 			"changedInVersion": l.ChangedInVersion, "changeNote": l.ChangeNote,
 		}
+		addEntry(row, l)
 		if a, ok := allocBy[l.OrderID]; ok {
 			addAccess(row, a)
 		}
@@ -780,7 +804,7 @@ func (s Service) detailFromSession(ctx context.Context, profile *authorization.P
 		"tripId": sess.TripID, "planId": sess.PlanID, "planRef": sess.PlanRef, "deliveryDate": sess.DeliveryDate,
 		"vehicleId": sess.VehicleID, "depot": sess.Depot, "status": sess.Status,
 		"tripNumber": sess.TripNumber, "vehicleType": sess.VehicleType, "vehicleTemperatureCapability": sess.VehicleTemperatureCapability,
-		"loadedCount": loaded, "shortfallCount": short, "pendingCount": pend,
+		"loadedCount": loaded, "shortfallCount": short, "pendingCount": pend, "manualEntryCount": manualEntryCount(loads),
 		"planVersion": sess.PlanVersion, "preparedPlanVersion": sess.PlanVersion, "acknowledgedVersion": 0,
 		"planChanged": false, "changes": []map[string]any{},
 		"readyBy": sess.ReadyBy, "readyAt": sess.ReadyAt, "readyTemperatureC": sess.ReadyTemperatureC, "readySeal": sess.ReadySeal,
@@ -1042,6 +1066,33 @@ func tripSummary(t domain.PlanningTrip) map[string]any {
 		"depot": t.VehicleDepot, "vehicleType": t.VehicleType, "planVersion": t.PlanVersion,
 		"vehicleTemperatureCapability": t.VehicleTemperatureCapability, "stopCount": len(t.Allocations),
 	}
+}
+
+// addEntry adds how a loaded line was confirmed to its detail row. A loaded line
+// with no recorded method (loaded before LD-6, or by a client that sent none) is
+// UNKNOWN; a line that is not loaded has no entry.
+func addEntry(row map[string]any, l domain.OrderLoad) {
+	if l.Status != domain.LoadLoaded {
+		return
+	}
+	row["entryMethod"] = first(l.EntryMethod, domain.EntryUnknown)
+	if l.EntryMethod == domain.EntryManual {
+		row["manualReasonCode"] = l.ManualReason
+		if l.ManualNote != "" {
+			row["manualNote"] = l.ManualNote
+		}
+	}
+}
+
+// manualEntryCount is how many loaded lines had their order ID typed, not scanned.
+func manualEntryCount(loads []domain.OrderLoad) int {
+	n := 0
+	for _, l := range loads {
+		if l.Status == domain.LoadLoaded && l.EntryMethod == domain.EntryManual {
+			n++
+		}
+	}
+	return n
 }
 
 func counts(loads []domain.OrderLoad) (loaded, short, pending int) {

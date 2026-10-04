@@ -48,6 +48,8 @@ type stubLoader struct {
 	getErr       error
 	startErr     error
 	startVersion int
+	loadEntry    domain.LoadEntry
+	loadCalls    int
 	loadErr      error
 	issueErr     error
 	readyErr     error
@@ -64,7 +66,9 @@ func (s *stubLoader) Start(_ context.Context, _ *authorization.Profile, _ string
 	s.startVersion = expectedPlanVersion
 	return s.detail, s.startErr
 }
-func (s *stubLoader) MarkLoaded(context.Context, *authorization.Profile, string, string) error {
+func (s *stubLoader) MarkLoaded(_ context.Context, _ *authorization.Profile, _, _ string, entry domain.LoadEntry) error {
+	s.loadEntry = entry
+	s.loadCalls++
 	return s.loadErr
 }
 func (s *stubLoader) CreateIssue(context.Context, *authorization.Profile, string, string, string, string, string, int) (domain.Issue, error) {
@@ -250,5 +254,61 @@ func TestInternalReadyAllowedToDispatcher(t *testing.T) {
 	testRouter("usr-dispatcher", &stubLoader{list: []map[string]any{{"tripId": "t1"}}}).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/loading/internal/trips?date=2026-09-29", nil))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("dispatcher internal %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func putLoaded(svc *stubLoader, body string) *httptest.ResponseRecorder {
+	rec := httptest.NewRecorder()
+	var rd io.Reader
+	if body != "" {
+		rd = bytes.NewBufferString(body)
+	}
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/loading/trips/t1/orders/o1/loaded", rd)
+	testRouter("usr-loader", svc).ServeHTTP(rec, req)
+	return rec
+}
+
+func TestLoadedManualWithoutReasonIsRejected(t *testing.T) {
+	for _, body := range []string{`{"entryMethod":"MANUAL"}`, `{"entryMethod":"MANUAL","reasonCode":""}`, `{"entryMethod":"MANUAL","reasonCode":"BORED"}`} {
+		svc := &stubLoader{}
+		rec := putLoaded(svc, body)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("%s: status %d, want 400 (%s)", body, rec.Code, rec.Body.String())
+		}
+		if svc.loadCalls != 0 {
+			t.Fatalf("%s: a typed ID without a reason reached the service", body)
+		}
+	}
+}
+
+func TestLoadedManualWithReasonReachesTheService(t *testing.T) {
+	svc := &stubLoader{}
+	rec := putLoaded(svc, `{"entryMethod":"MANUAL","reasonCode":"DAMAGED_LABEL","note":"torn corner"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	want := domain.LoadEntry{Method: "MANUAL", ReasonCode: "DAMAGED_LABEL", Note: "torn corner"}
+	if svc.loadEntry != want {
+		t.Fatalf("entry = %+v, want %+v", svc.loadEntry, want)
+	}
+}
+
+func TestLoadedWithoutBodyIsALegacyEntry(t *testing.T) {
+	svc := &stubLoader{}
+	if rec := putLoaded(svc, ""); rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	if svc.loadCalls != 1 || svc.loadEntry != (domain.LoadEntry{}) {
+		t.Fatalf("legacy call = %d calls, entry %+v", svc.loadCalls, svc.loadEntry)
+	}
+}
+
+func TestLoadedScanAndMalformedBody(t *testing.T) {
+	svc := &stubLoader{}
+	if rec := putLoaded(svc, `{"entryMethod":"SCAN"}`); rec.Code != http.StatusOK || svc.loadEntry.Method != "SCAN" {
+		t.Fatalf("scan: status %d entry %+v", rec.Code, svc.loadEntry)
+	}
+	if rec := putLoaded(&stubLoader{}, `{not json`); rec.Code != http.StatusBadRequest {
+		t.Fatalf("malformed body: status %d", rec.Code)
 	}
 }
