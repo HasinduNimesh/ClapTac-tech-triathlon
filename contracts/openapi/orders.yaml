@@ -49,6 +49,27 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "500": { $ref: "#/components/responses/Internal" }
+  /orders/cutoff:
+    get:
+      operationId: getOrderCutoff
+      security: [{ bearerAuth: [] }]
+      description: >
+        The daily order cutoff the service applies, as HH:MM in Sri Lanka time: the planning policy's
+        (a dispatcher can change it), or 16:00 when the policy cannot be read. Screens that tell people
+        the cutoff read it from here. Requires order:view-own or order:view-all.
+      responses:
+        "200":
+          description: Cutoff
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cutoff:
+                    type: object
+                    properties:
+                      localTime: { type: string, example: "16:00" }
+                      timezone: { type: string, example: Asia/Colombo }
   /orders/{id}:
     get:
       operationId: getOrder

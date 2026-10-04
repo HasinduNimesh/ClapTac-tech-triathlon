@@ -26,7 +26,7 @@ func main() {
 	}
 	defer pool.Close()
 	sharedStore := store.Store{Pool: pool}
-	tokens := &oauth.TokenSource{TokenURL: getenv("OIDC_TOKEN_URL", "http://thunderid:8090/oauth2/token"), ClientID: getenv("M2M_CLIENT_ID", "waypoint-shared-service"), ClientSecret: os.Getenv("M2M_CLIENT_SECRET"), Scope: "notifications:send"}
+	tokens := &oauth.TokenSource{TokenURL: getenv("OIDC_TOKEN_URL", "http://thunderid:8090/oauth2/token"), ClientID: getenv("M2M_CLIENT_ID", "waypoint-shared-service"), ClientSecret: os.Getenv("M2M_CLIENT_SECRET"), Scope: "notifications:send", Resource: getenv("OIDC_AUDIENCE", "waypoint-api")}
 	workerCtx, cancelWorker := context.WithCancel(context.Background())
 	defer cancelWorker()
 	go (notifyworker.Runner{Store: sharedStore, Tokens: tokens, IntegrationURL: getenv("INTEGRATION_SERVICE_URL", "http://integration-service:8080"), Logger: app.Logger}).Run(workerCtx)

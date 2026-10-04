@@ -201,7 +201,7 @@ void main() {
       expect(await kind(MockClient((_) async => http.Response('', 401))), TripsFailureKind.unauthorized);
       expect(await kind(MockClient((_) async => http.Response('', 403))), TripsFailureKind.forbidden);
       expect(await kind(MockClient((_) async => http.Response('', 404))), TripsFailureKind.notFound);
-      expect(await kind(MockClient((_) async => http.Response('', 500))), TripsFailureKind.unavailable);
+      expect(await kind(MockClient((_) async => http.Response('', 500))), TripsFailureKind.serverProblem);
       expect(await kind(MockClient((_) async => http.Response('not json', 200))), TripsFailureKind.unavailable);
       expect(await kind(MockClient((_) async => throw const SocketException('down'))), TripsFailureKind.unavailable);
     });
@@ -276,7 +276,13 @@ void main() {
       expect(rejected.signInExpired, isTrue);
       final down = await source(MockClient((_) async => http.Response('', 503))).loadToday();
       expect(down.signInExpired, isFalse);
-      expect(down.failure, contains('Could not reach Waypoint'));
+      expect(down.failure, contains('Waypoint had a problem loading your route (error 503)'));
+      expect(down.failure, isNot(contains('connection')), reason: 'Waypoint answered, so the phone is connected; do not send the driver looking for signal');
+    });
+
+    test('no answer at all is still a connection problem', () async {
+      final offline = await source(MockClient((_) async => throw const SocketException('down'))).loadToday();
+      expect(offline.failure, contains('Check your connection'));
     });
   });
 
