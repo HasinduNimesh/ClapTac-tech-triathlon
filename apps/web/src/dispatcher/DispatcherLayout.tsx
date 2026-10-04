@@ -86,6 +86,7 @@ export function DispatcherLayout() {
       <hr className="sm-sidebar-hr sm-sidebar-hr--mid" />
       <nav className="sm-nav sm-nav--secondary" aria-label={t("Secondary")}>
         {item("/dispatcher/notifications", t("Notifications"), iconBell, 15, 16, alertCount)}
+        {item("/dispatcher/automations", t("My automations"), iconHistory, 20, 20)}
         {item("/dispatcher/settings", t("Settings"), iconSetting, 20, 20)}
         {item("/dispatcher/help", t("Help & Guide"), iconHelp, 6, 18)}
       </nav>

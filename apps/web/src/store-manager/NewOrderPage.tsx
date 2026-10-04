@@ -1,5 +1,6 @@
-import { FormEvent, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { FormEvent, useEffect, useRef, useState } from "react";
+import { Prefill } from "../automations/types";
+import { Link, useLocation } from "react-router-dom";
 import { ApiError, apiJSON, Order } from "../api/client";
 import { todayInSriLanka } from "../api/date.mjs";
 import { useAuth } from "../auth/AuthContext";
@@ -27,15 +28,22 @@ export function NewOrderPage() {
   const { user, profile } = useAuth();
   const { t } = useLocale();
   const minDate = todayInSriLanka();
+  const location = useLocation();
+  const candidate = location.state?.prefillOwner === profile?.userId ? location.state?.habitPrefill as Prefill | undefined : undefined;
+  const prefill = candidate && profile?.outletIds?.includes(candidate.outletId) && Number.isInteger(candidate.orderUnits) && candidate.orderUnits > 0 && candidate.orderWeightKg > 0 && candidate.orderVolumeM3 > 0 && ["ambient","chilled"].includes(candidate.temperatureRequirement) ? candidate : undefined;
   const [date, setDate] = useState(minDate);
-  const [temp, setTemp] = useState<"ambient" | "chilled">("ambient");
-  const [units, setUnits] = useState("");
-  const [weight, setWeight] = useState("");
-  const [volume, setVolume] = useState("");
+  const [temp, setTemp] = useState<"ambient" | "chilled">(prefill?.temperatureRequirement || "ambient");
+  const [units, setUnits] = useState(prefill ? String(prefill.orderUnits) : "");
+  const [weight, setWeight] = useState(prefill ? String(prefill.orderWeightKg) : "");
+  const [volume, setVolume] = useState(prefill ? String(prefill.orderVolumeM3) : "");
   const [created, setCreated] = useState<Order | null>(null);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const inFlight = useRef(false);
+  useEffect(() => {
+    if (!prefill) return;
+    setUnits(String(prefill.orderUnits)); setWeight(String(prefill.orderWeightKg)); setVolume(String(prefill.orderVolumeM3)); setTemp(prefill.temperatureRequirement); setCreated(null);
+  }, [location.key]);
 
   const outlet = profile?.outletIds?.[0] || "";
   const goods = temp === "chilled" ? t("Chilled") : t("Ambient");
@@ -140,6 +148,7 @@ export function NewOrderPage() {
       {helpers?.order && user?.access_token && <OrderHelperLauncher token={user.access_token} onFill={fillFromText} />}
 
       <form className="sm-page-body sm-order-form" onSubmit={onSubmit} aria-describedby={error ? "order-error" : undefined}>
+        {prefill && <p className="auto-notice">{t("Prepared from your regular order. Check the delivery date and quantities before submitting.")}</p>}
         {error && <p id="order-error" className="status-bad sm-form-error" role="alert">{error}</p>}
         <div className="sm-order-form-grid">
           <div className="sm-order-form-main">
