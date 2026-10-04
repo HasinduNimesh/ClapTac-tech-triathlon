@@ -4,7 +4,8 @@ import { useAuth } from "../auth/AuthContext";
 import { useLocale } from "../i18n";
 import { DashboardGrid } from "./DashboardCards";
 import { useHelpersAvailable } from "../api/assistants";
-import { AssistantTurn, Dashboard, applyRequest, askAssistant, newDashboardId, saveToServer, useDashboards } from "./dashboards";
+import { AssistantTurn, CARD_CATALOGUE, CardId, Dashboard, applyRequest, askAssistant, newDashboardId, saveToServer, useDashboards } from "./dashboards";
+import { HelperUnavailableNote } from "./HelperUnavailableNote";
 import { StoreManagerHero } from "./StoreManagerHero";
 import { useOrderTrackings } from "./useOrderTrackings";
 
@@ -27,6 +28,7 @@ export function CreateDashboardPage() {
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [helperFailed, setHelperFailed] = useState(false);
   const loadedExisting = useRef(false);
   // Saved dashboards arrive from the server after the first render.
   useEffect(() => {
@@ -43,11 +45,17 @@ export function CreateDashboardPage() {
     setMessage("");
     // The dashboard assistant reads the request when it is on; otherwise the
     // built-in keyword matcher keeps the screen working.
-    const result = (helpers?.dashboard && (await askAssistant(token, draft, value, locale))) || applyRequest(draft, value);
+    const assisted = helpers?.dashboard ? await askAssistant(token, draft, value, locale) : null;
+    if (helpers?.dashboard) setHelperFailed(!assisted);
+    const result = assisted || applyRequest(draft, value);
     setDraft(result.draft);
     setTurns((all) => [...all, { from: "assistant", text: result.reply }]);
     setBusy(false);
   }
+  // Off when the status says so (or a request just failed). Chat keeps working through the keyword
+  // matcher and the cards can be ticked by hand, so a dashboard can always be built and saved.
+  const helperOff = helpers !== null && (!helpers.dashboard || helperFailed);
+  const toggleCard = (id: CardId) => setDraft({ ...draft, cards: draft.cards.includes(id) ? draft.cards.filter((c) => c !== id) : [...draft.cards, id], updatedAt: new Date().toISOString() });
   function send(e: FormEvent) { e.preventDefault(); void ask(message); }
   async function save() {
     if (!draft.cards.length || busy) return;
@@ -75,6 +83,17 @@ export function CreateDashboardPage() {
               {turns.map((turn, i) => <p key={i} className={`sm-bubble sm-bubble--${turn.from}`}>{turn.text}</p>)}
               {turns.length === 1 && <div className="dp-chips">{SUGGESTIONS.map((s) => <button key={s} type="button" className="dp-chip" onClick={() => void ask(s)}>{t(s)}</button>)}</div>}
             </div>
+            {helperOff && (
+              <div className="sm-helper-off">
+                <HelperUnavailableNote />
+                <fieldset className="sm-card-picker">
+                  <legend>{t("Pick the cards by hand")}</legend>
+                  {CARD_CATALOGUE.map((c) => (
+                    <label key={c.id}><input type="checkbox" checked={draft.cards.includes(c.id)} onChange={() => toggleCard(c.id)} /> {t(c.title)}</label>
+                  ))}
+                </fieldset>
+              </div>
+            )}
             <form className="sm-chat-compose" onSubmit={send}>
               <input value={message} onChange={(e) => setMessage(e.target.value)} placeholder={t('Ask for a change, e.g. "add deferrals by reason"')} aria-label={t("Message the dashboard assistant")} maxLength={300} />
               <button type="submit" className="dp-btn" disabled={!message.trim() || busy}>{t("Send")}</button>

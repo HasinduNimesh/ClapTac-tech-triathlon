@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { apiJSON } from "./client";
+import { helperStatusFrom } from "../store-manager/helperAvailability.mjs";
 import type { CatalogProduct, DraftLine, PreviousOrder } from "../store-manager/orderDraft.mjs";
 
 export type OrderQuestion = {
@@ -53,7 +54,7 @@ export function useHelpersAvailable(token: string | undefined) {
     if (!token) return;
     let live = true;
     apiJSON<{ orderAssistant: boolean; dashboardAssistant: boolean }>("/agent/assistants/status", token)
-      .then((s) => { if (live) setAvailable({ order: s.orderAssistant, dashboard: s.dashboardAssistant }); })
+      .then((s) => { if (live) setAvailable(helperStatusFrom(s)); })
       .catch(() => { if (live) setAvailable({ order: false, dashboard: false }); });
     return () => { live = false; };
   }, [token]);

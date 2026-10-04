@@ -23,6 +23,9 @@ function SparklesIcon() {
 export function OrderHelperLauncher({ token, onFill }: { token: string; onFill: (fill: FormFill, neededBy: string | null) => void }) {
   const { t } = useLocale();
   const [open, setOpen] = useState(false);
+  // Set when the helper reports it is switched off. The panel then shows one calm line, and the button
+  // is dropped as soon as the panel is closed.
+  const [off, setOff] = useState(false);
   const button = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -34,6 +37,8 @@ export function OrderHelperLauncher({ token, onFill }: { token: string; onFill: 
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [open]);
+
+  if (off && !open) return null;
 
   return (
     <>
@@ -51,7 +56,7 @@ export function OrderHelperLauncher({ token, onFill }: { token: string; onFill: 
       </button>
       <aside id="order-helper-panel" className={`sm-ai-drawer${open ? " open" : ""}`} aria-label={t("Paste or type your order")} hidden={!open}>
         <button type="button" className="sm-ai-drawer-close" aria-label={t("Close")} onClick={() => { setOpen(false); button.current?.focus(); }}>×</button>
-        <OrderTextHelper token={token} onFill={(fill, neededBy) => { onFill(fill, neededBy); setOpen(false); }} />
+        <OrderTextHelper token={token} onUnavailable={() => setOff(true)} onFill={(fill, neededBy) => { onFill(fill, neededBy); setOpen(false); }} />
       </aside>
     </>
   );
