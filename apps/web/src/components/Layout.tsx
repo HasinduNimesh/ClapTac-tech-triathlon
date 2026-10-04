@@ -57,7 +57,7 @@ export function Layout() {
             <Link to="/dispatcher/master-data">{t("Master data")}</Link>
             <Link to="/dispatcher/forecast">{t("Forecast")}</Link>
           </>}
-          {role === "LOADER" && <Link to="/loader/loading">{t("Loading")}</Link>}
+          {role === "LOADER" && <a href="/loader-app/">{t("Loading")}</a>}
           {role === "DRIVER" && <Link to="/driver/trips">{t("My route")}</Link>}
           {user && <button type="button" onClick={onSignOut}>{t(role === "LOADER" ? "Switch user" : "Sign out")}</button>}
           <label className="language-picker">{t("Language")}<select aria-label={t("Language")} value={locale} onChange={e => setLocale(e.target.value as "en" | "si" | "ta")}><option value="en">{t("English")}</option><option value="si">{t("Sinhala")}</option><option value="ta">{t("Tamil")}</option></select></label>

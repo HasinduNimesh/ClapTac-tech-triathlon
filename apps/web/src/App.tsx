@@ -28,8 +28,7 @@ const DispatcherHelpPage = lazy(() => import("./dispatcher/DispatcherHelpPage").
 const PlanningPage = lazy(() => import("./dispatcher/PlanningPage").then((m) => ({ default: m.PlanningPage })));
 const DriverPage = lazy(() => import("./driver/DriverPage").then((m) => ({ default: m.DriverPage })));
 const DriverTripsPage = lazy(() => import("./driver/DriverTripsPage").then((m) => ({ default: m.DriverTripsPage })));
-const LoadingPage = lazy(() => import("./loader/LoadingPage").then((m) => ({ default: m.LoadingPage })));
-const LoaderPage = lazy(() => import("./loader/LoaderPage").then((m) => ({ default: m.LoaderPage })));
+const LoaderAppRedirect = lazy(() => import("./loader/LoaderAppRedirect").then((m) => ({ default: m.LoaderAppRedirect })));
 const NewOrderPage = lazy(() => import("./store-manager/NewOrderPage").then((m) => ({ default: m.NewOrderPage })));
 const OrderListPage = lazy(() => import("./store-manager/OrderListPage").then((m) => ({ default: m.OrderListPage })));
 const StoreManagerDashboardPage = lazy(() => import("./store-manager/StoreManagerDashboardPage").then((m) => ({ default: m.StoreManagerDashboardPage })));
@@ -82,8 +81,8 @@ function AppRoutes() {
         <Route element={<Layout />}>
           <Route path="/" element={<HomePage />} />
           <Route path="/auth/callback" element={<CallbackPage />} />
-          <Route path="/loader" element={<RoleGate role="LOADER"><LoaderPage /></RoleGate>} />
-          <Route path="/loader/loading" element={<RoleGate role="LOADER"><LoadingPage /></RoleGate>} />
+          <Route path="/loader" element={<RoleGate role="LOADER"><LoaderAppRedirect /></RoleGate>} />
+          <Route path="/loader/loading" element={<RoleGate role="LOADER"><LoaderAppRedirect /></RoleGate>} />
           <Route path="/driver" element={<RoleGate role="DRIVER"><DriverPage /></RoleGate>} />
           <Route path="/driver/trips" element={<RoleGate role="DRIVER"><DriverTripsPage /></RoleGate>} />
           <Route path="*" element={<NotFoundPage />} />
