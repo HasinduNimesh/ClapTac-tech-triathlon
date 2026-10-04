@@ -5,6 +5,7 @@ import 'app/demo_flags.dart';
 import 'app/driver_flow.dart';
 import 'app/driver_session.dart';
 import 'auth/auth_config.dart';
+import 'connectivity/connectivity_monitor.dart';
 import 'auth/auth_gateway.dart';
 import 'auth/auth_store.dart';
 import 'auth/oidc_client.dart';
@@ -55,6 +56,8 @@ void main() {
     worker: services.worker,
     // Real photos and signatures only with a real sign-in; demo builds say capture is unavailable.
     capturer: services.auth == null ? null : DeviceProofCapturer(store: FileProofStore()),
+    // Only a real sign-in needs the network; demo builds stay online.
+    connectivity: services.auth == null ? null : PlatformConnectivityMonitor(),
     // Demo switches are forced off in release builds (see DemoFlags).
     demoAuth: demo.auth,
     demoRoute: demo.route,
@@ -76,6 +79,7 @@ class WaypointDriverApp extends StatefulWidget {
     this.messageSource,
     this.worker,
     this.capturer,
+    this.connectivity,
   });
 
   final LocalDatabase database;
@@ -89,6 +93,7 @@ class WaypointDriverApp extends StatefulWidget {
   final MessageSource? messageSource;
   final DeliverySyncWorker? worker;
   final ProofCapturer? capturer;
+  final ConnectivityMonitor? connectivity;
 
   @override
   State<WaypointDriverApp> createState() => _WaypointDriverAppState();
@@ -106,6 +111,7 @@ class _WaypointDriverAppState extends State<WaypointDriverApp> {
     starter: widget.starter,
     messageSource: widget.messageSource,
     worker: widget.worker,
+    connectivity: widget.connectivity,
   );
 
   @override

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../auth/auth_gateway.dart';
+import '../connectivity/connectivity_monitor.dart';
 import '../auth/profile_api.dart';
 import '../data/driver_models.dart';
 import '../data/sample_data.dart';
@@ -51,6 +52,7 @@ class DriverSession extends ChangeNotifier {
     this.trips,
     this.worker,
     this.starter,
+    this.connectivity,
     this.messageSource,
     this.messagePollInterval = const Duration(seconds: 30),
   })  : _initialTrip = trip ?? ((demoRoute || (auth == null && demoAuth)) ? sampleTrip : null),
@@ -64,6 +66,7 @@ class DriverSession extends ChangeNotifier {
       if (signedIn) _refreshPending();
       notifyListeners();
     };
+    _watchConnectivity();
     if (demoUpdates) {
       updates.add(const UpdateItem(
         id: planConflictId,
@@ -76,6 +79,42 @@ class DriverSession extends ChangeNotifier {
   }
 
   static const planConflictId = 'plan-conflict';
+
+  /// Tells the session when the phone gains or loses its network. Null in demo and test sessions,
+  /// which then always count as online.
+  final ConnectivityMonitor? connectivity;
+  StreamSubscription<bool>? _connectivitySubscription;
+
+  /// Whether the phone reports a network. See also [offline].
+  bool deviceOnline = true;
+
+  /// True when the phone has no network, or the last attempt to reach Waypoint failed. What the driver
+  /// records is saved on the phone either way and sent when the connection is back.
+  bool get offline => !deviceOnline || syncProgress == SyncProgress.offline;
+
+  void _watchConnectivity() {
+    final monitor = connectivity;
+    if (monitor == null) return;
+    _connectivitySubscription = monitor.changes.listen(_onlineChanged);
+    unawaited(monitor.isOnline().then(_onlineChanged));
+  }
+
+  void _onlineChanged(bool online) {
+    if (online == deviceOnline) return;
+    deviceOnline = online;
+    notifyListeners();
+    if (online) unawaited(_onReconnected());
+  }
+
+  /// The network is back: send what is waiting and retry what failed for lack of it, instead of
+  /// waiting for the next timer tick.
+  Future<void> _onReconnected() async {
+    if (!signedIn) return;
+    if (tripsError != null && !hasRoute) await loadTrips();
+    if (tripStartState == TripStartState.waiting && loadResolved) await startTrip();
+    await worker?.syncNow();
+    await _refreshPending();
+  }
 
   /// Reads and acknowledges dispatch's messages about the trip. Null in demo and test sessions.
   final MessageSource? messageSource;
@@ -177,6 +216,7 @@ class DriverSession extends ChangeNotifier {
 
   @override
   void dispose() {
+    unawaited(_connectivitySubscription?.cancel());
     _messageTimer?.cancel();
     worker?.onProgress = null;
     super.dispose();

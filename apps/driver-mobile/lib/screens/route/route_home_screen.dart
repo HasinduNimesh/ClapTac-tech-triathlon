@@ -18,9 +18,13 @@ class RouteHomeScreen extends StatefulWidget {
     required this.onViewStop,
     required this.onReportProblem,
     this.onTabSelected,
+    this.offline = false,
   });
 
   final TripInfo trip;
+
+  /// No connection: shows that what the driver records is saved on the phone and sent later.
+  final bool offline;
   final VoidCallback onViewStop;
   final VoidCallback onReportProblem;
   final ValueChanged<DriverTab>? onTabSelected;
@@ -54,6 +58,17 @@ class _RouteHomeScreenState extends State<RouteHomeScreen> {
             icon: SvgIcon(AppAssets.shieldRed, size: 20),
           ),
           const SizedBox(height: 15),
+          if (widget.offline) ...[
+            Semantics(
+              liveRegion: true,
+              child: const NoteBanner(
+                title: 'No connection',
+                text: 'You can keep working. What you record is saved on this phone and sent when you are back online.',
+                tone: NoteTone.offline,
+              ),
+            ),
+            const SizedBox(height: 15),
+          ],
           _VehicleCard(trip: trip, textStyle: black),
           const SizedBox(height: 13),
           _Progress(completed: trip.completedStops, total: trip.stops.length),
