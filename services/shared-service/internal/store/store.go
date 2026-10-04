@@ -185,6 +185,8 @@ type NotificationEvent struct {
 	Resolution string `json:"resolution,omitempty"`
 	FollowupDate string `json:"followupDate,omitempty"`
 	NewArrivalAt string `json:"newArrivalAt,omitempty"`
+	// For LOAD_SHORTFALL, Units is the number of units short and Reason carries the
+	// dispatcher decision (PARTIAL_LOAD, HOLD or MOVE_TO_NEXT_RUN).
 }
 
 type EnqueueResult struct {
@@ -195,7 +197,7 @@ type EnqueueResult struct {
 func (s Store) EnqueueNotification(ctx context.Context, e NotificationEvent) (EnqueueResult, error) {
 	var phone, locale string
 	var enabled bool
-	err := s.Pool.QueryRow(ctx, `SELECT phone_e164,locale,consent_enabled AND CASE $2 WHEN 'DEFERRAL' THEN deferrals_enabled WHEN 'MAJOR_DELAY' THEN major_delays_enabled WHEN 'ARRIVAL_CHANGE' THEN major_delays_enabled WHEN 'DELIVERY_REJECTED' THEN deferrals_enabled ELSE false END FROM shared.outlet_notification_preferences WHERE outlet_id=$1`, e.OutletID, e.Type).Scan(&phone, &locale, &enabled)
+	err := s.Pool.QueryRow(ctx, `SELECT phone_e164,locale,consent_enabled AND CASE $2 WHEN 'DEFERRAL' THEN deferrals_enabled WHEN 'LOAD_SHORTFALL' THEN deferrals_enabled WHEN 'MAJOR_DELAY' THEN major_delays_enabled WHEN 'ARRIVAL_CHANGE' THEN major_delays_enabled WHEN 'DELIVERY_REJECTED' THEN deferrals_enabled ELSE false END FROM shared.outlet_notification_preferences WHERE outlet_id=$1`, e.OutletID, e.Type).Scan(&phone, &locale, &enabled)
 	if err != nil {
 		return EnqueueResult{}, err
 	}
@@ -223,6 +225,8 @@ func (s Store) EnqueueNotification(ctx context.Context, e NotificationEvent) (En
 		default:
 			body = fmt.Sprintf("Waypoint: order %s arrival changed from %s to %s (Sri Lanka time).", e.OrderRef, oldText, newText)
 		}
+	} else if e.Type == "LOAD_SHORTFALL" {
+		body = ShortfallBody(locale, e)
 	} else {
 		reason := notificationReason(locale, e.Reason)
 		switch locale {
@@ -776,4 +780,26 @@ func (s Store) insertAuditTx(ctx context.Context, tx pgx.Tx, ev audit.Event) err
 	_, err := tx.Exec(ctx, `INSERT INTO audit.events(event_id,correlation_id,actor_id,actor_type,action,resource_type,resource_id,previous_state,new_state,reason,timestamp,source)
 	VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`, ev.EventID, ev.CorrelationID, ev.ActorID, ev.ActorType, ev.Action, ev.ResourceType, ev.ResourceID, prev, next, ev.Reason, ev.Timestamp, ev.Source)
 	return err
+}
+
+// ShortfallBody is the plain-language store notice for a loader shortfall
+// after the dispatcher has decided what will arrive.
+func ShortfallBody(locale string, e NotificationEvent) string {
+	type phrase struct{ en, si, ta string }
+	outcomes := map[string]phrase{
+		"PARTIAL_LOAD":     {"the rest will arrive on the next delivery", "ඉතිරිය ඊළඟ බෙදාහැරීමේදී පැමිණේ", "மீதமுள்ளவை அடுத்த விநியோகத்தில் வரும்"},
+		"HOLD":             {"delivery is on hold until the goods are ready", "භාණ්ඩ සූදානම් වන තුරු බෙදාහැරීම රඳවා ඇත", "பொருட்கள் தயாராகும் வரை விநியோகம் நிறுத்தப்பட்டுள்ளது"},
+		"MOVE_TO_NEXT_RUN": {"this order moves to the next delivery run", "මෙම ඇණවුම ඊළඟ බෙදාහැරීමට මාරු කර ඇත", "இந்த ஆர்டர் அடுத்த விநியோகத்துக்கு மாற்றப்பட்டது"},
+	}
+	o, ok := outcomes[e.Reason]
+	if !ok {
+		o = outcomes["PARTIAL_LOAD"]
+	}
+	switch locale {
+	case "si":
+		return fmt.Sprintf("Waypoint: ඇණවුම %s සඳහා ඒකක %d ක් අඩුය; %s.", e.OrderRef, e.Units, o.si)
+	case "ta":
+		return fmt.Sprintf("Waypoint: ஆர்டர் %s இல் %d அலகுகள் குறைவு; %s.", e.OrderRef, e.Units, o.ta)
+	}
+	return fmt.Sprintf("Waypoint: order %s is %d units short; %s.", e.OrderRef, e.Units, o.en)
 }

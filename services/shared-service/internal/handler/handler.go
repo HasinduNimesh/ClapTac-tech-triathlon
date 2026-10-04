@@ -124,6 +124,11 @@ func (h Handler) enqueueNotification(w http.ResponseWriter, r *http.Request) {
             apierrors.BadRequest(w, "valid follow-up date required")
             return
         }
+	} else if e.Type == "LOAD_SHORTFALL" {
+		if e.Units < 1 || e.Units > 100000 || (e.Reason != "PARTIAL_LOAD" && e.Reason != "HOLD" && e.Reason != "MOVE_TO_NEXT_RUN") {
+			apierrors.BadRequest(w, "load shortfall needs units and a dispatcher decision")
+			return
+		}
 	} else if e.Type == "ARRIVAL_CHANGE" {
 		oldETA, oldErr := time.Parse(time.RFC3339Nano, e.OldArrivalAt)
 		newETA, newErr := time.Parse(time.RFC3339Nano, e.NewArrivalAt)
