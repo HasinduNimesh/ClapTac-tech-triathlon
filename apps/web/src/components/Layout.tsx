@@ -50,6 +50,7 @@ export function Layout() {
             <Link to="/store-manager/receipts">{t("Receipts")}</Link>
           </>}
           {role === "DISPATCHER" && <>
+            <Link to="/dispatcher/automations">{t("My automations")}</Link>
             <Link to="/dispatcher/orders">{t("Orders")}</Link>
             <Link to="/dispatcher/planning">{t("Planning")}</Link>
             <Link to="/dispatcher/audit">{t("Audit & KPIs")}</Link>

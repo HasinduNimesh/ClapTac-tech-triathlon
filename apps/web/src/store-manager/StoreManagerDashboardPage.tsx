@@ -1,8 +1,7 @@
 import { Link, useSearchParams } from "react-router-dom";
-import { useAuth } from "../auth/AuthContext";
 import { DashboardGrid } from "./DashboardCards";
 import { DashboardMenu } from "./DashboardMenu";
-import { loadDashboards } from "./dashboards";
+import { useDashboards } from "./dashboards";
 import { useLocale } from "../i18n";
 import { ESTIMATES_UNAVAILABLE_MESSAGE, validArrivalAt } from "../api/estimateAvailability.mjs";
 import { formatCutoff, withTime } from "./cutoff.mjs";
@@ -27,8 +26,10 @@ function Chevron() {
 function nextStep(row: Tracking, t: (key: string) => string) {
   if (needsReceipt(row.stage)) return <Link to={`/store-manager/receipts?order=${encodeURIComponent(row.order.id)}`} className="sm-track-link">{t("Confirm receipt")}</Link>;
   if (isDeferred(row.stage)) return t("Awaiting a new run");
-  if (validArrivalAt(row.planning.plannedArrivalAt) && (row.stage === "PLANNED" || row.stage === "READY_FOR_DEPARTURE" || row.stage === "OUT_FOR_DELIVERY")) {
-    return `${t("ETA")} ${colomboTime(row.planning.plannedArrivalAt)}`;
+  const eta = row.delivery?.arrivalPrediction?.estimatedArrivalAt || row.planning.plannedArrivalAt;
+  if (validArrivalAt(eta) && (row.stage === "PLANNED" || row.stage === "READY_FOR_DEPARTURE" || row.stage === "OUT_FOR_DELIVERY")) {
+    return `${t("ETA")} ${colomboTime(eta)}`;
+
   }
   if (row.stage === "CONFIRMED") return t("Awaiting dispatch planning");
   return t("Complete");
@@ -37,12 +38,9 @@ function nextStep(row: Tracking, t: (key: string) => string) {
 export function StoreManagerDashboardPage() {
   const { t, locale } = useLocale();
   const cutoffTime = formatCutoff(useOrderCutoff(), locale);
-  const { profile } = useAuth();
   const [params, setParams] = useSearchParams();
   const { rows, loading, loadFailed, unavailable, reload } = useOrderTrackings();
-  const userId = profile?.userId || "anonymous";
-  const outletId = profile?.outletIds?.[0] || "outlet";
-  const dashboards = loadDashboards(userId, outletId);
+  const { dashboards } = useDashboards();
   const selected = dashboards.find((d) => d.id === params.get("dashboard"));
   const heroActions = (
     <>
@@ -83,8 +81,9 @@ export function StoreManagerDashboardPage() {
   const deferred = rows.filter((row) => isDeferred(row.stage));
   const awaitingReceipt = rows.filter((row) => needsReceipt(row.stage));
   const attentionCount = deferred.length + awaitingReceipt.length;
-  const nextArrival = arriving.find((row) => validArrivalAt(row.planning.plannedArrivalAt));
-  const estimatesUnavailable = arriving.some((row) => !validArrivalAt(row.planning.plannedArrivalAt));
+  const nextArrival = arriving.find((row) => validArrivalAt(row.delivery?.arrivalPrediction?.estimatedArrivalAt || row.planning.plannedArrivalAt));
+  const estimatesUnavailable = arriving.some((row) => !validArrivalAt(row.delivery?.arrivalPrediction?.estimatedArrivalAt || row.planning.plannedArrivalAt));
+
   const temperature = (value: string) => (value === "chilled" ? t("Chilled") : t("Ambient"));
 
   return (
@@ -98,7 +97,8 @@ export function StoreManagerDashboardPage() {
           <div className="sm-stat-icon sm-stat-icon--blue"><img src={iconHistory} alt="" aria-hidden="true" width={24} height={24} /></div>
           <div className="sm-stat-body">
             <p className="sm-stat-label">{t("Next expected arrival")}</p>
-            <p className="sm-stat-value">{validArrivalAt(nextArrival?.planning.plannedArrivalAt) ? colomboTime(nextArrival.planning.plannedArrivalAt) : "—"}</p>
+            <p className="sm-stat-value">{validArrivalAt(nextArrival?.delivery?.arrivalPrediction?.estimatedArrivalAt || nextArrival?.planning.plannedArrivalAt) ? colomboTime((nextArrival?.delivery?.arrivalPrediction?.estimatedArrivalAt || nextArrival!.planning.plannedArrivalAt)!) : "—"}</p>
+
             <p className="sm-stat-sub sm-stat-sub--orange">
               {nextArrival ? `${t("Today")} · ${temperature(nextArrival.order.temperatureRequirement)}` : t("No arrivals today")}
             </p>
@@ -155,7 +155,8 @@ export function StoreManagerDashboardPage() {
               <div className="sm-order-card-bottom">
                 <p className="sm-order-eta">
                   <span className="muted">{t("Expected arrival:")} </span>
-                  <strong>{validArrivalAt(row.planning.plannedArrivalAt) ? colomboTime(row.planning.plannedArrivalAt) : "—"}</strong>
+                  <strong>{validArrivalAt(row.delivery?.arrivalPrediction?.estimatedArrivalAt || row.planning.plannedArrivalAt) ? colomboTime((row.delivery?.arrivalPrediction?.estimatedArrivalAt || row.planning.plannedArrivalAt)!) : "—"}</strong>
+
                 </p>
                 <Link to={`/store-manager/orders/${encodeURIComponent(row.order.id)}/track`} className="sm-track-link">{t("Track order")}<Chevron /></Link>
               </div>

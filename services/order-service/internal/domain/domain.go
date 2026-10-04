@@ -116,6 +116,7 @@ type Repository interface {
 	ListReceiptIssues() ([]ReceiptIssueView, error)
 	Forecast(now time.Time) (Forecast, error)
 	ImportOrders(source string, orders []Order) ([]ImportResult, error)
+	GetImported(source, externalID string) (Order, error)
 }
 
 type ReceiptIssueRequest struct {
@@ -161,8 +162,17 @@ type ReceiptIssue struct {
 }
 
 type ReceiptTask struct {
-	Order    Order    `json:"order"`
-	Tracking Tracking `json:"tracking"`
+	Order       Order      `json:"order"`
+	Tracking    Tracking   `json:"tracking"`
+	ReportBy    *time.Time `json:"reportBy,omitempty"`
+	ReportState string     `json:"reportState,omitempty"`
+}
+
+// ReceiptDeadline is the store's report-by deadline for an open receipt.
+// State is open, due_tomorrow, due_today or overdue.
+type ReceiptDeadline struct {
+	ReportBy time.Time `json:"reportBy"`
+	State    string    `json:"state"`
 }
 
 type ReceiptIssueView struct {
@@ -201,20 +211,52 @@ type PlanningTracking struct {
 	PlannedServiceStartAt *time.Time     `json:"plannedServiceStartAt,omitempty"`
 }
 
+type ArrivalPrediction struct {
+	StopID                   string     `json:"stopId"`
+	EstimatedArrivalAt       time.Time  `json:"estimatedArrivalAt"`
+	PreviouslyCommunicatedAt *time.Time `json:"previouslyCommunicatedAt,omitempty"`
+	NotifiedArrivalAt        *time.Time `json:"notifiedArrivalAt,omitempty"`
+	ArrivalRangeLower        *time.Time `json:"arrivalRangeLower,omitempty"`
+	ArrivalRangeUpper        *time.Time `json:"arrivalRangeUpper,omitempty"`
+	LateRisk                 string     `json:"lateRisk"`
+	UpdatedAt                time.Time  `json:"updatedAt"`
+}
+
+type ReturnedGoods struct {
+	StopID           string    `json:"stopId"`
+	OrderRef         string    `json:"orderRef"`
+	Goods            string    `json:"goods"`
+	Units            int       `json:"units"`
+	Reason           string    `json:"reason"`
+	Note             string    `json:"note,omitempty"`
+	Resolution       string    `json:"resolution"`
+	DriverID         string    `json:"-"`
+	OccurredAt       time.Time `json:"occurredAt"`
+	RecordedAt       time.Time `json:"recordedAt"`
+	FollowupOrderID  string    `json:"followupOrderId,omitempty"`
+	FollowupOrderRef string    `json:"followupOrderRef,omitempty"`
+	FollowupDate     string    `json:"followupDate,omitempty"`
+}
+
 type DeliveryTracking struct {
-	Depot                    string         `json:"depot,omitempty"`
-	Location                 *Location       `json:"location,omitempty"`
-	RunID                   string         `json:"runId"`
-	TripID                  string         `json:"tripId"`
-	VehicleID               string         `json:"vehicleId,omitempty"`
-	RunStatus               string         `json:"runStatus"`
-	StopID                  string         `json:"stopId"`
-	Outcome                 string         `json:"outcome,omitempty"`
-	Reason                  string         `json:"reason,omitempty"`
-	OccurredAt              *time.Time     `json:"occurredAt,omitempty"`
-	CompletedAt             *time.Time     `json:"completedAt,omitempty"`
-	Proofs                  []ProofSummary `json:"proofs"`
-	LoadingShortfallSummary []any          `json:"loadingShortfallSummary"`
+	Depot    string    `json:"depot,omitempty"`
+	Location *Location `json:"location,omitempty"`
+
+	ReturnedGoods *ReturnedGoods `json:"returnedGoods,omitempty"`
+
+	RunID                   string             `json:"runId"`
+	TripID                  string             `json:"tripId"`
+	VehicleID               string             `json:"vehicleId,omitempty"`
+	RunStatus               string             `json:"runStatus"`
+	ArrivalPrediction       *ArrivalPrediction `json:"arrivalPrediction,omitempty"`
+	StopID                  string             `json:"stopId"`
+	Outcome                 string             `json:"outcome,omitempty"`
+	Reason                  string             `json:"reason,omitempty"`
+	OccurredAt              *time.Time         `json:"occurredAt,omitempty"`
+	CompletedAt             *time.Time         `json:"completedAt,omitempty"`
+	Proofs                  []ProofSummary     `json:"proofs"`
+	LoadingShortfallSummary []any              `json:"loadingShortfallSummary"`
+	DeliveredUnits          *int               `json:"deliveredUnits,omitempty"`
 }
 
 type ProofSummary struct {
@@ -232,6 +274,7 @@ type Tracking struct {
 	Planning      PlanningTracking  `json:"planning"`
 	Delivery      *DeliveryTracking `json:"delivery,omitempty"`
 	Receipt       *Receipt          `json:"receipt,omitempty"`
+	ReceiptDue    *ReceiptDeadline  `json:"receiptDue,omitempty"`
 	ReceiptIssues []ReceiptIssue    `json:"receiptIssues"`
 	Custody       []CustodyEvent    `json:"custody"`
 }

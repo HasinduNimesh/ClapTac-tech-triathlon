@@ -1,14 +1,19 @@
 import { ApiError, apiJSON } from "../api/client";
 import { DeliveryTripDetail } from "../api/delivery";
-import { isPaused, listQueue, putCachedDetail, setPaused, shiftQueue } from "./db";
+import { isPaused, listQueue, putCachedDetail, putSyncConflictNotice, setPaused, shiftQueue } from "./db";
 import { drainFIFOQueue } from "./fifoQueue.mjs";
 import { singleFlight } from "./singleFlight.mjs";
+import { classifySyncResult, orderForSync, readSyncConflict, syncOperationBody } from "./syncQueue.mjs";
+import { createSyncProgress } from "./syncProgress.mjs";
 
 const base = import.meta.env.VITE_API_BASE_URL || "/api/v1";
 
 export type SyncBanner = { kind: "ok" | "offline" | "paused" | "error" | "syncing"; text: string; queueItemId?: number };
 
-type SyncResult = { operationId: string; status: string; originalStatus?: string; detail?: string };
+type SyncResult = { operationId: string; status: string; originalStatus?: string; detail?: string; conflict?: { recordedPlanVersion?: number; currentPlanVersion?: number; detail?: string } };
+
+/** What the sync loop is sending or could not send right now (drives the per-stop status and Retry). */
+export const syncProgress = createSyncProgress();
 
 function authHeaders(token: string, extra?: HeadersInit): HeadersInit {
   return { Authorization: `Bearer ${token}`, ...(extra || {}) };
@@ -37,11 +42,23 @@ async function drainQueueSerial(token: string, ownerId: string): Promise<SyncBan
   if (initial.length === 0) {
     return navigator.onLine ? { kind: "ok", text: "No pending changes" } : { kind: "offline", text: "Offline · queue empty" };
   }
-  // The queue is FIFO so dependent proof, outcome, and completion operations stay ordered.
+  // Records go first, then photos; items that cite a photo wait behind it, and
+  // route completion goes last (see orderForSync). The head is always the next
+  // item to send, and nothing is dropped until the server accepts it.
+  const operationByQueueId = new Map<number, string>();
   return drainFIFOQueue({
-    list: () => listQueue(ownerId),
-    remove: (id: number) => shiftQueue(ownerId, id),
+    list: async () => {
+      const ordered = orderForSync(await listQueue(ownerId));
+      for (const item of ordered) if (item.id !== undefined) operationByQueueId.set(item.id, item.operationId);
+      return ordered;
+    },
+    remove: async (id: number) => {
+      await shiftQueue(ownerId, id);
+      const operationId = operationByQueueId.get(id);
+      if (operationId) syncProgress.markSaved(operationId);
+    },
     apply: async (item: Awaited<ReturnType<typeof listQueue>>[number]) => {
+      syncProgress.markSending(item.operationId);
       if (item.type === "PROOF_UPLOAD") {
         const form = new FormData();
         form.append("type", item.proofType || "PHOTO");
@@ -69,19 +86,7 @@ async function drainQueueSerial(token: string, ownerId: string): Promise<SyncBan
         if (!item.orderId) throw new ApiError(400,"Tech custody event is missing its order reference.");
         await apiJSON(`/orders/${encodeURIComponent(item.orderId)}/custody`,token,{method:"POST",headers:{"Idempotency-Key":item.operationId},body:JSON.stringify({...item.payload,idempotencyKey:item.operationId})});
       } else {
-        const body = {
-          operations: [
-            {
-              operationId: item.operationId,
-              type: item.type,
-              tripId: item.tripId,
-              stopId: item.stopId,
-              occurredAt: item.payload?.occurredAt,
-              dependsOnOperationId: item.dependsOnOperationId,
-              payload: item.payload,
-            },
-          ],
-        };
+        const body = { operations: [syncOperationBody(item)] };
         const res = await fetch(`${base}/delivery/sync`, {
           method: "POST",
           headers: { ...authHeaders(token), Accept: "application/json", "Content-Type": "application/json" },
@@ -96,33 +101,59 @@ async function drainQueueSerial(token: string, ownerId: string): Promise<SyncBan
         }
         const response = (await res.json()) as { results?: SyncResult[] };
         const result = response.results?.find((r) => r.operationId === item.operationId);
-        const applied = result?.status === "APPLIED" ||
-          (result?.status === "DUPLICATE" && result.originalStatus === "APPLIED");
-        if (!applied) {
-          const reason = result?.detail || `operation status: ${result?.status || "missing result"}`;
-          return { applied: false, detail: reason };
+        // RETRY (applied, conflict not yet listed for dispatch) and every other
+        // non-success status keep the item queued and show Could not send / Retry.
+        const outcome = classifySyncResult(result);
+        if (!outcome.applied) {
+          syncProgress.markFailed(item.operationId, outcome.detail);
+          return { applied: false, detail: outcome.detail };
+        }
+        // The record was kept. When it was made on an older plan, remember the
+        // notice so the driver can still read it after the queue entry is gone.
+        const conflict = readSyncConflict(result);
+        if (conflict) {
+          try {
+            await putSyncConflictNotice(ownerId, { ...conflict, operationId: item.operationId, tripId: item.tripId, stopId: item.stopId, type: item.type, receivedAt: new Date().toISOString() });
+          } catch {
+            // The record itself is already accepted; a notice that cannot be saved must not block sync.
+          }
         }
       }
       return { applied: true };
     },
-    onFailure: async (e: unknown, _item: unknown, count: number): Promise<SyncBanner> => {
+    onFailure: async (e: unknown, item: { operationId: string }, count: number): Promise<SyncBanner> => {
+      // The record stays queued in every case below. A 401 or a lost connection
+      // returns it to "Saved on this phone"; any other failure shows Retry.
+      const reason = e instanceof Error ? e.message : String(e);
       if (e instanceof ApiError && e.status === 401) {
+        syncProgress.markSaved(item.operationId);
         await setPaused(ownerId, true);
         return { kind: "paused", text: "Sync paused (401). Queue kept." };
       }
-      if (e instanceof TypeError || !navigator.onLine) {
+      if (!navigator.onLine) {
+        syncProgress.markSaved(item.operationId);
+        return { kind: "offline", text: `Offline · ${count} queued` };
+      }
+      syncProgress.markFailed(item.operationId, reason);
+      if (e instanceof TypeError) {
         return { kind: "offline", text: `Offline · ${count} queued` };
       }
       if (e instanceof ApiError && e.status >= 500) {
         return { kind: "offline", text: `Delivery service unavailable · ${count} unsynced item(s) remain saved on this device` };
       }
-      return { kind: "error", text: e instanceof Error ? e.message : String(e) };
+      return { kind: "error", text: reason };
     },
   });
 }
 
 export async function cacheDetail(detail: DeliveryTripDetail, ownerId: string, serverConfirmed = false) {
   await putCachedDetail(ownerId, detail, serverConfirmed);
+}
+
+/** Retry one record that could not be sent; the queue still sends records before photos. */
+export async function retryItem(token: string, ownerId: string, operationId: string) {
+  syncProgress.clearFailed(operationId);
+  return drainQueue(token, ownerId);
 }
 
 export async function resumeSync(token: string, ownerId: string) {

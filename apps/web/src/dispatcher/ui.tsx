@@ -2,7 +2,7 @@ import { ReactNode, useEffect, useRef } from "react";
 import { useLocale } from "../i18n";
 import { StoreManagerHero } from "../store-manager/StoreManagerHero";
 
-export type Tone = "primary" | "green" | "amber" | "red" | "cool" | "muted" | "purple";
+export type Tone = "primary" | "green" | "amber" | "red" | "cool" | "muted" | "purple" | "silent";
 
 // The dispatcher hero is the same blue banner the store-manager workspace uses,
 // so both roles share one visual system (Waypoint UI Kit).
@@ -49,8 +49,8 @@ export function Panel({ title, sub, actions, children, flush, className, heading
   );
 }
 
-export function Tag({ tone = "muted", children }: { tone?: Tone; children: ReactNode }) {
-  return <span className={`dp-tag${tone === "muted" ? "" : ` dp-tag--${tone}`}`}>{children}</span>;
+export function Tag({ tone = "muted", block, children }: { tone?: Tone; block?: boolean; children: ReactNode }) {
+  return <span className={`dp-tag${tone === "muted" ? "" : ` dp-tag--${tone}`}${block ? " dp-tag--block" : ""}`}>{children}</span>;
 }
 
 export function Note({ tone = "primary", title, children, live }: { tone?: "primary" | "green" | "amber" | "red" | "cool"; title?: ReactNode; children?: ReactNode; live?: boolean }) {

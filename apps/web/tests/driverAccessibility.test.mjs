@@ -82,6 +82,7 @@ test("shared text, status, guidance, and action colors meet WCAG AA contrast aga
     ["error status", color(rule(".status-bad"), "color"), cardBackground],
     ["sync status", color(rule(".status-syncing"), "color"), cardBackground],
     ["agent approval text", pageText, approvalBackground],
+    ["sync older-plan notice text", pageText, color(rule(".sync-conflict"), "background")],
     ["stop guidance values", pageText, guidanceBackground],
     ["stop guidance labels", color(rule(".stop-guidance dt"), "color"), guidanceBackground],
     ["next-stop action text", pageText, nextStopBackground],
@@ -152,6 +153,10 @@ test("shared text, status, guidance, and action colors meet WCAG AA contrast aga
     ["sm-timeline warn label", color(rule(".sm-timeline-step--warn .sm-timeline-label"), "color"), cardBackground],
     ["sm legacy submit button", color(rule('.sm-legacy-body button[type="submit"]'), "color"), smLegacySubmitBg],
     ["sm legacy action button", color(rule('.sm-legacy-body button[type="button"]'), "color"), smLegacySubmitBg],
+    ["order text helper button", color(rule(".sm-helper-actions .tap.primary"), "color"), color(rule(".sm-helper-actions .tap.primary"), "background")],
+    ["order text helper link", color(rule(".sm-helper-link"), "color"), cardBackground],
+    ["order helper button", color(rule(".sm-ai-fab"), "color"), color(rule(".sm-ai-fab"), "background")],
+    ["order helper close", color(rule(".sm-ai-drawer-close"), "color"), color(rule(".sm-ai-drawer-close"), "background")],
   ];
   for (const [label, foreground, background] of smPairs) {
     assert.ok(contrast(foreground, background) >= 4.5, `${label} contrast is below 4.5:1`);
@@ -176,12 +181,35 @@ test("shared text, status, guidance, and action colors meet WCAG AA contrast aga
     ".not-found-action", ".sm-breadcrumb", ".sm-breadcrumb-link", ".sm-load-error", ".sm-order-tab.active",
     ".sm-btn-secondary", ".sm-timeline-step--warn .sm-timeline-label",
     '.sm-legacy-body button[type="submit"]', '.sm-legacy-body button[type="button"]',
+    ".sm-helper-actions .tap.primary", ".sm-helper-link", ".sm-ai-fab", ".sm-ai-drawer-close",
   ]);
   assert.deepEqual(
     explicitForegroundSelectors.filter((selector) => !testedForegroundSelectors.has(selector)),
     [],
     "add a contrast pair for every explicit CSS text color",
   );
+});
+
+test("W8 silent-trip and chilled-long markers on the dispatcher Live operations page meet WCAG AA contrast", async () => {
+  const dispatcherCss = await readFile(new URL("../src/dispatcher/dispatcher.css", import.meta.url), "utf8");
+  const token = (name) => {
+    const match = dispatcherCss.match(new RegExp(`${name}:\\s*(#[0-9a-fA-F]{6})`));
+    assert.ok(match, `missing dispatcher token ${name}`);
+    return color(`color: ${match[1]};`, "color");
+  };
+  const white = color("color: #ffffff;", "color");
+  const mapLabelGrey = color("color: #4b5568;", "color"); // labelColor for silent trips in LiveOperationsPage.tsx
+  const pairs = [
+    ["silent badge text on its chip", token("--dp-silent"), token("--dp-silent-chip")],
+    ["silent row text and sub-lines on the grey row", token("--dp-silent"), token("--dp-silent-bg")],
+    ["main row text on the grey row", token("--dp-ink"), token("--dp-silent-bg")],
+    ["amber last-update time on the grey row", token("--dp-amber"), token("--dp-silent-bg")],
+    ["chilled-long amber marker", token("--dp-amber"), token("--dp-amber-bg")],
+    ["map label 'No update since HH:MM' on its white label", mapLabelGrey, white],
+  ];
+  for (const [label, foreground, background] of pairs) {
+    assert.ok(contrast(foreground, background) >= 4.5, `${label} contrast is below 4.5:1`);
+  }
 });
 
 test("keyboard focus indicator remains clearly visible against the page surface", () => {

@@ -14,6 +14,7 @@ const shortUnits = (row: Tracking) => (row.receiptIssues || []).reduce((s, i) =>
   || (row.receipt ? Math.max(0, row.receipt.expectedUnits - row.receipt.receivedUnits) : 0);
 const deliveredAt = (row: Tracking) => row.delivery?.completedAt || row.delivery?.occurredAt;
 export function reportBy(row: Tracking) {
+  if (row.receiptDue?.reportBy) return new Date(row.receiptDue.reportBy); // server: 2 working days on the operating calendar
   const at = deliveredAt(row);
   return at ? new Date(new Date(at).getTime() + REPORT_WINDOW_HOURS * 3_600_000) : undefined;
 }

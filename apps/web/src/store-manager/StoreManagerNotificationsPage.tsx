@@ -1,11 +1,15 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { AutomationInbox } from "../automations/AutomationInbox";
+
 import { Link } from "react-router-dom";
+import { apiJSON } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { useLocale } from "../i18n";
 import iconChev from "../assets/store-manager/icon-chev.svg";
 import iconPlus from "../assets/store-manager/icon-plus.svg";
 import { deferralExplanation } from "./deferralMessage.mjs";
 import { colomboTime, isDeferred, needsReceipt } from "./orderStage.mjs";
+import { messageStatusLabel, messageTime, messageTypeLabel } from "./outletMessages.mjs";
 import { StoreManagerHero } from "./StoreManagerHero";
 import { Tracking, useOrderTrackings } from "./useOrderTrackings";
 
@@ -38,10 +42,39 @@ function readSeenEta(userId: string): Record<string, string> {
   try { return JSON.parse(window.localStorage.getItem(etaKey(userId)) || "{}") as Record<string, string>; } catch { return {}; }
 }
 
+type OutletMessage = { id: number; eventType: string; body: string; status: string; createdAt: string };
+
+// The messages the system queued for this outlet. Loaded on its own, so a failure here never hides
+// the order-based notices on the page.
+function useOutletMessages(outletId: string, token: string) {
+  const [items, setItems] = useState<OutletMessage[]>([]);
+  const [loading, setLoading] = useState(Boolean(outletId && token));
+  const [failed, setFailed] = useState(false);
+  const latest = useRef(0);
+  const reload = useCallback(async () => {
+    if (!outletId || !token) { setLoading(false); return; }
+    const request = ++latest.current;
+    setLoading(true);
+    setFailed(false);
+    try {
+      const body = await apiJSON<{ items?: OutletMessage[] }>(`/shared/outlets/${encodeURIComponent(outletId)}/notifications`, token);
+      if (request === latest.current) setItems(body.items || []);
+    } catch {
+      if (request === latest.current) setFailed(true);
+    } finally {
+      if (request === latest.current) setLoading(false);
+    }
+  }, [outletId, token]);
+  useEffect(() => { void reload(); }, [reload]);
+  useEffect(() => () => { latest.current += 1; }, []);
+  return { items, loading, failed, reload };
+}
+
 export function StoreManagerNotificationsPage() {
-  const { profile } = useAuth();
+  const { profile, user } = useAuth();
   const { t } = useLocale();
   const userId = profile?.userId || "anonymous";
+  const messages = useOutletMessages(profile?.outletIds?.[0] || "", user?.access_token || "");
   const { rows, loading, loadFailed, skipped, reload } = useOrderTrackings();
   const [acknowledged, setAcknowledged] = useState<Set<string>>(() => readAcknowledged(userId));
 
@@ -110,6 +143,7 @@ export function StoreManagerNotificationsPage() {
       </StoreManagerHero>
 
       <div className="sm-page-body">
+        <AutomationInbox />
         {loadFailed && (
           <div className="sm-load-error" role="alert">
             <span>{t("Orders could not be loaded. Check your connection and try again.")}</span>
@@ -131,7 +165,7 @@ export function StoreManagerNotificationsPage() {
               <div className="sm-notification-meta"><span className="sm-notif-badge sm-notif-badge--receipt">{t("RECEIPT")}</span></div>
               <div className="sm-notification-body">
                 <h3 className="sm-notification-title">{row.order.orderRef} · {t("delivery needs receipt confirmation")}</h3>
-                <p className="sm-notification-desc muted">{t("Driver has recorded delivery. Confirm the count and report shortage or damage.")}</p>
+                <p className="sm-notification-desc muted">{t("Driver has recorded delivery. Confirm the count and report shortage or damage.")}{row.receiptDue && row.receiptDue.state !== "open" && <> <strong>{row.receiptDue.state === "overdue" ? t("Report-by deadline passed.") : row.receiptDue.state === "due_today" ? t("Report-by deadline is today.") : t("Report-by deadline is tomorrow.")}</strong></>}</p>
               </div>
               <Link to={`/store-manager/receipts?order=${encodeURIComponent(row.order.id)}`} className="sm-notif-action sm-notif-action--solid">{t("Confirm receipt")}</Link>
             </div>
@@ -169,6 +203,32 @@ export function StoreManagerNotificationsPage() {
           })}
 
           {!loading && noticeCount === 0 && !loadFailed && <p className="sm-empty muted">{t("No notices at this time.")}</p>}
+        </section>
+
+        <section className="sm-panel" aria-labelledby="store-messages-heading">
+          <div className="sm-panel-header">
+            <h2 id="store-messages-heading" className="sm-panel-title">{t("Messages sent to your store")}</h2>
+          </div>
+          <p className="sm-messages-note muted">{t("Notices the system recorded for your store appear here, newest first. Some are also sent as text messages.")}</p>
+
+          {messages.loading && <p className="sm-empty muted" role="status">{t("Loading messages…")}</p>}
+          {messages.failed && !messages.loading && (
+            <div className="sm-load-error" role="alert">
+              <span>{t("Messages could not be loaded. The rest of this page is not affected.")}</span>
+              <button type="button" className="tap" onClick={() => void messages.reload()}>{t("Retry")}</button>
+            </div>
+          )}
+          {!messages.loading && !messages.failed && messages.items.length === 0 && <p className="sm-empty muted">{t("No notices have been recorded for your store yet.")}</p>}
+
+          {messages.items.map((message) => (
+            <div key={message.id} className="sm-notification-item">
+              <div className="sm-notification-meta"><span className="sm-notif-badge sm-notif-badge--receipt">{t(messageTypeLabel(message.eventType))}</span></div>
+              <div className="sm-notification-body">
+                <p className="sm-notification-title sm-message-text">{message.body}</p>
+                <p className="sm-notification-desc muted">{messageTime(message.createdAt)} · {t(messageStatusLabel(message.status))}</p>
+              </div>
+            </div>
+          ))}
         </section>
 
         <div className="sm-info-banner">

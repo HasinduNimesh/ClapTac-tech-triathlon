@@ -54,10 +54,26 @@ type stubPlanner struct {
 	breakdownSourceVehicleID      string
 	breakdownReplacementVehicleID string
 	breakdownTripNumber           int
+
+	ackTripID      string
+	remindTripID   string
+	remindAudience string
+	remindErr      error
+
+	breakdownErrs  []error
+	breakdownCalls int
 }
 
-func (s *stubPlanner) Acknowledge(context.Context, *authorization.Profile, string, int) error {
+func (s *stubPlanner) Acknowledge(_ context.Context, _ *authorization.Profile, _ string, _ int, tripID string) error {
+	s.ackTripID = tripID
 	return nil
+}
+func (s *stubPlanner) Remind(_ context.Context, _ *authorization.Profile, _, tripID, audience string) (domain.ReminderResult, error) {
+	s.remindTripID, s.remindAudience = tripID, audience
+	return domain.ReminderResult{Reminder: domain.PlanReminder{TripID: tripID, Audience: audience, Version: 1}}, s.remindErr
+}
+func (s *stubPlanner) Reminders(context.Context, *authorization.Profile, string, string) ([]domain.PlanReminder, error) {
+	return []domain.PlanReminder{}, nil
 }
 func (s *stubPlanner) Revise(context.Context, *authorization.Profile, string) error { return nil }
 func (s *stubPlanner) BreakdownProposals(_ context.Context, planID, vehicleID string) (map[string]any, error) {
@@ -69,6 +85,14 @@ func (s *stubPlanner) ConfirmBreakdown(_ context.Context, _ *authorization.Profi
 	s.breakdownSourceVehicleID = sourceVehicleID
 	s.breakdownReplacementVehicleID = replacementVehicleID
 	s.breakdownTripNumber = tripNumber
+	s.breakdownCalls++
+	if len(s.breakdownErrs) > 0 {
+		err := s.breakdownErrs[0]
+		s.breakdownErrs = s.breakdownErrs[1:]
+		if err != nil {
+			return nil, err
+		}
+	}
 	return map[string]any{"status": "confirmed"}, nil
 }
 
@@ -245,6 +269,48 @@ func TestPlanAcknowledgementRolePermissions(t *testing.T) {
 	}
 }
 
+func TestPlanAcknowledgementCarriesTripIdentity(t *testing.T) {
+	stub := &stubPlanner{}
+	rec := httptest.NewRecorder()
+	testRouter("usr-driver", stub).ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/planning/plans/p1/acknowledgements", bytes.NewBufferString(`{"version":2,"tripId":"trip-9"}`)))
+	if rec.Code != http.StatusOK || stub.ackTripID != "trip-9" {
+		t.Fatalf("trip identity was dropped: %d %s tripID=%q", rec.Code, rec.Body.String(), stub.ackTripID)
+	}
+}
+
+func TestPlanReminderRequiresPlanUpdatePermission(t *testing.T) {
+	for _, subject := range []string{"usr-driver", "usr-loader", "usr-store-manager"} {
+		stub := &stubPlanner{}
+		rec := httptest.NewRecorder()
+		testRouter(subject, stub).ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/planning/plans/p1/reminders", bytes.NewBufferString(`{"tripId":"t1","audience":"DRIVER"}`)))
+		if rec.Code != http.StatusForbidden || stub.remindTripID != "" {
+			t.Fatalf("%s must not send reminders: %d", subject, rec.Code)
+		}
+	}
+	stub := &stubPlanner{}
+	rec := httptest.NewRecorder()
+	testRouter("usr-dispatcher", stub).ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/planning/plans/p1/reminders", bytes.NewBufferString(`{"tripId":"t1","audience":"LOADER"}`)))
+	if rec.Code != http.StatusOK || stub.remindTripID != "t1" || stub.remindAudience != "LOADER" {
+		t.Fatalf("dispatcher reminder failed: %d %s", rec.Code, rec.Body.String())
+	}
+	rec = httptest.NewRecorder()
+	stub = &stubPlanner{remindErr: fmt.Errorf("conflict: driver already acknowledged this trip")}
+	testRouter("usr-dispatcher", stub).ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/planning/plans/p1/reminders", bytes.NewBufferString(`{"tripId":"t1","audience":"DRIVER"}`)))
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("service conflict must surface as 409, got %d", rec.Code)
+	}
+}
+
+func TestPlanRemindersReadableByFieldRolesOnly(t *testing.T) {
+	for subject, want := range map[string]int{"usr-driver": http.StatusOK, "usr-loader": http.StatusOK, "usr-dispatcher": http.StatusForbidden} {
+		rec := httptest.NewRecorder()
+		testRouter(subject, &stubPlanner{}).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/planning/plans/p1/reminders?tripId=t1", nil))
+		if rec.Code != want {
+			t.Fatalf("%s reminders status %d want %d", subject, rec.Code, want)
+		}
+	}
+}
+
 func TestInternalOrderRequiresNarrowScope(t *testing.T) {
 	h := Handler{Authn: fakeAuth{p: &auth.Principal{Subject: "svc", Scopes: []string{authorization.PermPlansReadInternal}}}, Profiles: fakeProfiles{}, Service: &stubPlanner{}}
 	r := chi.NewRouter()
@@ -317,5 +383,27 @@ func TestBreakdownReassignmentRequiresDispatcherAndValidRequest(t *testing.T) {
 	testRouter("usr-store-manager", &stubPlanner{}).ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/planning/plans/p1/breakdowns/reassign", bytes.NewBufferString(`{"sourceVehicleId":"VEH001","replacementVehicleId":"VEH002","tripNumber":1}`)))
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("store manager must not reassign a breakdown trip, got %d", rec.Code)
+	}
+}
+
+func TestBreakdownReassignmentReportsPendingWorkshopAsRetryableNotConfirmed(t *testing.T) {
+	svc := &stubPlanner{breakdownErrs: []error{errString("workshop_pending: vehicle VEH001 could not be marked in the workshop"), nil}}
+	r := testRouter("usr-dispatcher", svc)
+	post := func() *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/planning/plans/p1/breakdowns/reassign", bytes.NewBufferString(`{"sourceVehicleId":"VEH001","replacementVehicleId":"VEH002","tripNumber":1}`)))
+		return rec
+	}
+	rec := post()
+	var problem struct {
+		Code   string `json:"code"`
+		Status int    `json:"status"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &problem)
+	if rec.Code != http.StatusBadGateway || problem.Code != "workshop_pending" || problem.Status != http.StatusBadGateway || strings.Contains(rec.Body.String(), `"confirmed"`) {
+		t.Fatalf("pending workshop must be a 502 with a stable code and never confirmed: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec = post(); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"confirmed"`) || svc.breakdownCalls != 2 {
+		t.Fatalf("the same request must be retryable and then confirm: %d %s calls=%d", rec.Code, rec.Body.String(), svc.breakdownCalls)
 	}
 }

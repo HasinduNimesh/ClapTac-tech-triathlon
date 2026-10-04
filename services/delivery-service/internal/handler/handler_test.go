@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"time"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -68,6 +69,9 @@ func (s *stubDriver) Get(context.Context, *authorization.Profile, string) (map[s
 func (s *stubDriver) Prepare(context.Context, *authorization.Profile, string) (map[string]any, error) {
 	return s.detail, s.mutErr
 }
+func (s *stubDriver) Checkout(context.Context, *authorization.Profile, string, int, []string) (domain.Checkout, error) { return domain.Checkout{}, s.mutErr }
+func (s *stubDriver) CheckoutStatus(context.Context, *authorization.Profile, string) (*domain.Checkout, error) { return nil, s.getErr }
+func (s *stubDriver) PublishArrivalPrediction(context.Context, *authorization.Profile, string, string, int, *time.Time, time.Time, *time.Time, *time.Time, string) (domain.ArrivalPrediction, error) { return domain.ArrivalPrediction{}, s.mutErr }
 func (s *stubDriver) Start(_ context.Context, _ *authorization.Profile, _ string, opID string) (map[string]any, error) {
 	s.startOpID = opID
 	return s.detail, s.mutErr
@@ -77,7 +81,7 @@ func (s *stubDriver) TripLocation(context.Context, *authorization.Profile, strin
 func (s *stubDriver) Arrive(context.Context, *authorization.Profile, string, string, string, string) (map[string]any, error) {
 	return s.detail, s.mutErr
 }
-func (s *stubDriver) Outcome(context.Context, *authorization.Profile, string, string, string, string, string, string, string, string, *int) (map[string]any, error) {
+func (s *stubDriver) Outcome(context.Context, *authorization.Profile, string, string, string, string, string, string, string, string, *int, domain.ReturnDetails) (map[string]any, error) {
 	return s.detail, s.mutErr
 }
 func (s *stubDriver) UploadProof(context.Context, *authorization.Profile, string, string, string, string, string, []byte, string, string) (domain.Proof, error) {

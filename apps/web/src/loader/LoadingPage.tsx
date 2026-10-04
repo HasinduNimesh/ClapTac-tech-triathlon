@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import { ApiError, apiJSON } from "../api/client";
 import { todayLocal } from "../api/date";
 import { depotLabel, isIncomplete, LoadingTripDetail, LoadingTripSummary, newIdempotencyKey } from "../api/loading";
+import { TruckCheckout } from "../api/delivery";
 import { useAuth } from "../auth/AuthContext";
 import { useLocale } from "../i18n";
 import { enqueueLoader, bindLoaderOwner, cacheLoaderDetail, cacheLoaderTrips, getCachedLoaderDetail, getCachedLoaderTrips, listLoaderQueue } from "./offlineDb";
@@ -9,6 +10,7 @@ import { drainLoaderQueue, LoaderSyncState } from "./offlineSync";
 import { applyLoadingQueueItem, replayLoadingQueue, shouldQueueLoadingFailure, LoadingQueueOperation } from "./offlineState.mjs";
 import { resolveLoadOrderCode } from "./barcodeLookup.mjs";
 import { acquireBarcodeCamera } from "./barcodeCamera.mjs";
+import { reminderForTrip, type PlanReminder } from "../dispatcher/ackTracking.mjs";
 
 export function LoadingPage() {
   const { user, profile } = useAuth();
@@ -32,9 +34,26 @@ export function LoadingPage() {
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scannerMessage, setScannerMessage] = useState("");
   const [online, setOnline] = useState(() => navigator.onLine);
+  const [checkoutAlert, setCheckoutAlert] = useState<TruckCheckout | null>(null);
   const [queueCount, setQueueCount] = useState(0);
   const [syncState, setSyncState] = useState<LoaderSyncState>({ kind: "ok", text: "" });
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    if (!detail?.tripId || !token || !online) { setCheckoutAlert(null); return; }
+    setCheckoutAlert(null);
+    let active = true;
+    const tripId = detail.tripId;
+    const loadAlert = async () => {
+      try {
+        const result = await apiJSON<{ checkout: TruckCheckout | null }>("/delivery/trips/" + encodeURIComponent(tripId) + "/checkout", token);
+        if (active) setCheckoutAlert(result.checkout?.status === "blocked" ? result.checkout : null);
+      } catch { if (active) setCheckoutAlert(null); }
+    };
+    void loadAlert();
+    const timer = window.setInterval(() => { void loadAlert(); }, 15_000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [detail?.tripId, token, online]);
 
   useEffect(() => {
     let active = true;
@@ -283,7 +302,7 @@ export function LoadingPage() {
   async function acknowledgePlan() {
     if (!detail?.planId || !detail.planVersion) return;
     await run("Current plan acknowledged", async () => {
-      await apiJSON(`/planning/plans/${detail.planId}/acknowledgements`,token,{method:"POST",body:JSON.stringify({version:detail.planVersion})});
+      await apiJSON(`/planning/plans/${detail.planId}/acknowledgements`,token,{method:"POST",body:JSON.stringify({version:detail.planVersion,tripId:detail.tripId})});
       await openTrip(detail.tripId);
     });
   }
@@ -294,6 +313,18 @@ export function LoadingPage() {
   const isReady = detail?.status === "ready" || detail?.loadingStatus === "ready";
   const refrigerated = /chill|refriger|frozen|multi|reefer/i.test(detail?.vehicleTemperatureCapability || "");
   const currentPlanAcknowledged = Boolean(detail?.planVersion && detail.acknowledgedVersion === detail.planVersion);
+  // The dispatcher's persisted "please acknowledge" reminder for this load list, read from planning.
+  const [planReminder, setPlanReminder] = useState<PlanReminder | undefined>();
+  const reminderPlanId = detail?.planId;
+  const reminderTripId = detail?.tripId;
+  useEffect(() => {
+    if (!token || !reminderPlanId || !reminderTripId || !online) { setPlanReminder(undefined); return; }
+    let active = true;
+    apiJSON<{ items: PlanReminder[] }>(`/planning/plans/${reminderPlanId}/reminders?tripId=${encodeURIComponent(reminderTripId)}`, token)
+      .then((body) => { if (active) setPlanReminder(reminderForTrip(body.items, reminderTripId, "LOADER")); })
+      .catch(() => { if (active) setPlanReminder(undefined); });
+    return () => { active = false; };
+  }, [token, reminderPlanId, reminderTripId, detail?.planVersion, online]);
 
   if (ownerState === "loading") return <section className="card loader-shell"><h2>{t("Loader")}</h2><p role="status">{t("Checking this device's saved loader account…")}</p></section>;
   if (ownerState === "blocked") return <section className="card loader-shell"><h2>{t("Loader")}</h2><p className="status-bad" role="alert">{t("This device's saved loading work belongs to another loader account. Sign in with the original loader account to recover it. The saved queue has not been deleted.")}</p></section>;
@@ -351,12 +382,28 @@ export function LoadingPage() {
           <h3>
             {detail.planRef} · {detail.vehicleId}
           </h3>
+          {!currentPlanAcknowledged && Boolean(detail.planVersion) && (
+            <div className="status-bad plan-changed-banner" role="alert" style={{ margin: "1rem 0", padding: "0.85rem 1rem", borderRadius: "6px" }}>
+              <strong>⚠️ {t("Plan changed")}</strong>
+              <p>{t("Plan changed · Review updated load list before departure")}</p>
+              {planReminder && <p role="status">{t("Dispatch reminded you to acknowledge this plan at")} {new Date(planReminder.remindedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>}
+              <button type="button" className="tap primary" onClick={acknowledgePlan} disabled={!online}>
+                {t("Acknowledge current plan")}
+              </button>
+            </div>
+          )}
           <p className="muted">{t("Plan version")} {detail.planVersion || t("unavailable")} · {currentPlanAcknowledged ? t("Acknowledged") : t("Acknowledgement required before departure")}</p>
-          {!currentPlanAcknowledged && <button type="button" className="tap" onClick={acknowledgePlan} disabled={!online || !detail.planVersion}>{t("Acknowledge current plan")}</button>}
+          <p className="muted">{t("Load list saved for offline use")}</p>
+          {!currentPlanAcknowledged && !detail.planVersion && (
+            <button type="button" className="tap" onClick={acknowledgePlan} disabled={!online || !detail.planVersion}>
+              {t("Acknowledge current plan")}
+            </button>
+          )}
           <p>
             {depotLabel(detail.depot)} · {t(detail.status || detail.loadingStatus || "pending")} · {detail.loadedCount ?? 0} {t("loaded")} ·{" "}
             {detail.shortfallCount ?? 0} {t("short")} · {detail.pendingCount ?? 0} {t("pending")}
           </p>
+          {checkoutAlert && <p className="status-bad" role="alert">{t("Driver reported missing goods at check-out")}: {checkoutAlert.missingOrderIds.map(id => detail.orders?.find(order => order.orderId === id)?.orderRef || id).join(", ")}. {t("Check-out blocked. Review this load with dispatch.")}</p>}
           {detail.status === "pending" && (
             <button type="button" className="tap primary" onClick={start}>
               {t("Start loading")}

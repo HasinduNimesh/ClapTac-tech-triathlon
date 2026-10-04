@@ -46,6 +46,7 @@ type Outlet struct {
 type Order struct {
 	ID                  string     `json:"id"`
 	OrderRef            string     `json:"orderRef"`
+	SourceSystem string `json:"sourceSystem,omitempty"`
 	OutletID            string     `json:"outletId"`
 	Brand               string     `json:"brand"`
 	Temp                string     `json:"temperatureRequirement"`
@@ -61,6 +62,13 @@ type Order struct {
 	// Dispatcher can see a pattern before deferring it again.
 	DeferredLastRun bool   `json:"deferredLastRun,omitempty"`
 	LastDeferralDate string `json:"lastDeferralDate,omitempty"`
+	// PriorityNextPlan (W3) flags an outlet deferred on two consecutive runs
+	// ("consecutive" as for DeferredLastRun: no delivery attempt between the
+	// deferrals). It is derived from persisted deferral history, not from the
+	// plan being viewed: it is true on the plan that records the second
+	// deferral and stays true on the following plans until the outlet is
+	// attempted. It is a flag only; the allocation score is not changed by it.
+	PriorityNextPlan bool `json:"priorityNextPlan,omitempty"`
 }
 
 type Vehicle struct {
@@ -138,12 +146,40 @@ type Publication struct {
 	PublishedBy      string                `json:"publishedBy"`
 	PublishedAt      time.Time             `json:"publishedAt"`
 	Acknowledgements []PlanAcknowledgement `json:"acknowledgements"`
+	Reminders        []PlanReminder        `json:"reminders"`
 }
 
+// PlanAcknowledgement is one recipient's receipt of a published plan version.
+// TripID/VehicleID identify the trip it covers. Rows recorded before trip
+// identity existed carry neither and are plan-level only: they must never be
+// shown as acknowledging a specific trip.
 type PlanAcknowledgement struct {
 	ActorID        string    `json:"actorId"`
 	ActorRole      string    `json:"actorRole"`
+	TripID         string    `json:"tripId,omitempty"`
+	VehicleID      string    `json:"vehicleId,omitempty"`
 	AcknowledgedAt time.Time `json:"acknowledgedAt"`
+}
+
+// PlanReminder is the latest dispatcher reminder for one trip and audience.
+type PlanReminder struct {
+	TripID     string    `json:"tripId"`
+	Audience   string    `json:"audience"`
+	Version    int       `json:"version"`
+	RemindedAt time.Time `json:"remindedAt"`
+	RemindedBy string    `json:"remindedBy"`
+}
+
+// ReminderResult is the outcome of a reminder request. AlreadySent is true when
+// a reminder for the same trip, audience and version was sent within the
+// de-duplication window and nothing new was recorded or delivered.
+type ReminderResult struct {
+	Reminder    PlanReminder `json:"reminder"`
+	AlreadySent bool         `json:"alreadySent"`
+	// TripMessage is "sent" when the driver's trip message was created, or a
+	// short reason when that channel was unavailable. The persisted reminder
+	// shown in the driver and loader apps is always the guaranteed channel.
+	TripMessage string `json:"tripMessage,omitempty"`
 }
 
 type Trip struct {

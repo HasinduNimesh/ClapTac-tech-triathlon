@@ -625,6 +625,7 @@ func (s Service) DecideIssue(ctx context.Context, profile *authorization.Profile
 	}
 	_ = s.Repo.MarkIssueSeen(ctx, issueID, actor(profile))
 	s.Peers.Publish(ctx, audit.ActionLoadingShortfallDecided, actor(profile), "ORDER", orderID, map[string]any{"issueId": issueID, "tripId": tripID, "decision": decision, "note": note})
+	s.notifyStoreOfShortfall(ctx, load, iss, decision)
 	return s.Repo.GetIssue(ctx, issueID)
 }
 
@@ -864,7 +865,7 @@ func planningInfo(t domain.PlanningTrip) map[string]any {
 // acknowledgedAt is when this loader acknowledged the current plan version.
 func acknowledgedAt(t domain.PlanningTrip, profile *authorization.Profile) *time.Time {
 	for _, ack := range t.PlanAcknowledgements {
-		if ack.ActorID == actor(profile) && ack.ActorRole == authorization.RoleLoader && t.PlanVersion > 0 {
+		if ack.ActorID == actor(profile) && ack.ActorRole == authorization.RoleLoader && ack.CoversTrip(t.TripID) && t.PlanVersion > 0 {
 			at := ack.AcknowledgedAt
 			return &at
 		}
@@ -874,7 +875,7 @@ func acknowledgedAt(t domain.PlanningTrip, profile *authorization.Profile) *time
 
 func acknowledgedVersion(t domain.PlanningTrip, profile *authorization.Profile) int {
 	for _, ack := range t.PlanAcknowledgements {
-		if ack.ActorID == actor(profile) && ack.ActorRole == authorization.RoleLoader && t.PlanVersion > 0 {
+		if ack.ActorID == actor(profile) && ack.ActorRole == authorization.RoleLoader && ack.CoversTrip(t.TripID) && t.PlanVersion > 0 {
 			return t.PlanVersion
 		}
 	}
@@ -929,8 +930,10 @@ func (s Service) InternalGet(ctx context.Context, tripID string) (map[string]any
 func (s Service) internalDTO(ctx context.Context, sess domain.Session) (map[string]any, error) {
 	loads, _ := s.Repo.ListLoads(ctx, sess.ID)
 	arrivalByAllocation := map[string]*time.Time{}
+	departureByAllocation := map[string]*time.Time{}
 	if trip, err := s.Peers.ConfirmedTrip(ctx, sess.TripID); err == nil {
 		arrivalByAllocation = plannedArrivalByAllocation(trip.Allocations)
+		departureByAllocation = plannedDepartureByAllocation(trip.Allocations)
 	}
 	var orders []map[string]any
 	for _, l := range loads {
@@ -948,6 +951,7 @@ func (s Service) internalDTO(ctx context.Context, sess domain.Session) (map[stri
 			"temperatureRequirement": l.TemperatureRequirement, "expectedUnits": l.ExpectedUnits,
 			"shortfallSummary": short,
 			"plannedArrivalAt": arrivalByAllocation[l.AllocationID],
+			"plannedDepartureAt": departureByAllocation[l.AllocationID],
 		})
 	}
 	if orders == nil {
@@ -979,6 +983,19 @@ func plannedArrivalByAllocation(allocations []domain.PlanningAlloc) map[string]*
 		}
 	}
 	return arrivals
+}
+
+// plannedDepartureByAllocation gives delivery-service the time each stop is planned to be finished, which
+// it needs to measure how late a driver is running (arrival estimates after a delay).
+func plannedDepartureByAllocation(allocations []domain.PlanningAlloc) map[string]*time.Time {
+	departures := make(map[string]*time.Time, len(allocations))
+	for _, allocation := range allocations {
+		if allocation.AllocationID != "" && allocation.PlannedDepartureAt != nil {
+			departure := *allocation.PlannedDepartureAt
+			departures[allocation.AllocationID] = &departure
+		}
+	}
+	return departures
 }
 
 func (s Service) pendingDetail(ctx context.Context, trip domain.PlanningTrip, profile *authorization.Profile) map[string]any {

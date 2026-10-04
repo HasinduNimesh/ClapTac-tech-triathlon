@@ -1,12 +1,14 @@
 import { FormEvent, useEffect, useState } from "react";
+import { PriorityReviews } from "../automations/PriorityReviews";
 import { Link } from "react-router-dom";
 import { ApiError, apiJSON } from "../api/client";
 import { todayInSriLanka } from "../api/date.mjs";
 import { newOperationId } from "../api/delivery";
 import { DEPOT_LABELS, depotCode } from "../api/loading";
-import { DEFER_REASONS, FuelLedger, Plan, PlanDetail, PlanOrder } from "../api/planning";
+import { DEFER_REASONS, FuelLedger, Plan, PlanDetail, PlanOrder, ReminderResult } from "../api/planning";
 import { useAuth } from "../auth/AuthContext";
 import { useLocale } from "../i18n";
+import { planLevelAcks, trackerRows, unacknowledgedTargets, type TrackerCell } from "./ackTracking.mjs";
 import { resolveFuelAttempt } from "./fuelSubmission.mjs";
 import { DisruptionRiskPanel } from "./DisruptionRiskPanel";
 import { Outlet, outletMap } from "./types";
@@ -25,6 +27,8 @@ type SimulateResult = { allocated: number; unallocated: number; failures?: { ord
 // FR-53: the next-run target must be strictly after the plan's own delivery
 // date (enforced server-side too), so the date picker's minimum is the day
 // after, not the plan date itself.
+const ACK_REMINDER_MINUTES = 15;
+
 function dayAfter(dateStr: string) {
   const d = new Date(`${dateStr}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + 1);
@@ -125,7 +129,7 @@ export function PlanningPage() {
   async function deferSelected(e: FormEvent) {
     e.preventDefault();
     await run("Deferred", async () => {
-      await apiJSON(`/planning/plans/${planId}/deferrals`, token, { method: "POST", body: JSON.stringify({ orderId: deferOrder, reasonCode: reason, comment, nextRunTarget: nextRunTarget || undefined }) });
+      await apiJSON(`/planning/plans/${planId}/deferrals`, token, { method: "POST", body: JSON.stringify({ orderId: deferOrder, reasonCode: reason, comment, nextRunTarget }) });
       await refresh(planId);
       setDeferOrder(""); setNextRunTarget(""); setComment("");
     });
@@ -205,6 +209,7 @@ export function PlanningPage() {
       <div className={`dp-body${detail ? "" : " dp-body--flush"}`}>
         {error && <p className="dp-note dp-note--red" role="alert">{error}</p>}
         {info && <p className="dp-note dp-note--green" role="status">{info}</p>}
+        <PriorityReviews />
         {!detail && (
           <Panel title={loadingPlan ? t("Loading plan…") : `${t("No plan yet for")} ${dayLabel(date)}`} sub={t("Create the plan to pull in every confirmed order for this date, then generate allocations.")}>
             <div className="dp-row"><button type="button" className="dp-btn" onClick={() => void createPlan()} disabled={loadingPlan}>{t("Create or load plan")}</button></div>
@@ -219,7 +224,7 @@ export function PlanningPage() {
             <button type="button" className="dp-btn" onClick={() => void confirm()}>🔒 {t("Lock plan and send to dispatch")}</button>
           </Banner>
         ))}
-        {detail && confirmed && <ConfirmedView detail={detail} loads={loads} onRevise={() => void revisePlan()} />}
+        {detail && confirmed && <ConfirmedView detail={detail} loads={loads} token={token} onRefresh={() => refresh(planId)} onRevise={() => void revisePlan()} />}
         {detail && !confirmed && (
           <div className="dp-grid-2">
             <section className="dp-panel" aria-label={t("Plan workspace")}>
@@ -252,7 +257,7 @@ export function PlanningPage() {
                           const order = ordersById.get(u.orderId);
                           return (
                             <tr key={u.orderId} className={order?.deferredLastRun ? "is-alert" : undefined}>
-                              <td><span className="dp-cell-main">{u.orderRef || order?.orderRef || u.orderId}</span><span className="dp-cell-sub">{order ? `${isChilled(order.temperatureRequirement) ? t("Chilled") : t("Ambient")} · ${m3(order.orderVolumeM3)}` : ""}</span></td>
+                              <td><span className="dp-cell-main">{u.orderRef || order?.orderRef || u.orderId}</span>{order?.priorityNextPlan && <span className="dp-cell-sub"><Tag tone="red">{t("Priority outlet")}</Tag></span>}{order?.sourceSystem === "delivery-deferral-request" && <span className="dp-cell-sub dp-cell-sub--amber">{t("Dispatcher deferral requested")}</span>}{order?.sourceSystem === "delivery-reattempt" && <span className="dp-cell-sub">{t("Re-attempt on next run")}</span>}<span className="dp-cell-sub">{order ? `${isChilled(order.temperatureRequirement) ? t("Chilled") : t("Ambient")} · ${m3(order.orderVolumeM3)}` : ""}</span></td>
                               <td><span className="dp-cell-main">{outletLabel(order)}</span><span className="dp-cell-sub">{DEPOT_LABELS[depotOf(order) || ""] || ""}</span></td>
                               <td>{order && <Tag tone={brandTone(order.brand)}>{t(order.brand)}</Tag>}</td>
                               <td><span className="dp-cell-main">{order ? kg(order.orderWeightKg) : "—"}</span><span className="dp-cell-sub">{order ? m3(order.orderVolumeM3) : ""}</span></td>
@@ -341,7 +346,7 @@ export function PlanningPage() {
                 {detail.deferrals.length === 0 ? <p className="dp-empty">{t("No orders deferred in this plan.")}</p> : (
                   <div className="dp-table-wrap"><table className="dp-table">
                     <thead><tr><th>{t("Order")}</th><th>{t("Outlet")}</th><th>{t("Reason")}</th><th>{t("Comment")}</th><th>{t("Next run")}</th></tr></thead>
-                    <tbody>{detail.deferrals.map((d) => <tr key={d.id}><td>{ordersById.get(d.orderId)?.orderRef || d.orderId}</td><td>{d.outletId}</td><td>{t(d.reasonCode)}</td><td>{d.comment || "—"}</td><td>{d.nextRunTarget ? dayLabel(d.nextRunTarget) : t("Next available run")}</td></tr>)}</tbody>
+                    <tbody>{detail.deferrals.map((d) => <tr key={d.id}><td>{ordersById.get(d.orderId)?.orderRef || d.orderId}</td><td>{d.outletId}</td><td>{t(d.reasonCode)}</td><td>{d.comment || "—"}</td><td>{d.nextRunTarget ? dayLabel(d.nextRunTarget) : t("Next available run")}{ordersById.get(d.orderId)?.priorityNextPlan && <> <Tag tone="red">{t("Priority for next plan")}</Tag></>}</td></tr>)}</tbody>
                   </table></div>
                 )}
               </>}
@@ -414,10 +419,10 @@ export function PlanningPage() {
       </div>
 
       <Drawer open={Boolean(deferOrder && detail)} onClose={() => setDeferOrder("")} narrow title={t("Edit deferral reason")} sub={t("Update the reason for deferring this order and add any notes.")}
-        footer={<><button type="button" className="dp-btn dp-btn--secondary" onClick={() => setDeferOrder("")}>{t("Cancel")}</button><button type="submit" form="defer-form" className="dp-btn">{t("Confirm deferral")}</button></>}>
+        footer={<><button type="button" className="dp-btn dp-btn--secondary" onClick={() => setDeferOrder("")}>{t("Cancel")}</button><button type="submit" form="defer-form" className="dp-btn" disabled={!reason || !nextRunTarget}>{t("Confirm deferral")}</button></>}>
         {deferOrderData && detail && <form id="defer-form" className="dp-stack" onSubmit={deferSelected}>
           <div className="dp-subcard">
-            <div className="dp-row dp-row--between"><span className="muted">{t("Selected order")}</span>{deferOrderData.deferredLastRun && <Tag tone="amber">{t("Deferred last run")}</Tag>}</div>
+            <div className="dp-row dp-row--between"><span className="muted">{t("Selected order")}</span>{deferOrderData.deferredLastRun && <Tag tone="amber">{t("Deferred last run")}</Tag>}{deferOrderData.deferredLastRun && <Tag tone="red">{t("Priority for next plan")}</Tag>}</div>
             <p className="dp-stat-value">{deferOrderData.orderRef}</p>
             <dl className="dp-kv">
               <div><dt>{t("Outlet")}</dt><dd>{outletLabel(deferOrderData)}</dd></div>
@@ -433,7 +438,7 @@ export function PlanningPage() {
           </div>}
           <label className="dp-field">{t("Deferral reason")}<select aria-label={t("Deferral reason")} value={reason} onChange={(e) => setReason(e.target.value)}>{DEFER_REASONS.map((r) => <option key={r} value={r}>{t(r)}</option>)}</select></label>
           <label className="dp-field">{t("Additional notes (optional)")}<textarea aria-label={t("Deferral comment")} value={comment} onChange={(e) => setComment(e.target.value)} maxLength={500} placeholder={t("Comment")} /><span>{comment.length} / 500</span></label>
-          <label className="dp-field">{t("Next run recommendation")}<input aria-label={t("Expected next-run date")} type="date" value={nextRunTarget} onChange={(e) => setNextRunTarget(e.target.value)} min={dayAfter(detail.plan.deliveryDate)} /><span>{t("Based on available capacity and current demand. Leave empty for the next available run.")}</span></label>
+          <label className="dp-field">{t("Next run recommendation")}<input aria-label={t("Expected next-run date")} type="date" required value={nextRunTarget} onChange={(e) => setNextRunTarget(e.target.value)} min={dayAfter(detail.plan.deliveryDate)} /><span>{t("Required. The store is told this date in its deferral notice.")}</span></label>
           <div className="dp-subcard"><h3 className="dp-h3">{t("Current priority")}</h3><p style={{ margin: "4px 0 0" }}>{t("Priority score")} {deferOrderData.fairnessScore} · {deferOrderData.outletDeferralCount || 0} {t("previous deferral(s)")}</p><p className="muted" style={{ margin: 0, fontSize: "0.8125rem" }}>{t("Repeat deferrals raise this outlet's priority on the next plan.")}</p></div>
         </form>}
       </Drawer>
@@ -496,11 +501,55 @@ export function PlanningPage() {
   );
 }
 
-function ConfirmedView({ detail, loads, onRevise }: { detail: PlanDetail; loads: ReturnType<typeof tripLoads>; onRevise: () => void }) {
+function ConfirmedView({ detail, loads, token, onRefresh, onRevise }: { detail: PlanDetail; loads: ReturnType<typeof tripLoads>; token: string; onRefresh: () => Promise<unknown>; onRevise: () => void }) {
   const { t } = useLocale();
   const publishedAt = detail.publication?.publishedAt || detail.plan.publishedAt;
   const acks = detail.publication?.acknowledgements || [];
+  const [reminderNotice, setReminderNotice] = useState<{ tone: "green" | "red"; text: string } | null>(null);
+  const [reminding, setReminding] = useState(false);
+  // W2 / LO-9: per-trip, per-recipient acknowledgement tracker with a 15-minute unacknowledged timer.
+  const pubMs = publishedAt ? new Date(publishedAt).getTime() : 0;
+  const elapsedMin = pubMs ? Math.floor((Date.now() - pubMs) / 60000) : 0;
+  const isOver15 = elapsedMin >= ACK_REMINDER_MINUTES;
+  const rows = trackerRows({ trips: detail.trips, acks, reminders: detail.publication?.reminders, publishedAt, now: Date.now(), thresholdMinutes: ACK_REMINDER_MINUTES });
+  const unackedTargets = unacknowledgedTargets(rows);
+  const unackedCount = unackedTargets.length;
+  const legacyAcks = planLevelAcks(acks);
+  const tripLabel = (tripId: string) => { const tr = detail.trips.find((x) => x.id === tripId); return tr ? `${tr.vehicleId} · ${t("Trip")} ${tr.tripNumber}` : tripId; };
+  async function sendReminders(targets: { tripId: string; audience: "DRIVER" | "LOADER" }[]) {
+    if (!detail.publication?.version || targets.length === 0) return;
+    setReminding(true); setReminderNotice(null);
+    let sent = 0, already = 0;
+    const failed: string[] = [];
+    for (const target of targets) {
+      try {
+        const result = await apiJSON<ReminderResult>(`/planning/plans/${detail.plan.id}/reminders`, token, { method: "POST", body: JSON.stringify(target) });
+        if (result.alreadySent) already += 1; else sent += 1;
+      } catch (e) {
+        failed.push(`${tripLabel(target.tripId)} ${t(target.audience)}: ${e instanceof ApiError ? e.message : t("Request failed")}`);
+      }
+    }
+    try { await onRefresh(); } catch { /* the notice below still reports what the server said */ }
+    setReminding(false);
+    const parts = [];
+    if (sent) parts.push(`${t("Reminder sent")}: ${sent}`);
+    if (already) parts.push(`${t("Already reminded recently")}: ${already}`);
+    if (failed.length) parts.push(`${t("Reminder failed")}: ${failed.join("; ")}`);
+    setReminderNotice({ tone: failed.length ? "red" : "green", text: parts.join(" · ") });
+  }
+  const statusCell = (c: TrackerCell, tripId: string) => (
+    <td>
+      {c.state === "acknowledged" ? <Tag tone="green">{t("Acknowledged")} ({clock(c.acknowledgedAt)})</Tag> : c.state === "overdue" ? <Tag tone="red">{t("Unacknowledged > 15m")}</Tag> : <Tag>{t("Pending")}</Tag>}
+      {c.state !== "acknowledged" && (
+        <>
+          {c.remindedAt && <span className="dp-cell-sub">{t("Reminder sent")} {clock(c.remindedAt)}</span>}
+          <button type="button" className="dp-btn dp-btn--secondary dp-btn--sm" disabled={reminding} onClick={() => void sendReminders([{ tripId, audience: c.audience }])}>{t("Send Reminder")}</button>
+        </>
+      )}
+    </td>
+  );
   return (
+    <>
     <div className="dp-grid-2">
       <Panel title={t("Plan summary")} sub={t("Key trips in this plan. Loaders and drivers get exactly this version; any later change creates a new one.")} flush>
         <div className="dp-table-wrap"><table className="dp-table">
@@ -523,10 +572,34 @@ function ConfirmedView({ detail, loads, onRevise }: { detail: PlanDetail; loads:
           <Check state="ok"><strong>{t("Trips published to drivers")}</strong> · {detail.trips.length} {t("trips shared via driver app")}</Check>
           <Check state="ok"><strong>{t("Load list shared with loaders")}</strong> · {t("Vehicle load lists generated")}</Check>
           <Check state={acks.length ? "ok" : "todo"}><strong>{t("Field acknowledgements")}</strong> · {acks.length} {t("field acknowledgement(s) recorded")}</Check>
-          {acks.slice(0, 6).map((ack) => <Check key={`${ack.actorId}-${ack.acknowledgedAt}`} state="ok">{t(ack.actorRole)} · {ack.actorId} · {dateTime(ack.acknowledgedAt)}</Check>)}
+          {acks.slice(0, 6).map((ack) => <Check key={`${ack.actorId}-${ack.tripId || "plan"}-${ack.acknowledgedAt}`} state="ok">{t(ack.actorRole)} · {ack.actorId}{ack.tripId ? ` · ${tripLabel(ack.tripId)}` : ""} · {dateTime(ack.acknowledgedAt)}</Check>)}
           <Check state="ok"><strong>{t("Plan available for live operations")}</strong> · {t("Visible in operations dashboard")}</Check>
         </ul>
       </Panel>
     </div>
+    {detail.publication?.version ? (
+      <Panel title={t("Field Acknowledgement Tracker (LO-9)")} sub={`${t("Published version")} ${detail.publication.version} · ${t("Published at")} ${dateTime(publishedAt)} · ${acks.length} ${t("field acknowledgement(s) recorded")}`} flush>
+        {unackedCount > 0 && isOver15 && (
+          <div className="dp-panel-body">
+            <Note tone="red" live title={t("Attention: Unacknowledged by field crew for over 15 minutes.")}>
+              <button type="button" className="dp-btn dp-btn--secondary dp-btn--sm" disabled={reminding} onClick={() => void sendReminders(unackedTargets.map(({ tripId, audience }) => ({ tripId, audience })))}>{reminding ? t("Sending…") : t("Send Reminder")}</button>
+            </Note>
+          </div>
+        )}
+        {reminderNotice && <p className={`dp-note dp-note--${reminderNotice.tone}`} role={reminderNotice.tone === "red" ? "alert" : "status"}>{reminderNotice.text}</p>}
+        <div className="dp-table-wrap"><table className="dp-table">
+          <thead><tr><th>{t("Trip")}</th><th>{t("Vehicle")}</th><th>{t("Plan version")}</th><th>{t("Driver")}</th><th>{t("Loader")}</th></tr></thead>
+          <tbody>{rows.map((row) => (
+            <tr key={row.trip.id}>
+              <td>{row.trip.tripNumber}</td><td>{row.trip.vehicleId}</td><td>v{detail.publication?.version}</td>
+              {statusCell(row.driver, row.trip.id)}
+              {statusCell(row.loader, row.trip.id)}
+            </tr>
+          ))}</tbody>
+        </table></div>
+        {legacyAcks.length > 0 && <p className="muted dp-panel-body">{t("Plan-level acknowledgements without a trip (recorded before trip tracking; they do not mark any trip acknowledged)")}: {legacyAcks.map((a) => `${t(a.actorRole)} ${a.actorId}`).join(", ")}</p>}
+      </Panel>
+    ) : null}
+    </>
   );
 }

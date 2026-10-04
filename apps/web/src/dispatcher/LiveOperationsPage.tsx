@@ -11,6 +11,12 @@ import { ARRIVAL_ESTIMATE_VERSION, estimateArrival, previousReportedStop } from 
 import { calibratedArrivalRange } from "./arrivalRange.mjs";
 import { evaluatedLatenessCalibrations } from "./latenessCalibration.mjs";
 import { singleFlightMessagePost } from "./singleFlightMessagePost.mjs";
+
+import { enrichTripWithWatch, generateNeedsActionAlerts } from "./tripWatch.mjs";
+import { FRESH_TRIP_BUDGET_MINUTES } from "./planModel";
+
+import { runRecovery } from "./breakdownRecovery.mjs";
+
 import { useDepot } from "./DispatcherLayout";
 import { Incident, Outlet, outletMap } from "./types";
 import { LatLng, MapLine, MapMarker, WaypointMap, depotPosition } from "../components/WaypointMap";
@@ -20,13 +26,12 @@ import { Check, ChipGroup, DpHero, Drawer, Note, Panel, Stat, StatRow, Tag, Toas
 import { clock, dateTime, errorText, isChilled, minutesAgo, useApi, useToken } from "./useApi";
 
 type TripMessage = { id: string; tripId: string; stopId?: string; body: string; sentBy: string; createdAt: string; acknowledgedBy?: string; acknowledgedAt?: string };
-type BreakdownProposal = { planId: string; vehicleId: string; items: { tripNumber: number; stops: { allocationId: string; orderId: string; orderRef: string; outletId: string; stopSequence: number }[]; options: { vehicleId: string; valid: boolean; projectedStops: number; failures: { reasonCode: string }[] }[] }[]; confirmed: boolean };
+type BreakdownProposal = { planId: string; vehicleId: string; items: { tripNumber: number; stops: { allocationId: string; orderId: string; orderRef: string; outletId: string; stopSequence: number; urgencyRank?: number; chilled?: boolean; windowClose?: string }[]; options: { vehicleId: string; valid: boolean; projectedStops: number; failures: { reasonCode: string }[] }[] }[]; confirmed: boolean; critical?: boolean; severity?: string };
 type RowState = "broken" | "late" | "silent" | "done" | "ok" | "waiting";
-type Row = { summary: DeliveryTripSummary; detail?: DeliveryTripDetail; state: RowState; next?: DeliveryStop; nextEta?: ReturnType<typeof estimateArrival>; lastUpdate?: string; chilled: boolean; incident?: Incident };
+type Row = { summary: DeliveryTripSummary; detail?: DeliveryTripDetail; state: RowState; next?: DeliveryStop; nextEta?: ReturnType<typeof estimateArrival>; lastUpdate?: string; chilled: boolean; incident?: Incident; watch?: ReturnType<typeof enrichTripWithWatch> };
 type Severity = "critical" | "high" | "medium" | "low";
 type ActionItem = { key: string; severity: Severity; title: string; text: string; actions: { label: string; onClick?: () => void; to?: string; primary?: boolean }[] };
 
-const SILENT_MINUTES = 30;
 const fallbackServiceTime = { minutes: 20, version: "fixed_20m_v1" };
 const postTripMessageOnce = singleFlightMessagePost(async ({ token, tripId, body, stopId }) =>
   apiJSON(`/delivery/trips/${tripId}/messages`, token, { method: "POST", body: JSON.stringify({ body, stopId: stopId || undefined }) }),
@@ -89,9 +94,21 @@ export function LiveOperationsPage() {
     const incident = openIncidents.find((i) => i.vehicleId === row.summary.vehicleId);
     const started = /progress|started|en_route/i.test(row.summary.status || "") || Boolean(lastUpdate);
     const done = /complete/i.test(row.summary.status || "") || (stops.length > 0 && !next);
-    const silent = started && !done && (minutesAgo(lastUpdate, now) ?? 0) > SILENT_MINUTES;
+    // W8: silent trip and chilled-on-board watch, from real trip data only.
+    const active = started && !done;
+    const lastReported = [...stops].reverse().find((s) => s.outcomeCode || s.arrivedAt);
+    const watch = enrichTripWithWatch({
+      tripId: row.summary.tripId,
+      vehicleId: row.summary.vehicleId,
+      lastUpdateAt: active ? lastUpdate : undefined,
+      lastKnownPlace: lastReported ? [lastReported.outletId, lastReported.outletName].filter(Boolean).join(" · ") : (DEPOT_LABELS[row.summary.depot || ""] || row.summary.depot || ""),
+      isChilled: active && stops.some((s) => !s.outcomeCode && isChilled(s.temperatureRequirement)),
+      chilledStartedAt: row.detail?.run?.startedAt,
+      chilledAllowedMinutes: FRESH_TRIP_BUDGET_MINUTES,
+    }, now);
+    const silent = watch.isSilent;
     const state: RowState = incident ? "broken" : done ? "done" : nextEta && (nextEta.kind === "late" || nextEta.kind === "risk") ? "late" : silent ? "silent" : started ? "ok" : "waiting";
-    return { ...row, next, nextEta, lastUpdate, state, incident, chilled: stops.some((s) => isChilled(s.temperatureRequirement)) };
+    return { ...row, next, nextEta, lastUpdate, state, incident, watch, chilled: stops.some((s) => isChilled(s.temperatureRequirement)) };
   });
   const order: RowState[] = ["broken", "late", "silent", "ok", "waiting", "done"];
   const sorted = [...evaluated].sort((a, b) => order.indexOf(a.state) - order.indexOf(b.state));
@@ -111,7 +128,14 @@ export function LiveOperationsPage() {
     actions.push({ key: `inc-${incident.id}`, severity: "high", title: `${incident.vehicleId} · ${t(incident.type)}`, text: `${incident.description} · ${t("blocked for planning on")} ${incident.date}`, actions: [{ label: t("Open recovery"), primary: true, onClick: () => setRecovery(incident) }] });
   }
   for (const row of lateRows) actions.push({ key: `late-${row.summary.tripId}`, severity: "high", title: `${row.summary.vehicleId} ${t("will reach")} ${row.next?.outletName || row.next?.outletId || ""} ${t("after its window closes")}`, text: `${t("Window")} ${clock(row.next?.plannedWindowOpen)}–${clock(row.next?.plannedWindowClose)} · ${t(row.nextEta?.label || "")}`, actions: [{ label: t("Acknowledge"), onClick: () => setAcknowledged((a) => [...a, `late-${row.summary.tripId}`]) }, { label: t("Open trip"), onClick: () => setOpenTrip(row.summary.tripId) }] });
-  for (const row of evaluated.filter((r) => r.state === "silent")) actions.push({ key: `silent-${row.summary.tripId}`, severity: "medium", title: `${t("No update from")} ${row.summary.vehicleId} ${t("for")} ${minutesAgo(row.lastUpdate, now)} ${t("minutes")}`, text: `${t("Last heard")} ${clock(row.lastUpdate)} · ${t("Records made offline will sync when signal returns")}`, actions: [{ label: t("Acknowledge"), onClick: () => setAcknowledged((a) => [...a, `silent-${row.summary.tripId}`]) }, { label: t("Open trip"), onClick: () => setOpenTrip(row.summary.tripId) }] });
+  const watchAlerts = generateNeedsActionAlerts(evaluated.flatMap((r) => (r.watch ? [r.watch] : [])), new Set<string>(), now)
+    .filter((a) => a.type === "CHILLED_OVERAGE" || evaluated.find((r) => r.summary.tripId === a.tripId)?.state === "silent");
+  for (const alert of watchAlerts) {
+    const ackAction = { label: t("Acknowledge"), onClick: () => setAcknowledged((a) => [...a, alert.id]) };
+    const openAction = { label: t("Open trip"), primary: alert.type === "CHILLED_OVERAGE", onClick: () => setOpenTrip(alert.tripId) };
+    if (alert.type === "SILENT_TRIP") actions.push({ key: alert.id, severity: "medium", title: `${t("No update from")} ${alert.vehicleId} ${t("for")} ${alert.minutes} ${t("minutes")}`, text: `${t("No update since")} ${alert.timeStr}${alert.lastKnownPlace ? ` · ${t("Last known")}: ${alert.lastKnownPlace}` : ""} · ${t("Records made offline will sync when signal returns")}`, actions: [ackAction, openAction] });
+    else actions.push({ key: alert.id, severity: "high", title: `${alert.vehicleId} · ${t("Chilled goods on board running long")}`, text: `${t("Chilled time on board")}: ${alert.chilledMinutes}m (${t("exceeds allowed limit")})`, actions: [ackAction, openAction] });
+  }
   for (const trip of (loading.data?.items || []).filter((x) => (x.shortfallCount || 0) > 0)) actions.push({ key: `short-${trip.tripId}`, severity: "medium", title: `${t("Loading shortfall on")} ${trip.vehicleId} ${t("trip")} ${trip.tripNumber ?? 1}: ${trip.shortfallCount} ${t("order(s) short before departure")}`, text: `${DEPOT_LABELS[trip.depot || ""] || trip.depot || ""} · ${trip.planRef || ""}`, actions: [{ label: t("Review shortfall"), primary: true, to: "/dispatcher/notifications" }] });
   const openActions = actions.filter((a) => !acknowledged.includes(a.key));
   const rail = (s: Severity) => (s === "critical" ? "dp-list-item--critical" : s === "high" ? "dp-list-item--high" : s === "medium" ? "dp-list-item--medium" : "");
@@ -177,15 +201,15 @@ export function LiveOperationsPage() {
                     const first = stops[0];
                     const ago = minutesAgo(row.lastUpdate, now);
                     return (
-                      <tr key={row.summary.tripId} className={`is-clickable${row.state === "broken" ? " is-alert" : ""}`} onClick={() => setOpenTrip(row.summary.tripId)}>
+                      <tr key={row.summary.tripId} className={`is-clickable${row.state === "broken" ? " is-alert" : ""}${row.state === "silent" ? " is-silent" : ""}`} onClick={() => setOpenTrip(row.summary.tripId)}>
                         <td><button type="button" className="dp-link" onClick={(e) => { e.stopPropagation(); setOpenTrip(row.summary.tripId); }}>{row.summary.vehicleId}</button><span className="dp-cell-sub">{DEPOT_LABELS[row.summary.depot || ""] || row.summary.depot}</span></td>
                         <td><span className="dp-cell-main">{t(first?.brand || "—")}</span><span className="dp-cell-sub">{first?.district || ""}</span></td>
                         <td>{row.summary.tripNumber ?? 1} {t("of")} 2</td>
                         <td><span className="dp-dots" aria-label={`${row.summary.completedStops ?? 0} ${t("of")} ${row.summary.stopCount ?? stops.length} ${t("stops")}`}>{stops.map((s) => <span key={s.id} className={`dp-dot${s.outcomeCode ? (/fail|refus/i.test(s.outcomeCode) ? " dp-dot--failed" : " dp-dot--done") : ""}`} />)}</span> <span className="dp-cell-sub" style={{ display: "inline" }}>{row.summary.completedStops ?? 0} {t("of")} {row.summary.stopCount ?? stops.length}</span></td>
                         <td><span className={`dp-cell-main${row.state === "broken" ? " dp-cell-sub--red" : ""}`}>{row.next ? `${row.next.outletId}${row.next.outletName ? ` ${row.next.outletName}` : ""}` : "—"}</span><span className="dp-cell-sub">{row.state === "broken" ? t("Stranded with the truck") : row.next ? `${t("Window")} ${clock(row.next.plannedWindowOpen)} ${t("to")} ${clock(row.next.plannedWindowClose)}` : ""}</span></td>
                         <td><span className="dp-cell-main">{clock(plan.data?.allocations?.find((a) => a.tripId === row.summary.tripId && a.orderId === row.next?.orderId)?.plannedArrivalAt)}</span><span className={`dp-cell-sub${row.nextEta?.kind === "late" || row.nextEta?.kind === "risk" ? " dp-cell-sub--amber" : " dp-cell-sub--green"}`}>{row.state === "broken" ? t("No ETA") : row.nextEta?.eta ? clock(row.nextEta.eta) : t("Unknown")}</span></td>
-                        <td>{row.chilled ? <Tag tone="cool">❄ {t("Chilled")}</Tag> : <Tag tone="primary">{t("Ambient")}</Tag>}</td>
-                        <td><span className={`dp-cell-main${row.state === "silent" ? " dp-cell-sub--amber" : ""}`}>{clock(row.lastUpdate)}</span><span className={`dp-cell-sub${row.state === "silent" ? " dp-cell-sub--amber" : ""}`}>{ago === undefined ? t("No driver update yet") : `${ago} ${t("min ago")}`}</span></td>
+                        <td>{row.chilled ? <Tag tone="cool">❄ {t("Chilled")}</Tag> : <Tag tone="primary">{t("Ambient")}</Tag>}{row.watch?.isChilledLong && <Tag tone="amber" block>{t("Chilled time on board")}: {row.watch.chilledMinutes}m ({t("exceeds allowed limit")})</Tag>}</td>
+                        <td><span className={`dp-cell-main${row.state === "silent" ? " dp-cell-sub--amber" : ""}`}>{clock(row.lastUpdate)}</span><span className={`dp-cell-sub${row.state === "silent" ? " dp-cell-sub--amber" : ""}`}>{ago === undefined ? t("No driver update yet") : `${ago} ${t("min ago")}`}</span>{row.state === "silent" && row.watch && <><Tag tone="silent" block>{t("No update since")} {row.watch.silentTime}</Tag>{row.watch.lastKnownPlace && <span className="dp-cell-sub">{t("Last known")}: {row.watch.lastKnownPlace}</span>}</>}</td>
                         <td>{statusTag(row)}</td>
                       </tr>
                     );
@@ -211,8 +235,11 @@ function TripMap({ rows, outlets, onOpen }: { rows: Row[]; outlets: Map<string, 
   const { t } = useLocale();
   const [selected, setSelected] = useState("");
   const color = (s: RowState) => (s === "broken" ? "#c03221" : s === "late" ? "#d9822b" : s === "silent" || s === "waiting" ? "#8a92a6" : "#008b52");
-  const tone = (s: RowState) => (s === "broken" ? "red" : s === "late" ? "amber" : s === "silent" || s === "waiting" ? "muted" : "green") as "red" | "amber" | "muted" | "green";
+  const tone = (s: RowState) => (s === "broken" ? "red" : s === "late" ? "amber" : s === "silent" ? "silent" : s === "waiting" ? "muted" : "green") as "red" | "amber" | "silent" | "muted" | "green";
+  // The marker disc is grey for silent and waiting trips; its label text uses the darker silent grey so it stays readable on the white label.
+  const labelColor = (s: RowState) => (s === "silent" || s === "waiting" ? "#4b5568" : undefined);
   const stateLabel = (s: RowState) => t(s === "broken" ? "Broken down" : s === "late" ? "Will miss window" : s === "silent" ? "No update" : s === "done" ? "Completed" : s === "waiting" ? "Not started" : "On track");
+  const silentText = (row: Row) => (row.state === "silent" && row.watch?.silentTime ? `${t("No update since")} ${row.watch.silentTime}` : stateLabel(row.state));
   const at = (stop?: DeliveryStop): LatLng | undefined => {
     const o = stop ? outlets.get(stop.outletId || "") : undefined;
     return o?.latitude != null && o.longitude != null ? [o.latitude, o.longitude] : undefined;
@@ -238,7 +265,7 @@ function TripMap({ rows, outlets, onOpen }: { rows: Row[]; outlets: Map<string, 
         if (p) markers.push({ id: `${row.summary.tripId}-${s.id}`, at: p, kind: "stop", color: s.outcomeCode ? "#008b52" : "#3a57e8", label: String(s.stopSequence), title: `${s.stopSequence}. ${s.outletId} ${s.outletName || ""}` });
       }
     }
-    if (truck) markers.push({ id: row.summary.tripId, at: truck, kind: "truck", color: color(row.state), selected: focus, label: `${row.summary.vehicleId} · ${stateLabel(row.state)}`, title: `${row.summary.vehicleId} · ${stateLabel(row.state)}`, onClick: () => setSelected(row.summary.tripId) });
+    if (truck) markers.push({ id: row.summary.tripId, at: truck, kind: "truck", color: color(row.state), labelColor: labelColor(row.state), selected: focus, label: `${row.summary.vehicleId} · ${silentText(row)}`, title: `${row.summary.vehicleId} · ${silentText(row)}`, onClick: () => setSelected(row.summary.tripId) });
   }
   for (const d of depots) markers.push({ id: `depot-${d}`, at: depotPosition(d)!, kind: "depot", color: "#232d42", label: `${DEPOT_LABELS[d] || d} ${t("depot")}`, title: `${DEPOT_LABELS[d] || d} ${t("depot")}` });
   const chosen = rows.find((r) => r.summary.tripId === selected);
@@ -394,10 +421,15 @@ function RecoveryDrawer({ incident, plan, rows, onClose, onDone }: { incident: I
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  // Trips whose revision is already published (kept so a retry does not resend them), their notice lines,
+  // and whether the last attempt stopped because the vehicle could not be put in the workshop.
+  const [doneTrips, setDoneTrips] = useState<number[]>([]);
+  const [drafts, setDrafts] = useState<string[]>([]);
+  const [workshopPending, setWorkshopPending] = useState(false);
 
   useEffect(() => {
     if (!incident) return;
-    setStep(1); setProposal(null); setChoice({}); setError("");
+    setStep(1); setProposal(null); setChoice({}); setError(""); setDoneTrips([]); setDrafts([]); setWorkshopPending(false);
     if (!plan) { setError(t("No plan is loaded for this date, so replacement options cannot be checked.")); return; }
     void apiJSON<BreakdownProposal>(`/planning/plans/${plan.plan.id}/breakdowns/proposals?vehicleId=${encodeURIComponent(incident.vehicleId)}`, token)
       .then((result) => {
@@ -413,14 +445,13 @@ function RecoveryDrawer({ incident, plan, rows, onClose, onDone }: { incident: I
     if (!plan || !incident || !proposal) return;
     setBusy(true); setError("");
     try {
-      const drafts: string[] = [];
-      for (const item of proposal.items) {
-        const replacement = choice[item.tripNumber];
-        if (!replacement) continue;
-        const result = await apiJSON<{ planVersion: number; noticeDrafts: { orderRef: string; outletId: string; estimatedArrival: string }[] }>(`/planning/plans/${plan.plan.id}/breakdowns/reassign`, token, { method: "POST", body: JSON.stringify({ sourceVehicleId: incident.vehicleId, replacementVehicleId: replacement, tripNumber: item.tripNumber }) });
-        drafts.push(...result.noticeDrafts.map((n) => `${n.outletId} ${clock(n.estimatedArrival)}`));
-      }
-      onDone(`${t("Replacement confirmed · a new plan version was published")}${drafts.length ? ` · ${drafts.join(", ")}` : ""}`);
+      const trips = proposal.items.map((item) => ({ tripNumber: item.tripNumber, replacement: choice[item.tripNumber] }));
+      const outcome = await runRecovery(trips, doneTrips, (trip) => apiJSON<{ status: string; vehicleInWorkshop: boolean; planVersion: number; noticeDrafts: { orderRef: string; outletId: string; estimatedArrival: string }[] }>(`/planning/plans/${plan.plan.id}/breakdowns/reassign`, token, { method: "POST", body: JSON.stringify({ sourceVehicleId: incident.vehicleId, replacementVehicleId: trip.replacement, tripNumber: trip.tripNumber }) }));
+      const allDrafts = [...drafts, ...outcome.results.flatMap((result) => result.noticeDrafts.map((n) => `${n.outletId} ${clock(n.estimatedArrival)}`))];
+      setDoneTrips(outcome.done); setDrafts(allDrafts);
+      setWorkshopPending(outcome.state === "workshop_pending");
+      if (outcome.state === "complete") onDone(`${t("Replacement confirmed · a new plan version was published")}${allDrafts.length ? ` · ${allDrafts.join(", ")}` : ""}`);
+      else if (outcome.state === "failed") setError(errorText(outcome.error));
     } catch (e) { setError(errorText(e)); }
     finally { setBusy(false); }
   }
@@ -428,7 +459,7 @@ function RecoveryDrawer({ incident, plan, rows, onClose, onDone }: { incident: I
   const row = rows.find((r) => r.summary.vehicleId === incident?.vehicleId);
   const stopInfo = (orderId: string) => row?.detail?.stops.find((s) => s.orderId === orderId);
   const ranked = (proposal?.items || []).flatMap((item) => item.stops.map((s) => ({ ...s, tripNumber: item.tripNumber, stop: stopInfo(s.orderId) })))
-    .sort((a, b) => Number(isChilled(b.stop?.temperatureRequirement)) - Number(isChilled(a.stop?.temperatureRequirement)) || (a.stop?.plannedWindowClose || "").localeCompare(b.stop?.plannedWindowClose || ""));
+    .sort((a, b) => Number(Boolean(b.chilled) || isChilled(b.stop?.temperatureRequirement)) - Number(Boolean(a.chilled) || isChilled(a.stop?.temperatureRequirement)) || (a.windowClose || a.stop?.plannedWindowClose || "").localeCompare(b.windowClose || b.stop?.plannedWindowClose || "") || (a.urgencyRank ?? 0) - (b.urgencyRank ?? 0));
   const anyChoice = Object.values(choice).some(Boolean);
   const steps = (
     <ol className="dp-steps">
@@ -443,9 +474,10 @@ function RecoveryDrawer({ incident, plan, rows, onClose, onDone }: { incident: I
         {step > 1 && <button type="button" className="dp-btn dp-btn--secondary" onClick={() => setStep(step - 1)}>{t("Back")}</button>}
         {step === 1 && <button type="button" className="dp-btn" disabled={!proposal} onClick={() => setStep(2)}>→ {t("Find rescue options")}</button>}
         {step === 2 && <button type="button" className="dp-btn" disabled={!anyChoice} onClick={() => setStep(3)}>→ {t("Use selected option")}</button>}
-        {step === 3 && <><span className="muted dp-spacer" style={{ fontSize: "0.8125rem" }}>ⓘ {t("Nothing is sent until you confirm.")}</span><button type="button" className="dp-btn" disabled={busy || !anyChoice} onClick={() => void confirmAll()}>✓ {t("Confirm replacement and publish version")}</button></>}
+        {step === 3 && <><span className="muted dp-spacer" style={{ fontSize: "0.8125rem" }}>ⓘ {t("Nothing is sent until you confirm.")}</span><button type="button" className="dp-btn" disabled={busy || !anyChoice} onClick={() => void confirmAll()}>{workshopPending ? `↻ ${t("Retry workshop update")}` : `✓ ${t("Confirm replacement and publish version")}`}</button></>}
       </>}>
       {error && <p className="dp-note dp-note--red" role="alert">{error}</p>}
+      {workshopPending && incident && <p className="dp-note dp-note--red" role="alert" data-testid="workshop-pending"><strong>{t("Recovery is not complete")}</strong> {incident.vehicleId} {t("could not be marked as in the workshop, so it can still be planned. The replacement is not confirmed until this succeeds.")}{doneTrips.length > 0 && <> {t("Trips already published:")} {doneTrips.join(", ")}.</>}</p>}
       {incident && step === 1 && <>
         <div className="dp-banner" style={{ alignItems: "flex-start" }}>
           <span className="dp-banner-icon" aria-hidden="true">!</span>

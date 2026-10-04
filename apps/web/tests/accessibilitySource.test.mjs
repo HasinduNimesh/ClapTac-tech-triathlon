@@ -2,8 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import ts from "typescript";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 
 const sourceRoot = new URL("../src/", import.meta.url);
 const rootPath = fileURLToPath(sourceRoot);

@@ -51,3 +51,18 @@ func TestConfiguredCutoffIsAppliedWithoutChangingOperatingConstraints(t *testing
 func date(y, m, d int, loc *time.Location) time.Time {
 	return time.Date(y, time.Month(m), d, 0, 0, 0, 0, loc)
 }
+
+func TestAddWorkingDaysSkipsWeekendsAndHolidays(t *testing.T) {
+	loc, _ := time.LoadLocation(Zone)
+	day := func(d int) time.Time { return time.Date(2026, 10, d, 0, 0, 0, 0, loc) }
+	// 2026-10-02 is a Friday; Monday the 5th is closed in this calendar.
+	c := Load([]Day{{Date: day(5), IsOperating: false}, {Date: day(6), IsOperating: true}, {Date: day(7), IsOperating: true}})
+	got := c.AddWorkingDays(time.Date(2026, 10, 2, 14, 0, 0, 0, loc), 2)
+	if got.Day() != 7 || got.Hour() != 23 {
+		t.Fatalf("Fri + 2 working days with Monday closed = %v", got)
+	}
+	var nilCal *Calendar
+	if got := nilCal.AddWorkingDays(time.Date(2026, 10, 1, 9, 0, 0, 0, loc), 2); got.Day() != 5 {
+		t.Fatalf("weekday fallback Thu + 2 = %v", got)
+	}
+}

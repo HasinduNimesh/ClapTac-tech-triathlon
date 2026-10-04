@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Waypoint Planning Service
-  version: 0.3.0
+  version: 0.4.0
 servers:
   - url: /api/v1
 paths:
@@ -174,6 +174,158 @@ paths:
       responses:
         "200": { description: Confirmed }
         "409": { description: Unresolved orders or constraint failure }
+  /planning/plans/{id}/acknowledgements:
+    post:
+      operationId: acknowledgePlanVersion
+      security: [{ bearerAuth: [] }]
+      description: >-
+        Requires plan:acknowledge (driver or loader). Records the caller's receipt of the current published version for one trip.
+        tripId is optional only for legacy clients; a receipt without a trip is plan-level and does not mark any trip acknowledged.
+        A driver may acknowledge only a trip of their assigned vehicle and a loader only a trip of their depot. Repeating is idempotent.
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [version]
+              properties:
+                version: { type: integer, minimum: 1 }
+                tripId: { type: string, format: uuid, description: "Trip of this plan the receipt covers." }
+      responses:
+        "200": { description: Acknowledged }
+        "403": { description: Trip belongs to another vehicle or depot }
+        "404": { description: Plan not found, or tripId is not a trip of this plan }
+        "409": { description: Plan not published or version is stale }
+  /planning/plans/{id}/reminders:
+    post:
+      operationId: sendPlanAcknowledgementReminder
+      security: [{ bearerAuth: [] }]
+      description: >-
+        Requires plan:update (dispatcher). Records a persisted reminder asking the trip's driver or loader to acknowledge the current
+        plan version, writes a PLAN_ACK_REMINDER_SENT audit event (trip, audience, version, actor) and, for DRIVER, posts a message on
+        the delivery trip message channel as the calling dispatcher. A repeat for the same trip, audience and version within 5 minutes
+        changes nothing and returns the earlier reminder with alreadySent=true.
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tripId, audience]
+              properties:
+                tripId: { type: string, format: uuid }
+                audience: { type: string, enum: [DRIVER, LOADER] }
+      responses:
+        "200":
+          description: Reminder recorded, or already sent within the last 5 minutes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  reminder:
+                    type: object
+                    properties:
+                      tripId: { type: string }
+                      audience: { type: string, enum: [DRIVER, LOADER] }
+                      version: { type: integer }
+                      remindedAt: { type: string, format: date-time }
+                      remindedBy: { type: string }
+                  alreadySent: { type: boolean }
+                  tripMessage: { type: string, description: "DRIVER only: 'sent', or 'unavailable' when the driver has not prepared the trip run yet; the persisted reminder is still shown in the driver app." }
+        "400": { description: Missing tripId or invalid audience }
+        "403": { description: Caller lacks plan:update }
+        "404": { description: tripId is not a trip of this plan }
+        "409": { description: Plan not published, or that recipient already acknowledged the trip }
+    get:
+      operationId: listPlanAcknowledgementReminders
+      security: [{ bearerAuth: [] }]
+      description: Requires plan:acknowledge (driver or loader). Reminders for the current published version addressed to the caller's role, optionally for one trip.
+      parameters:
+        - $ref: "#/components/parameters/ID"
+        - { name: tripId, in: query, schema: { type: string } }
+      responses:
+        "200": { description: Reminders addressed to the caller's role }
+        "403": { description: Not a driver or loader }
+  /planning/plans/{id}/breakdowns/proposals:
+    get:
+      operationId: getBreakdownProposals
+      security: [{ bearerAuth: [] }]
+      description: Requires plan:view. Rescue options, with hard-constraint checks, for the trips a broken-down vehicle can no longer serve.
+      parameters:
+        - $ref: "#/components/parameters/ID"
+        - { name: vehicleId, in: query, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Affected trips with feasible and blocked replacement vehicles }
+        "400": { description: vehicleId missing }
+  /planning/plans/{id}/breakdowns/reassign:
+    post:
+      operationId: confirmBreakdownReassignment
+      security: [{ bearerAuth: [] }]
+      description: >
+        Requires plan:update. Moves one affected trip to a replacement vehicle, publishes the revised plan as a new
+        version and puts the broken vehicle in the workshop (fleet availability in_workshop) for the plan's delivery date.
+        The response is `confirmed` only when BOTH the revision is committed and the vehicle is in the workshop
+        (`vehicleInWorkshop` is then always true). The workshop update runs first, before anything is committed; if
+        fleet-service cannot apply it the call fails with 502 and code `workshop_pending`, nothing is committed, no plan
+        version or audit event is created, and the identical request can simply be retried. The fleet update is an
+        upsert, so repeating it is harmless.
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sourceVehicleId, replacementVehicleId, tripNumber]
+              properties:
+                sourceVehicleId: { type: string }
+                replacementVehicleId: { type: string }
+                tripNumber: { type: integer, minimum: 1, maximum: 2 }
+      responses:
+        "200":
+          description: Revision committed and vehicle in the workshop
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, planVersion, vehicleInWorkshop]
+                properties:
+                  status: { type: string, enum: [confirmed] }
+                  planVersion: { type: integer }
+                  sourceVehicleId: { type: string }
+                  replacementVehicleId: { type: string }
+                  tripNumber: { type: integer }
+                  movedStops: { type: integer }
+                  vehicleInWorkshop: { type: boolean, enum: [true] }
+                  decidedBy: { type: string }
+                  noticeDrafts:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        orderRef: { type: string }
+                        outletId: { type: string }
+                        estimatedArrival: { type: string, format: date-time }
+        "400": { description: Invalid request }
+        "404": { description: Plan or affected trip not found }
+        "409": { description: Replacement vehicle failed a hard constraint, or the plan is not generated yet }
+        "502":
+          description: >
+            The vehicle could not be put in the workshop (fleet-service failure). The recovery is NOT complete, nothing
+            was committed, and the same request is safe to retry. Clients must show an unresolved state with a Retry
+            and must not report success.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              example: { type: "about:blank", title: Bad Gateway, status: 502, detail: "workshop_pending: vehicle VEH001 could not be marked in the workshop, so the recovery is not complete and the plan was not changed; retry the same request", code: workshop_pending }
   /planning/internal/trips:
     get:
       operationId: listConfirmedTripsInternal
