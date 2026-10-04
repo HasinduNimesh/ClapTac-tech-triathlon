@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { Locale, useLocale } from "../i18n";
 import { DpHero, Note, Panel } from "./ui";
 import { CONTRAST_KEY, SIZE_KEY, TextSize, applyDisplayPreferences, readPreference as read, writePreference as write } from "../displayPreferences";
+import { DisplayNameForm } from "../auth/DisplayNameForm";
 
 export function DispatcherSettingsPage() {
   const { t, locale, setLocale } = useLocale();
@@ -15,6 +16,7 @@ export function DispatcherSettingsPage() {
       <DpHero title={t("Settings")} subtitle={t("Language, display and the reference data every plan depends on.")} />
       <div className="dp-body dp-body--flush">
         <div className="dp-grid-2 dp-grid-2--even">
+          <Panel title={t("Account name")} sub={t("Your name appears in the sidebar across devices.")}><DisplayNameForm /></Panel>
           <Panel title={t("Language and accessibility")} sub={t("Larger text and high contrast help when reading a tablet in a busy depot.")}>
             <div className="dp-stack">
               <label className="dp-field">{t("Language")}

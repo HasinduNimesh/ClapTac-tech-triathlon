@@ -38,7 +38,7 @@ func TestDispatcherProfileCarriesTheirDepot(t *testing.T) {
 	if _, err = pool.Exec(ctx, `CREATE SCHEMA shared; CREATE SCHEMA audit;`); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"0002_identity.sql", "0008_loader_profiles.sql", "0010_driver_profiles.sql", "0045_dispatcher_profiles.sql"} {
+	for _, name := range []string{"0002_identity.sql", "0008_loader_profiles.sql", "0010_driver_profiles.sql", "0045_user_display_name.sql", "0046_dispatcher_profiles.sql"} {
 		sql, err := os.ReadFile("../../../../database/migrations/" + name)
 		if err != nil {
 			t.Fatal(err)

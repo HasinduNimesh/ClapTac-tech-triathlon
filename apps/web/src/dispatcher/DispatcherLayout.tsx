@@ -60,7 +60,7 @@ export function DispatcherLayout() {
     if (q) navigate(`/dispatcher/orders?q=${encodeURIComponent(q)}`);
   }
 
-  const name = profile?.userId || t("Dispatcher");
+  const name = profile?.displayName?.trim() || profile?.userId || t("Dispatcher");
   const initials = name.split(/[\s._-]+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "D";
   const item = (to: string, label: string, icon: string, width: number, height: number, count?: number, end?: boolean) => (
     <NavLink to={to} end={end} className={({ isActive }) => `sm-nav-item${isActive ? " active" : ""}`}>
