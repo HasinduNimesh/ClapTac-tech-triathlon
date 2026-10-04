@@ -275,7 +275,7 @@ services:
     environment:
       ENVIRONMENT: ${ENVIRONMENT:-local}
       OIDC_ISSUER: ${OIDC_ISSUER:-http://localhost:8090}
-      OIDC_JWKS_URL: http://thunderid:8090/oauth2/jwks
+      OIDC_JWKS_URL: ${OIDC_JWKS_URL:-http://thunderid:8090/oauth2/jwks}
       OIDC_AUDIENCE: ${OIDC_AUDIENCE:-waypoint-api}
       SHARED_SERVICE_URL: http://shared-service:8080
       ORDER_SERVICE_URL: http://order-service:8080
