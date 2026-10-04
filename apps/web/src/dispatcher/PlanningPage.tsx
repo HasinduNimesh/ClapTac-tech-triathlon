@@ -11,7 +11,7 @@ import { useLocale } from "../i18n";
 import { planLevelAcks, trackerRows, unacknowledgedTargets, type TrackerCell } from "./ackTracking.mjs";
 import { resolveFuelAttempt } from "./fuelSubmission.mjs";
 import { DisruptionRiskPanel } from "./DisruptionRiskPanel";
-import { Outlet, outletMap } from "./types";
+import { Outlet, isVanOnly, outletMap } from "./types";
 import { FRESH_TRIP_BUDGET_MINUTES, normalizePlan, planChecks, tripLoads } from "./planModel";
 import { LatLng, MapLine, MapMarker, WaypointMap, depotPosition } from "../components/WaypointMap";
 import { Banner, Check, ChipGroup, DpHero, Drawer, Meter, Note, Panel, Stat, StatRow, Tag, brandTone, meterTone } from "./ui";
@@ -462,14 +462,16 @@ export function PlanningPage() {
             const wPct = pct(weightAfter, assignVehicle.weightCapacityKg), vPct = pct(volumeAfter, assignVehicle.volumeCapacityM3);
             const coolingOk = !isChilled(assignOrderData.temperatureRequirement) || /chill|refriger|frozen|multi|reefer/i.test(assignVehicle.temp);
             const depotOk = !depotOf(assignOrderData) || depotOf(assignOrderData) === assignVehicle.homeDepot;
+            const parkingOk = !isVanOnly(outletById.get(assignOrderData.outletId)) || /^van$/i.test(assignVehicle.type);
             return (
               <div className="dp-trip-card" style={{ fontSize: "0.875rem" }}>
-                <div className="dp-row dp-row--between"><strong>{assignVehicle.id} · {t("Trip")} {tripNumber}</strong><Tag tone={wPct > 100 || vPct > 100 || !coolingOk ? "red" : "green"}>{wPct > 100 || vPct > 100 || !coolingOk ? t("Attention") : t("On track")}</Tag></div>
+                <div className="dp-row dp-row--between"><strong>{assignVehicle.id} · {t("Trip")} {tripNumber}</strong><Tag tone={wPct > 100 || vPct > 100 || !coolingOk || !parkingOk ? "red" : "green"}>{wPct > 100 || vPct > 100 || !coolingOk || !parkingOk ? t("Attention") : t("On track")}</Tag></div>
                 <Meter label={t("Weight after this order")} valueText={`${wPct}%`} pct={wPct} tone={meterTone(wPct)} ariaLabel={t("Weight after this order")} />
                 <Meter label={t("Volume after this order")} valueText={`${vPct}%`} pct={vPct} tone={meterTone(vPct)} ariaLabel={t("Volume after this order")} />
                 <ul className="dp-checks">
                   <Check state={coolingOk ? "ok" : "bad"}>{coolingOk ? t("Cooling suitable") : t("Chilled goods in non-refrigerated vehicle")}</Check>
                   <Check state={depotOk ? "ok" : "bad"}>{depotOk ? t("Depot match") : t("Depot mismatch")}</Check>
+                  <Check state={parkingOk ? "ok" : "bad"}>{parkingOk ? t("Parking suitable") : t("This outlet only takes vans")}</Check>
                   <Check state={wPct <= 100 && vPct <= 100 ? "ok" : "bad"}>{wPct <= 100 && vPct <= 100 ? t("Within weight and volume limits") : t("Vehicle overloaded")}</Check>
                 </ul>
                 <p className="muted" style={{ margin: 0 }}>{t("The server checks delivery windows, fuel and the trip limit again when you apply.")}</p>
