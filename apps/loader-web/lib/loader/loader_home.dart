@@ -4,6 +4,7 @@ import '../shared/models.dart';
 import '../theme/tokens.dart';
 import '../widgets/common.dart';
 import 'loader_controller.dart';
+import 'switch_user.dart';
 import 'trip_detail_screen.dart';
 
 class LoaderHome extends StatefulWidget {
@@ -70,13 +71,13 @@ class _LoaderHomeState extends State<LoaderHome> {
           body: RefreshIndicator(onRefresh: c.load, child: body),
           bottomNavigationBar: NavigationBar(
             selectedIndex: tab,
-            onDestinationSelected: (i) => i == 4 ? widget.onSignOut() : setState(() => tab = i),
+            onDestinationSelected: (i) => i == 4 ? switchUser(context, c, widget.onSignOut) : setState(() => tab = i),
             destinations: [
               const NavigationDestination(icon: Icon(Icons.inventory_2_outlined), label: 'Load list'),
               NavigationDestination(icon: Badge(isLabelVisible: changed.isNotEmpty, label: Text('${changed.length}'), child: const Icon(Icons.update)), label: 'Plan updates'),
               NavigationDestination(icon: Badge(isLabelVisible: issues > 0, label: Text('$issues'), child: const Icon(Icons.report_outlined)), label: 'Issues'),
               NavigationDestination(icon: Badge(isLabelVisible: notices > 0, label: Text('$notices'), child: const Icon(Icons.notifications_outlined)), label: 'Alerts'),
-              const NavigationDestination(icon: Icon(Icons.logout), label: 'Sign out'),
+              const NavigationDestination(icon: Icon(Icons.switch_account), label: 'Switch user'),
             ],
           ),
         );
@@ -105,7 +106,7 @@ class LoaderHeader extends StatelessWidget {
       child: Row(children: [
         Image.asset('assets/waypoint-logo.png', height: 36, semanticLabel: 'Waypoint'),
         const SizedBox(width: 16),
-        const Text('Loader workspace', style: TextStyle(color: Wp.muted, fontWeight: FontWeight.w500)),
+        const Flexible(child: Text('Loader workspace', overflow: TextOverflow.ellipsis, style: TextStyle(color: Wp.muted, fontWeight: FontWeight.w500))),
         const Spacer(),
         StatusTag(lost ? 'Connection lost · actions paused' : 'Live · plan synced ${clock(controller.refreshedAt)}', tone: lost ? Tone.red : Tone.green, icon: lost ? Icons.wifi_off : Icons.circle),
         const SizedBox(width: 12),
@@ -117,10 +118,12 @@ class LoaderHeader extends StatelessWidget {
           icon: Badge(isLabelVisible: count > 0, label: Text('$count'), child: const Icon(Icons.notifications_outlined)),
         ),
         const SizedBox(width: 8),
+        SwitchUserButton(controller: controller, onSignOut: onSignOut),
+        const SizedBox(width: 8),
         PopupMenuButton<String>(
           tooltip: 'Account',
-          onSelected: (v) => v == 'out' ? onSignOut() : null,
-          itemBuilder: (_) => [const PopupMenuItem(value: 'out', child: Text('Sign out'))],
+          onSelected: (v) => v == 'out' ? switchUser(context, controller, onSignOut) : null,
+          itemBuilder: (_) => [const PopupMenuItem(value: 'out', child: Text('Switch user'))],
           child: Row(children: [
             CircleAvatar(backgroundColor: Wp.tint, foregroundColor: Wp.primary, child: Text(name.isEmpty ? 'L' : name.substring(0, name.length >= 2 ? 2 : 1).toUpperCase(), style: const TextStyle(fontWeight: FontWeight.w700))),
             const SizedBox(width: 10),

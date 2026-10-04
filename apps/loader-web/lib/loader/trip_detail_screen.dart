@@ -11,6 +11,7 @@ import '../theme/tokens.dart';
 import '../widgets/common.dart';
 import 'loader_controller.dart';
 import 'loader_home.dart';
+import 'switch_user.dart';
 
 const _zones = ['Front', 'Front-middle', 'Middle', 'Middle', 'Rear', 'Doors'];
 String _zone(int index, int total) {
@@ -156,7 +157,7 @@ class TripDetailScreen extends StatelessWidget {
         }
         return Scaffold(
           body: ListView(padding: EdgeInsets.zero, children: [
-            LoaderBanner(phone: true, title: '${trip.vehicleId} · Trip ${trip.tripNumber}', subtitle: '${trip.capability.isEmpty ? trip.vehicleType : trip.capability} · ${depotName(trip.depot)}${trip.departAt != null ? ' · departs ${clock(trip.departAt)}' : ''}'),
+            LoaderBanner(phone: true, trailing: IconButton(tooltip: 'Switch user', color: Colors.white, onPressed: () => switchUser(context, controller, onSignOut), icon: const Icon(Icons.switch_account)), title: '${trip.vehicleId} · Trip ${trip.tripNumber}', subtitle: '${trip.capability.isEmpty ? trip.vehicleType : trip.capability} · ${depotName(trip.depot)}${trip.departAt != null ? ' · departs ${clock(trip.departAt)}' : ''}'),
             if (controller.busy) const LinearProgressIndicator(minHeight: 2),
             Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [header, side, const SizedBox(height: 16), guidance])),
           ]),
@@ -728,7 +729,14 @@ class _ReportFormState extends State<_ReportForm> {
   final note = TextEditingController();
 
   @override
+  void initState() {
+    super.initState();
+    widget.controller.reportFormOpened(attempt);
+  }
+
+  @override
   void dispose() {
+    widget.controller.reportFormClosed(attempt);
     note.dispose();
     super.dispose();
   }

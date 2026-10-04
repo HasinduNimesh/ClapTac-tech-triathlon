@@ -448,9 +448,10 @@ func (p Postgres) InsertDriverIncident(ctx context.Context, runID, stopID, opera
 func (p Postgres) OrderTracking(ctx context.Context, orderID string) (domain.OrderTracking, error) {
 	var t domain.OrderTracking
 	var short []byte
-	err := p.Pool.QueryRow(ctx, `SELECT r.id::text,r.trip_id,r.vehicle_id,r.status,s.id::text,COALESCE(s.outcome_code,''),COALESCE(s.outcome_reason,''),s.outcome_at,s.completed_at,s.loading_shortfall_summary,s.delivered_units
+	err := p.Pool.QueryRow(ctx, `SELECT r.id::text,r.trip_id,r.vehicle_id,r.depot,r.status,s.id::text,COALESCE(s.outcome_code,''),COALESCE(s.outcome_reason,''),s.outcome_at,s.completed_at,s.loading_shortfall_summary,s.delivered_units
 		FROM stops s JOIN runs r ON r.id=s.run_id WHERE s.order_id=$1
-		ORDER BY r.updated_at DESC,COALESCE(s.completed_at,s.outcome_received_at,s.arrived_at) DESC NULLS LAST LIMIT 1`, orderID).Scan(&t.RunID, &t.TripID, &t.VehicleID, &t.RunStatus, &t.StopID, &t.Outcome, &t.Reason, &t.OccurredAt, &t.CompletedAt, &short, &t.DeliveredUnits)
+		ORDER BY r.updated_at DESC,COALESCE(s.completed_at,s.outcome_received_at,s.arrived_at) DESC NULLS LAST LIMIT 1`, orderID).Scan(&t.RunID, &t.TripID, &t.VehicleID, &t.Depot, &t.RunStatus, &t.StopID, &t.Outcome, &t.Reason, &t.OccurredAt, &t.CompletedAt, &short, &t.DeliveredUnits)
+
 	if err == pgx.ErrNoRows {
 		return t, fmt.Errorf("not found")
 	}
@@ -458,12 +459,21 @@ func (p Postgres) OrderTracking(ctx context.Context, orderID string) (domain.Ord
 		return t, err
 	}
 	if t.RunStatus == domain.RunInProgress {
+		point, err := p.ActiveLocation(ctx, t.TripID)
+		if err == nil {
+			t.Location = point
+		}
 		prediction, e := p.ArrivalPrediction(ctx, t.StopID)
-		if e == nil { t.ArrivalPrediction = prediction }
+		if e == nil {
+			t.ArrivalPrediction = prediction
+		}
 	}
 	if t.Outcome == domain.OutcomeRefused {
 		returned, e := p.ReturnedGoods(ctx, t.StopID)
-		if e == nil { t.ReturnedGoods = returned }
+		if e == nil {
+			t.ReturnedGoods = returned
+		}
+
 	}
 	_ = json.Unmarshal(short, &t.LoadingShortfallSummary)
 	if t.LoadingShortfallSummary == nil {

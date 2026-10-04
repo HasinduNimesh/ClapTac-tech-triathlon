@@ -1,3 +1,5 @@
+export type LiveLocation = { tripId: string; vehicleId: string; latitude: number; longitude: number; timestamp: string };
+
 export type DeliveryStop = {
   id: string;
   runId: string;
@@ -19,6 +21,7 @@ export type DeliveryStop = {
   parkingConstraint?: string;
   accessInstructions?: string;
   accessInstructionsUpdatedAt?: string;
+  plannedArrivalAt?: string;
   plannedWindowOpen?: string;
   plannedWindowClose?: string;
   stopSequence: number;

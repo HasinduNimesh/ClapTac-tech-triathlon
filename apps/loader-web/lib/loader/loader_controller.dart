@@ -75,6 +75,18 @@ class LoaderController extends ChangeNotifier {
   String error = '';
   DateTime? refreshedAt;
 
+  final Set<ReportAttempt> _openReports = {};
+
+  /// A report form is open: [attempt] is what the loader has started but not finished sending.
+  void reportFormOpened(ReportAttempt attempt) => _openReports.add(attempt);
+  void reportFormClosed(ReportAttempt attempt) => _openReports.remove(attempt);
+
+  /// Something this loader started is not finished: an action is still on its way to the server,
+  /// or a report form is open (not sent yet, or filed with its photo still to upload). The app
+  /// keeps nothing for later, so signing out now would throw that away; the Switch user button
+  /// asks first. Everything already sent is on the server under this loader's name.
+  bool get hasUnsentWork => busy || _openReports.isNotEmpty;
+
   LoadingTrip? get selected => details[selectedTripId] ?? trips.where((t) => t.tripId == selectedTripId).firstOrNull;
   List<LoadingTrip> get allTrips => trips.map((t) => details[t.tripId] ?? t).toList();
   ReadyCheck checkFor(String tripId) => readyChecks.putIfAbsent(tripId, ReadyCheck.new);

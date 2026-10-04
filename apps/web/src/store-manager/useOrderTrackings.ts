@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiJSON, Order } from "../api/client";
-import { ArrivalPrediction } from "../api/delivery";
+import { LiveLocation, ArrivalPrediction } from "../api/delivery";
+
 import { useAuth } from "../auth/AuthContext";
 import { splitTrackingResults } from "./trackingResults.mjs";
 
@@ -9,9 +10,10 @@ export type Tracking = {
   order: Order;
   planning: { state?: string; planRef?: string; planId?: string; tripId?: string; depot?: string; stopSequence?: number; reasonCode?: string; reasonComment?: string; plannedArrivalAt?: string; plannedServiceStartAt?: string };
   delivery?: {
-    runStatus: string; outcome?: string; reason?: string; vehicleId?: string; tripId?: string; occurredAt?: string; completedAt?: string;
+    runStatus: string; outcome?: string; reason?: string; vehicleId?: string; depot?: string; location?: LiveLocation; tripId?: string; occurredAt?: string; completedAt?: string;
     arrivalPrediction?: ArrivalPrediction;
     returnedGoods?: { goods: string; units: number; reason: string; resolution: string; occurredAt: string; followupOrderRef?: string; followupDate?: string };
+
     proofs?: { type: string; mimeType: string; pending: boolean; uploadedAt?: string; receiverName?: string }[];
     loadingShortfallSummary?: { type?: string; affectedUnits?: number; note?: string }[];
     deliveredUnits?: number;
@@ -55,7 +57,10 @@ export function useOrderTrackings() {
       setRows(split.rows);
       setUnavailable(split.unavailable);
     } catch {
-      if (request === latest.current) setLoadFailed(true);
+      if (request === latest.current) {
+        setLoadFailed(true);
+        setRows((current) => current.map((row) => ({ ...row, delivery: row.delivery ? { ...row.delivery, location: undefined } : undefined })));
+      }
     } finally {
       if (request === latest.current && !quiet) setLoading(false);
     }
@@ -65,6 +70,7 @@ export function useOrderTrackings() {
   useEffect(() => {
     if (!rows.some((row) => row.delivery?.runStatus === "in_progress")) return;
     const timer = window.setInterval(() => { void reload(true); }, 15_000);
+
     return () => window.clearInterval(timer);
   }, [rows, reload]);
   useEffect(() => () => { latest.current += 1; }, []);

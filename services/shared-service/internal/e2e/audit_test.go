@@ -94,7 +94,6 @@ func TestAuditSearchKPIsAndAppendOnly(t *testing.T) {
 		t.Fatalf("apply notification migration: %v", err)
 	}
 
-	// Applied in migration-number order: 0056 and 0059 redefine the event-type check that 0070 widens.
 	migration, err = os.ReadFile("../../../../database/migrations/0056_shared_arrival_notifications.sql")
 	if err != nil {
 		t.Fatal(err)
