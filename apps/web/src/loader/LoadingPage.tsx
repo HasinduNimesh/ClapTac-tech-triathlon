@@ -19,6 +19,8 @@ export function LoadingPage() {
   const [date, setDate] = useState(todayLocal);
   const [trips, setTrips] = useState<LoadingTripSummary[]>([]);
   const [detail, setDetail] = useState<LoadingTripDetail | null>(null);
+  const [readySeal, setReadySeal] = useState("");
+  const [readyTemp, setReadyTemp] = useState("");
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [issueType, setIssueType] = useState("MISSING");
@@ -266,8 +268,14 @@ export function LoadingPage() {
     if (!detail) return;
     await run("", async () => {
       if (!(detail.planVersion && detail.acknowledgedVersion === detail.planVersion)) throw new Error("Acknowledge the current plan while connected before marking the trip ready.");
-      const item: LoadingQueueOperation = { operationId: await operationId(), type: "READY", tripId: detail.tripId, createdAt: new Date().toISOString() };
-      const queued = await performOrQueue(item, () => apiJSON(`/loading/trips/${detail.tripId}/ready`, token, { method: "POST", headers: { "Idempotency-Key": item.operationId } }));
+      // A refrigerated trip cannot leave without the chilled-zone reading and the door seal;
+      // the loading service refuses it otherwise, so ask for both here.
+      const seal = readySeal.trim();
+      const temperature = readyTemp.trim() === "" ? undefined : Number(readyTemp);
+      if (refrigerated && (temperature === undefined || Number.isNaN(temperature) || !seal)) throw new Error(t("Enter the chilled-zone temperature and the door seal number before marking a refrigerated trip ready."));
+      const payload = { chilledTemperatureC: refrigerated ? temperature : undefined, sealNumber: seal || undefined };
+      const item: LoadingQueueOperation = { operationId: await operationId(), type: "READY", tripId: detail.tripId, payload, createdAt: new Date().toISOString() };
+      const queued = await performOrQueue(item, () => apiJSON(`/loading/trips/${detail.tripId}/ready`, token, { method: "POST", headers: { "Idempotency-Key": item.operationId }, body: JSON.stringify(payload) }));
       setInfo(t(queued ? "Ready status saved on this device" : "Ready for departure"));
     });
   }
@@ -284,6 +292,7 @@ export function LoadingPage() {
   const blocked = orders.some(isIncomplete);
   const inProgress = detail?.status === "in_progress" || detail?.loadingStatus === "in_progress";
   const isReady = detail?.status === "ready" || detail?.loadingStatus === "ready";
+  const refrigerated = /chill|refriger|frozen|multi|reefer/i.test(detail?.vehicleTemperatureCapability || "");
   const currentPlanAcknowledged = Boolean(detail?.planVersion && detail.acknowledgedVersion === detail.planVersion);
 
   if (ownerState === "loading") return <section className="card loader-shell"><h2>{t("Loader")}</h2><p role="status">{t("Checking this device's saved loader account…")}</p></section>;
@@ -443,6 +452,13 @@ export function LoadingPage() {
             </form>
           )}
 
+          {inProgress && (
+            <div className="issue-form">
+              <h3>{t("Departure checks")}</h3>
+              {refrigerated && <input type="number" step="0.1" min={-30} max={30} aria-label={t("Chilled-zone temperature (°C)")} placeholder={t("Chilled-zone temperature (°C)")} value={readyTemp} onChange={(e) => setReadyTemp(e.target.value)} />}
+              <input aria-label={t("Door seal number")} placeholder={t("Door seal number")} maxLength={40} value={readySeal} onChange={(e) => setReadySeal(e.target.value)} />
+            </div>
+          )}
           {inProgress && (
             <button type="button" className="tap primary" onClick={ready} disabled={blocked || !currentPlanAcknowledged}>
               {t("Ready for departure")}

@@ -13,6 +13,7 @@ import (
 	"github.com/HasinduNimesh/ClapTac-tech-triathlon/pkg/authorization"
 	"github.com/HasinduNimesh/ClapTac-tech-triathlon/pkg/objectstore"
 	"github.com/HasinduNimesh/ClapTac-tech-triathlon/pkg/telemetry"
+	"github.com/HasinduNimesh/ClapTac-tech-triathlon/pkg/validation"
 	"github.com/HasinduNimesh/ClapTac-tech-triathlon/services/delivery-service/internal/client"
 	"github.com/HasinduNimesh/ClapTac-tech-triathlon/services/delivery-service/internal/domain"
 	"github.com/HasinduNimesh/ClapTac-tech-triathlon/services/delivery-service/internal/store"
@@ -433,7 +434,7 @@ func (s Service) UploadProof(ctx context.Context, profile *authorization.Profile
 	if mime != "image/png" && mime != "image/jpeg" {
 		return domain.Proof{}, fmt.Errorf("invalid: PNG or JPEG only")
 	}
-	if !hasMagic(mime, body) {
+	if !validation.HasImageMagic(mime, body) {
 		return domain.Proof{}, fmt.Errorf("invalid: file content does not match PNG or JPEG")
 	}
 	max := domain.MaxPhotoBytes
@@ -880,16 +881,6 @@ func completedCount(stops []domain.Stop) int {
 		}
 	}
 	return n
-}
-
-func hasMagic(mime string, body []byte) bool {
-	if mime == "image/png" && len(body) >= 8 {
-		return string(body[:8]) == "\x89PNG\r\n\x1a\n"
-	}
-	if mime == "image/jpeg" && len(body) >= 3 {
-		return body[0] == 0xff && body[1] == 0xd8 && body[2] == 0xff
-	}
-	return false
 }
 
 func NewOperationID() string {
