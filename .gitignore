@@ -41,3 +41,7 @@ Thumbs.db
 
 __pycache__/
 *.py[cod]
+
+# Built driver app (APK) and metadata served at /downloads/; never committed
+/downloads/*
+!/downloads/.gitkeep
