@@ -360,6 +360,10 @@ jobs:
             echo "To roll back images: set WAYPOINT_TAG to it in .env and run: sudo docker compose up -d --no-build" >&2
             exit 1
           }
+          # nginx.conf is a single-file bind mount. Recreate nginx to pick up the
+          # current file after the checkout changes; this briefly interrupts traffic.
+          dc up -d --no-build --no-deps --force-recreate nginx \
+            || rollback_hint "nginx could not be recreated with the updated routing configuration."
           # Every service must report healthy, not just nginx.
           for service in $services nginx; do
             container="$(dc ps -q "$service")"
@@ -374,8 +378,9 @@ jobs:
           done
           curl -fsS --retry 8 --retry-delay 3 https://waypoint.claptac.dev/health/live >/dev/null \
             || rollback_hint "https://waypoint.claptac.dev/health/live failed."
-          curl -fsS --retry 3 --retry-delay 3 -o /dev/null https://waypoint.claptac.dev/loader-app/ \
-            || rollback_hint "https://waypoint.claptac.dev/loader-app/ failed."
+          # The web app answers unknown paths with its own page (HTTP 200), so require the loader's own page.
+          curl -fsS --retry 3 --retry-delay 3 https://waypoint.claptac.dev/loader-app/ | grep -q flutter_bootstrap.js \
+            || rollback_hint "https://waypoint.claptac.dev/loader-app/ did not return the loader app."
           curl -fsS --retry 3 --retry-delay 3 https://id.waypoint.claptac.dev/.well-known/openid-configuration \
             | python3 -c 'import json,sys; assert json.load(sys.stdin)["issuer"] == "https://id.waypoint.claptac.dev"' \
             || rollback_hint "Identity discovery failed or names another issuer."
