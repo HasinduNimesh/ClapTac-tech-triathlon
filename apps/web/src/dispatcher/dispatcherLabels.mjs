@@ -102,3 +102,17 @@ Object.assign(dispatcherWorkspaceLabels.ta, {
   "The plan was left open for revision. Finish it in Plan and allocate; the loader's trip stays blocked until a new plan is confirmed.": "திட்டம் திருத்தத்திற்காக திறந்தே உள்ளது. அதைத் திட்டமிடல் மற்றும் ஒதுக்கீட்டில் முடிக்கவும்; புதிய திட்டம் உறுதிசெய்யப்படும் வரை ஏற்றுநரின் பயணம் தடுக்கப்பட்டிருக்கும்.",
   "Acknowledges the new plan version, then Ready to depart unlocks": "புதிய திட்டப் பதிப்பை ஏற்கிறது, பின்னர் புறப்படத் தயார் திறக்கும்",
 });
+
+// The legacy loader page now sends the departure checks the loading service requires.
+Object.assign(dispatcherWorkspaceLabels.si, {
+  "Departure checks": "පිටත් වීමේ පරීක්ෂා",
+  "Chilled-zone temperature (°C)": "ශීත කලාපයේ උෂ්ණත්වය (°C)",
+  "Door seal number": "දොර මුද්‍රා අංකය",
+  "Enter the chilled-zone temperature and the door seal number before marking a refrigerated trip ready.": "ශීතකරණ ගමනක් සූදානම් ලෙස සලකුණු කිරීමට පෙර ශීත කලාපයේ උෂ්ණත්වය සහ දොර මුද්‍රා අංකය ඇතුළත් කරන්න.",
+});
+Object.assign(dispatcherWorkspaceLabels.ta, {
+  "Departure checks": "புறப்படுவதற்கு முன் சோதனைகள்",
+  "Chilled-zone temperature (°C)": "குளிர் பகுதி வெப்பநிலை (°C)",
+  "Door seal number": "கதவு முத்திரை எண்",
+  "Enter the chilled-zone temperature and the door seal number before marking a refrigerated trip ready.": "குளிர்பதன பயணத்தைத் தயார் எனக் குறிக்கும் முன் குளிர் பகுதி வெப்பநிலை மற்றும் கதவு முத்திரை எண்ணை உள்ளிடவும்.",
+});

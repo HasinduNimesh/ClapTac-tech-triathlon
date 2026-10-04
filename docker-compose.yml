@@ -168,6 +168,8 @@ services:
       OIDC_TOKEN_URL: http://thunderid:8090/oauth2/token
       M2M_CLIENT_ID: waypoint-loading-service
       M2M_CLIENT_SECRET: ${LOADING_M2M_CLIENT_SECRET:-local-loading-m2m}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-http://minio:9090}
+      MINIO_BUCKET: ${MINIO_BUCKET:-waypoint-proof}
     healthcheck: *backend-healthcheck
     depends_on:
       bootstrap: { condition: service_completed_successfully }
@@ -175,6 +177,7 @@ services:
       planning-service: { condition: service_healthy }
       order-service: { condition: service_healthy }
       shared-service: { condition: service_healthy }
+      minio: { condition: service_started }
 
   delivery-service:
     build: { context: ., dockerfile: Dockerfile, args: { SERVICE: delivery-service } }
@@ -268,6 +271,27 @@ services:
       retries: 6
       start_period: 5s
 
+  loader-web:
+    build:
+      context: ./apps/loader-web
+      args:
+        # Authorization code + PKCE against the same identity server as the web app.
+        # The callback is <origin>/loader-app/auth/callback and must be registered for
+        # the client below (see apps/loader-web/README.md).
+        OIDC_ISSUER: ${VITE_OIDC_ISSUER:-http://localhost:8090}
+        OIDC_CLIENT_ID: ${LOADER_OIDC_CLIENT_ID:-waypoint-loader}
+        # The API the token is for: the same value the web app sends and the services validate
+        # as OIDC_AUDIENCE (production: https://waypoint.claptac.dev/api/v1).
+        OIDC_RESOURCE: ${VITE_OIDC_AUDIENCE:-waypoint-api}
+    expose:
+      - "80"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/loader-app/"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 5s
+
   nginx:
     image: nginx:1.27-alpine
     ports:
@@ -276,6 +300,7 @@ services:
       - ./infrastructure/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
       - web
+      - loader-web
       - order-service
       - planning-service
       - fleet-service
