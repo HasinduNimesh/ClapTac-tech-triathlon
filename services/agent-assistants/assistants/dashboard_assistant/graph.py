@@ -12,6 +12,7 @@ from typing import TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
+from .. import trace
 from ..llm import UNTRUSTED_NOTE
 from .spec import CARDS, FILTERS, MAX_NAME, clean_spec
 
@@ -65,10 +66,15 @@ async def interpret(state: DashboardState, config) -> dict:
     language = LANGUAGES.get(state.get("locale", "en"), "English")
     system = f"{SYSTEM}\nWrite the name, reply and question in plain {language}."
     proposal = await llm.call_function(system, user, FUNCTION)
+    cards = proposal.get("cards") if isinstance(proposal.get("cards"), list) else []
+    trace.of(config).add(
+        trace.KIND_LLM, "update_dashboard",
+        "The model may only pick and order cards from a fixed list and write a short reply. It cannot add any other content or read business data.",
+        f"{len(cards)} card(s) proposed", {"cards": len(cards), "asksQuestion": bool(proposal.get("question"))})
     return {"proposal": proposal}
 
 
-def validate(state: DashboardState) -> dict:
+def validate(state: DashboardState, config) -> dict:
     proposal = state.get("proposal") or {}
     fallback = (state.get("draft") or {}).get("name") or "New dashboard"
     spec, rejected = clean_spec(proposal, fallback)
@@ -77,6 +83,16 @@ def validate(state: DashboardState) -> dict:
     if not spec["cards"] and not question:
         question = "What would you like to keep an eye on, for example receipts to confirm or items that arrived short?"
     reply = " ".join(str(proposal.get("reply") or "").split())[:300] or "Here is your draft."
+    rec = trace.of(config)
+    if rejected:
+        rec.add(trace.KIND_GUARDRAIL, "validate_cards",
+                f"{len(rejected)} proposed card(s) were outside the fixed card list and were dropped; only known card ids reach the dashboard.",
+                "cleaned", {"dropped": rejected})
+    else:
+        rec.add(trace.KIND_GUARDRAIL, "validate_cards", "Every proposed card id is in the fixed card list.", "ok", {"cards": ",".join(spec["cards"])})
+    if question:
+        rec.add(trace.KIND_DECISION, "ask_question",
+                "The request was unclear, so one short question is asked instead of guessing what to show.", "asked")
     return {"spec": spec, "question": question, "reply": reply, "rejected": rejected}
 
 

@@ -1,7 +1,7 @@
 MODULE := github.com/HasinduNimesh/ClapTac-tech-triathlon
 SERVICES := order-service planning-service fleet-service loading-service delivery-service shared-service integration-service agent-orchestrator
 
-.PHONY: build test verify web-install web-build mobile-analyze compose-up compose-down compose-observability validate-observability verify-object-storage-restore backup-postgres backup-object-storage lint check-agent-imports seed-competition-data validate-seeds
+.PHONY: build test verify web-install web-build mobile-analyze compose-up compose-down compose-observability compose-agent-traces validate-observability verify-object-storage-restore backup-postgres backup-object-storage lint check-agent-imports seed-competition-data validate-seeds
 
 build:
 	go build ./...
@@ -30,6 +30,9 @@ compose-down:
 
 compose-observability:
 	docker compose --profile observability up --build
+
+compose-agent-traces:
+	AGENT_TRACE_URL=http://agent-manager:8085 docker compose --profile agent-traces up --build
 
 validate-observability:
 	./scripts/test-observability.sh

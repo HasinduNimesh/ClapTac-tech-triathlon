@@ -254,6 +254,10 @@ services:
       LLM_BASE_URL: ${LLM_BASE_URL:-}
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_MODEL: ${LLM_MODEL:-}
+      # Empty keeps tracing off. To record traces: start with --profile agent-traces and set
+      # AGENT_TRACE_URL=http://agent-manager:8085 (docs/architecture/agent-plane.md).
+      AGENT_TRACE_URL: ${AGENT_TRACE_URL:-}
+      AGENT_TRACE_INGEST_TOKEN: ${AGENT_TRACE_INGEST_TOKEN:-}
     healthcheck: *backend-healthcheck
     depends_on:
       order-service: { condition: service_healthy }
@@ -277,6 +281,8 @@ services:
       LLM_BASE_URL: ${LLM_BASE_URL:-}
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_MODEL: ${LLM_MODEL:-}
+      AGENT_TRACE_URL: ${AGENT_TRACE_URL:-}
+      AGENT_TRACE_INGEST_TOKEN: ${AGENT_TRACE_INGEST_TOKEN:-}
     depends_on:
       order-service: { condition: service_healthy }
       shared-service: { condition: service_healthy }
@@ -384,6 +390,28 @@ services:
     ports:
       - "127.0.0.1:3001:3000"
 
+  agent-manager:
+    # Collects agent traces (what each agent did and why) and serves a small viewer.
+    # Local runs are open; with ENVIRONMENT other than local both tokens are required.
+    profiles: ["agent-traces"]
+    image: ${WAYPOINT_IMAGE_PREFIX:-waypoint}/agent-manager:${WAYPOINT_TAG:-local}
+    build: { context: ., dockerfile: infrastructure/agent-manager/Dockerfile }
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-local}
+      AGENT_TRACE_INGEST_TOKEN: ${AGENT_TRACE_INGEST_TOKEN:-}
+      AGENT_TRACE_VIEW_TOKEN: ${AGENT_TRACE_VIEW_TOKEN:-}
+      AGENT_TRACE_MAX: ${AGENT_TRACE_MAX:-1000}
+    volumes:
+      - agent_traces_data:/data
+    ports:
+      - "127.0.0.1:8085:8085"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8085/health/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 5s
+
   opensearch:
     profiles: ["search"]
     image: opensearchproject/opensearch:2.17.1
@@ -397,3 +425,4 @@ services:
 volumes:
   postgres_data:
   grafana_data:
+  agent_traces_data:

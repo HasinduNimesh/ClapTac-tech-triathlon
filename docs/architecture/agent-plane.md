@@ -19,6 +19,10 @@ Sensitive tools are `CreateOrder`, `DeferOrder`, `ReassignAllocation`, and `Conf
 
 Approvals are held in bounded process memory for the five-minute expiry. Deployments that need approvals to survive restarts can replace this repository with a shared TTL-backed store without changing the approval interface.
 
+## Agent traces
+
+Audit events say *that* something happened; agent traces say *what the agent did and why*. The orchestrator and both assistants record one trace per request (ordered steps, each with a reason such as "sensitive tool, so held for approval", or the rationale the model gave) and push it best-effort to `infrastructure/agent-manager`, which stores the newest few hundred and shows them in a small viewer. Tracing is off unless `AGENT_TRACE_URL` is set, never blocks or fails an agent request, and holds no tokens, keys, raw request text or tool output (input is a length and hash). The agent tier still has no database; the manager is separate infrastructure. See [its README](../../infrastructure/agent-manager/README.md).
+
 ## Order and dashboard assistants (A1, A2)
 
 `services/agent-assistants` is a small Python service (FastAPI + LangGraph, no LangChain model wrappers) in the same agent tier. It follows the same rules as the orchestrator: it has no database driver or `DATABASE_URL`, it validates the ThunderID JWT against JWKS, it resolves role and outlet from `shared-service /profiles/me`, and it reads business services only with the caller's own bearer token. NGINX and kGateway route `/api/v1/agent/order-assistant/`, `/api/v1/agent/dashboard-assistant/` and `/api/v1/agent/assistants/` to it; every other `/api/v1/agent` path stays on the orchestrator.
