@@ -19,6 +19,8 @@ import iconHelp from "../assets/store-manager/icon-help.svg";
 import iconUser from "../assets/store-manager/icon-user.svg";
 import "./dispatcher.css";
 import { effectiveDepot, readDepotChoice, saveDepotChoice } from "./depotChoice.mjs";
+import { NotificationBell } from "../notifications/NotificationBell";
+import { useDispatcherNotifications } from "../notifications/useRoleNotifications";
 
 type DepotState = { depot: string; setDepot: (depot: string) => void };
 const DepotContext = createContext<DepotState>({ depot: "", setDepot: () => undefined });
@@ -42,9 +44,10 @@ export function DispatcherLayout() {
   const today = todayInSriLanka();
   const orders = useApi<{ items: { status: string }[] }>("/orders?status=confirmed");
   const incidents = useApi<{ items: unknown[] }>("/fleet/incidents?openOnly=true");
-  const receiptIssues = useApi<{ items: unknown[] }>("/orders/receipt-issues");
+  // XR-3: the bell and the Notifications menu count the same open alerts as the notifications page.
+  const notifications = useDispatcherNotifications();
   const queueCount = orders.data?.items?.length ?? 0;
-  const alertCount = (incidents.data?.items?.length ?? 0) + (receiptIssues.data?.items?.length ?? 0);
+  const alertCount = notifications.unreadCount;
 
   useEffect(() => { setNavOpen(false); }, [pathname]);
   useEffect(() => {
@@ -127,10 +130,7 @@ export function DispatcherLayout() {
                 <option value="">{t("All depots")}</option>
                 {Object.entries(DEPOT_LABELS).map(([code, label]) => <option key={code} value={code}>{`${label} ${t("depot")}${code === homeDepot ? ` · ${t("your depot")}` : ""}`}</option>)}
               </select>
-              <NavLink to="/dispatcher/notifications" className="dp-bell" aria-label={`${t("Notifications")} · ${alertCount} ${t("open")}`}>
-                <img src={iconBell} alt="" width={16} height={17} />
-                {alertCount > 0 && <span className="dp-bell-dot" aria-hidden="true">{alertCount}</span>}
-              </NavLink>
+              <NotificationBell feed={notifications} allTo="/dispatcher/notifications" icon={iconBell} />
               <div className="dp-user">
                 <span className="dp-avatar" aria-hidden="true">{initials}</span>
                 <div className="dp-user-name">

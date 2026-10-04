@@ -273,6 +273,20 @@ func (s Service) Receipt(profile *authorization.Profile, id string) (domain.Rece
 	return r, issues, e
 }
 
+// validateReceivedTemperature accepts no reading, or a plausible reading for a chilled order.
+func validateReceivedTemperature(c *float64, requirement domain.Temperature) error {
+	if c == nil {
+		return nil
+	}
+	if requirement != domain.TempChilled {
+		return fmt.Errorf("invalid: receivedTemperatureC applies to chilled orders only")
+	}
+	if math.IsNaN(*c) || *c < -40 || *c > 60 {
+		return fmt.Errorf("invalid: receivedTemperatureC must be between -40 and 60")
+	}
+	return nil
+}
+
 func (s Service) ConfirmReceipt(profile *authorization.Profile, id string, req domain.ReceiptConfirmation) (domain.Receipt, []domain.ReceiptIssue, bool, error) {
 	if profile == nil || !authorization.HasPermission(profile.Roles, authorization.PermReceiptConfirm) {
 		return domain.Receipt{}, nil, false, ErrForbidden
@@ -308,6 +322,9 @@ func (s Service) ConfirmReceipt(profile *authorization.Profile, id string, req d
 	if req.ReceivedUnits < o.OrderUnits && req.Issue == nil {
 		return domain.Receipt{}, nil, false, fmt.Errorf("invalid: a discrepancy issue is required when received units are below expected units")
 	}
+	if err := validateReceivedTemperature(req.ReceivedTemperatureC, o.TemperatureRequirement); err != nil {
+		return domain.Receipt{}, nil, false, err
+	}
 	if d.DeliveredUnits != nil && req.ReceivedUnits != *d.DeliveredUnits && req.Issue == nil {
 		return domain.Receipt{}, nil, false, fmt.Errorf("invalid: received units differ from the driver's recorded count; report the discrepancy so the dispatcher can review it")
 	}
@@ -330,7 +347,11 @@ func (s Service) ConfirmReceipt(profile *authorization.Profile, id string, req d
 		return r, issues, false, err
 	}
 	if created {
-		s.auditReceipt("RECEIPT_CONFIRMED", profile, o.OrderRef, map[string]any{"receivedUnits": r.ReceivedUnits, "expectedUnits": r.ExpectedUnits, "status": r.Status})
+		details := map[string]any{"receivedUnits": r.ReceivedUnits, "expectedUnits": r.ExpectedUnits, "status": r.Status}
+		if r.ReceivedTemperatureC != nil {
+			details["receivedTemperatureC"] = *r.ReceivedTemperatureC
+		}
+		s.auditReceipt("RECEIPT_CONFIRMED", profile, o.OrderRef, details)
 		if req.Issue != nil {
 			s.auditReceipt("RECEIPT_ISSUE_REPORTED", profile, o.OrderRef, map[string]any{"issueType": req.Issue.IssueType, "affectedUnits": req.Issue.AffectedUnits})
 			telemetry.ReceiptIssues.WithLabelValues(strings.ToUpper(req.Issue.IssueType)).Inc()

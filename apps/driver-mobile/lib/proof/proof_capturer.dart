@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../app/driver_prefs.dart';
 import '../data/driver_models.dart';
 import 'proof_store.dart';
 import 'signature_pad.dart';
@@ -21,9 +22,12 @@ abstract class ProofCapturer {
 
 /// The phone's camera and a signature pad, stored through [FileProofStore].
 class DeviceProofCapturer implements ProofCapturer {
-  DeviceProofCapturer({required this.store, ImagePicker? picker}) : _picker = picker ?? ImagePicker();
+  DeviceProofCapturer({required this.store, ImagePicker? picker, PhotoSize Function()? photoSize})
+      : _picker = picker ?? ImagePicker(),
+        _photoSize = photoSize ?? (() => PhotoSize.normal);
 
   final FileProofStore store;
+  final PhotoSize Function() _photoSize;
   final ImagePicker _picker;
 
   @override
@@ -36,16 +40,18 @@ class DeviceProofCapturer implements ProofCapturer {
     }
   }
 
-  /// Photos are scaled and compressed by the camera plugin (1600 px, quality 80), which keeps them
-  /// well under the server's 4 MB limit and quick to upload on a weak connection.
+  /// DR-6: photos are scaled and compressed by the camera plugin (1280 px, quality 75; 960 px, quality
+  /// 55 in low-data mode), which keeps them well under the server's 4 MB limit and quick to upload on a
+  /// weak connection. The sync queue sends status updates before them.
   Future<CapturedProof?> _photo(BuildContext context) async {
     final XFile? shot;
+    final size = _photoSize();
     try {
       shot = await _picker.pickImage(
         source: ImageSource.camera,
-        maxWidth: 1600,
-        maxHeight: 1600,
-        imageQuality: 80,
+        maxWidth: size.maxSide,
+        maxHeight: size.maxSide,
+        imageQuality: size.quality,
         preferredCameraDevice: CameraDevice.rear,
       );
     } on PlatformException catch (error) {

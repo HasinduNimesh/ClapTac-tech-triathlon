@@ -86,6 +86,7 @@ func TestVerticalSlicePostgres(t *testing.T) {
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0025_order_import_keys.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0027_delivery_service_time_eval_index.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0032_tech_custody_ledger.sql"))
+	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0076_receipt_temperature.sql"))
 
 	sharedPool, err := db.Open(ctx, dsn, "shared")
 	if err != nil {
@@ -351,7 +352,7 @@ func TestVerticalSlicePostgres(t *testing.T) {
 	}
 
 	// The forecast uses operational depot, service allowance, and fleet sources
-	// and remains explicit about its four-complete-week estimate window.
+	// and remains explicit about its four-complete-week history and ten-week horizon.
 	_, err = sharedPool.Exec(ctx, `ALTER TABLE shared.outlets ADD COLUMN depot TEXT NOT NULL DEFAULT '';
 		CREATE TABLE shared.service_allowance(stop_kind TEXT PRIMARY KEY, minutes INTEGER NOT NULL);
 		INSERT INTO shared.service_allowance VALUES ('normal', 18), ('mall', 30);
@@ -406,7 +407,7 @@ func TestVerticalSlicePostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(f.Weekly) != 8 || len(f.Weekly[0].WeekStarting) != 10 || f.Weekly[0].EstimatedWeightKg != 12.5 || f.Weekly[0].EstimatedVolumeM3 != 1.25 || f.ServiceMinutesPerStop != 24 || f.ServiceEstimateVersion != "configured_allowance_mean_v1" || f.ServiceTimeBacktestVersion != "configured_service_time_mae_v1" || f.ServiceTimeBacktestWindowStart != weekStart.AddDate(0, 0, -28).Format("2006-01-02") || f.ServiceTimeBacktestWindowEnd != weekStart.Format("2006-01-02") || len(f.ServiceTimeEvaluation) != 2 || f.ServiceTimeEvaluation[0].Brand != "Fresh" || f.ServiceTimeEvaluation[0].ActualStopCount != 12 || f.ServiceTimeEvaluation[0].Status != "EVALUATED" || f.ServiceTimeEvaluation[0].MeanObservedMinutes == nil || *f.ServiceTimeEvaluation[0].MeanObservedMinutes != 24 || f.ServiceTimeEvaluation[0].MeanAbsoluteErrorMinutes == nil || *f.ServiceTimeEvaluation[0].MeanAbsoluteErrorMinutes != 2.7 || f.ServiceTimeEvaluation[1].Brand != "Style" || f.ServiceTimeEvaluation[1].ActualStopCount != 2 || f.ServiceTimeEvaluation[1].Status != "INSUFFICIENT_HISTORY" || f.ServiceTimeEvaluation[1].MeanAbsoluteErrorMinutes != nil || f.ForecastVersion != "confirmed_order_mean_v1" || f.DriftModelVersion != "weekly_order_shift_v1" || f.BacktestModelVersion != "prior_four_week_order_count_ape_v1" || len(f.InputDrift) != 2 || f.InputDrift[0].Status != "INSUFFICIENT_HISTORY" || f.InputDrift[0].BacktestAPEPercent != nil || len(f.Capacity) != 1 || f.Capacity[0].Pressure != "low" || f.Capacity[0].ProjectedWeightKg != 22.5 {
+	if len(f.Weekly) != 20 || f.HorizonWeeks != 10 || f.Weekly[19].HorizonWeek != 10 || f.Weekly[19].WeekStarting != weekStart.AddDate(0, 0, 63).Format("2006-01-02") || f.Weekly[19].RangePercent != 28 || len(f.Weekly[0].WeekStarting) != 10 || f.Weekly[0].EstimatedWeightKg != 12.5 || f.Weekly[0].EstimatedVolumeM3 != 1.25 || f.ServiceMinutesPerStop != 24 || f.ServiceEstimateVersion != "configured_allowance_mean_v1" || f.ServiceTimeBacktestVersion != "configured_service_time_mae_v1" || f.ServiceTimeBacktestWindowStart != weekStart.AddDate(0, 0, -28).Format("2006-01-02") || f.ServiceTimeBacktestWindowEnd != weekStart.Format("2006-01-02") || len(f.ServiceTimeEvaluation) != 2 || f.ServiceTimeEvaluation[0].Brand != "Fresh" || f.ServiceTimeEvaluation[0].ActualStopCount != 12 || f.ServiceTimeEvaluation[0].Status != "EVALUATED" || f.ServiceTimeEvaluation[0].MeanObservedMinutes == nil || *f.ServiceTimeEvaluation[0].MeanObservedMinutes != 24 || f.ServiceTimeEvaluation[0].MeanAbsoluteErrorMinutes == nil || *f.ServiceTimeEvaluation[0].MeanAbsoluteErrorMinutes != 2.7 || f.ServiceTimeEvaluation[1].Brand != "Style" || f.ServiceTimeEvaluation[1].ActualStopCount != 2 || f.ServiceTimeEvaluation[1].Status != "INSUFFICIENT_HISTORY" || f.ServiceTimeEvaluation[1].MeanAbsoluteErrorMinutes != nil || f.ForecastVersion != "confirmed_order_mean_v2" || f.DriftModelVersion != "weekly_order_shift_v1" || f.BacktestModelVersion != "prior_four_week_order_count_ape_v1" || len(f.InputDrift) != 2 || f.InputDrift[0].Status != "INSUFFICIENT_HISTORY" || f.InputDrift[0].BacktestAPEPercent != nil || len(f.Capacity) != 1 || f.Capacity[0].Pressure != "low" || f.Capacity[0].ProjectedWeightKg != 22.5 {
 		t.Fatalf("unexpected forecast estimate: %+v", f)
 	}
 }

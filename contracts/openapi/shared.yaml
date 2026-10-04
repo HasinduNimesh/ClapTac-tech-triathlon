@@ -108,6 +108,36 @@ paths:
         "401": { description: Unauthenticated }
         "403": { description: Not allowed to read this outlet }
         "404": { description: Outlet not found }
+  /shared/calendar:
+    get:
+      operationId: getOperatingCalendar
+      security: [{ bearerAuth: [] }]
+      description: >
+        Operating calendar rows between from and to (inclusive, YYYY-MM-DD, at most one year apart, so a
+        ten-week demand view fits in one call). Only days that have been set are returned: dates past the
+        last seeded or edited day are absent rather than defaulted, and callers fall back to their weekday
+        default and say the calendar is not set beyond the last returned date. Requires master-data update
+        or outlets:read-internal permission.
+      parameters:
+        - { name: from, in: query, required: true, schema: { type: string, format: date } }
+        - { name: to, in: query, required: true, schema: { type: string, format: date } }
+      responses:
+        "200":
+          description: Calendar days
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        date: { type: string, format: date }
+                        isOperating: { type: boolean }
+                        version: { type: integer }
+        "400": { description: Missing or invalid range, or a span over one year }
   /shared/travel:
     get:
       operationId: listTravel

@@ -1,13 +1,14 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { ApiError, apiJSON } from "../api/client";
 import { todayLocal } from "../api/date";
+import { InstallCard } from "./InstallCard";
 import { DeliveryStop, DeliveryTripDetail, DeliveryTripSummary, newOperationId } from "../api/delivery";
 import { depotLabel } from "../api/loading";
 import { useAuth } from "../auth/AuthContext";
 import { shouldUseCachedDriverData } from "./cacheFallback.mjs";
 import { installSafeStopLock } from "./safeStopLifecycle.mjs";
 import { useLocale } from "../i18n";
-import { bindDriverOwner, clearCompletedDriverCache, dismissSyncConflictNotice, enqueue, getCachedDetail, getCachedTrips, isPaused, listQueue, listSyncConflictNotices, putCachedTrips, QueueItem, readDriverDataForExport, setPaused } from "../offline/db";
+import { bindDriverOwner, clearCompletedDriverCache, dismissSyncConflictNotice, enqueue, getCachedDetail, getCachedTrips, isPaused, listQueue, listSyncConflictNotices, putCachedTrips, QueueItem, readDriverDataForExport, setPaused, purgeOtherDayRoutes } from "../offline/db";
 import { createDriverDataExport } from "../offline/driverDataPrivacy.mjs";
 import { offlineQueueHealth } from "../offline/queueHealth.mjs";
 import { queueRetentionWarning } from "../offline/queueRetention.mjs";
@@ -164,6 +165,12 @@ export function DriverTripsPage() {
     }).catch(() => { if (active) setOwnerState("blocked"); });
     return () => { active = false; };
   }, [ownerId]);
+
+  // DR-8: only today's route stays on this device; other days go once nothing for them is waiting to sync.
+  useEffect(() => {
+    if (ownerState !== "ready" || !ownerId) return;
+    void purgeOtherDayRoutes(ownerId, todayLocal()).catch(() => undefined);
+  }, [ownerState, ownerId]);
 
   useEffect(() => {
     return installSafeStopLock({ document, window, onLock: setSafeStopped });
@@ -665,6 +672,7 @@ export function DriverTripsPage() {
       <h2>{t("Driver")}</h2>
       <p className="muted">{profile?.vehicleId ? `${t("Vehicle")} ${profile.vehicleId}` : t("Vehicle from profile")} · {t("FIFO offline queue")}</p>
       <p className="muted">{t("Do not use this screen while the vehicle is moving. Pull over and park safely first.")}</p>
+      <InstallCard />
       <label className="driver-safe-stop-toggle">
         <input type="checkbox" checked={safeStopped} onChange={(event) => setSafeStopped(event.target.checked)} />
         <span>{t("Confirm safely stopped to continue")}</span>

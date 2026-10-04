@@ -307,3 +307,56 @@ func TestOrderDetailsReturnsWhatItCouldReadAndTheFirstError(t *testing.T) {
 		t.Fatalf("got %d details, err=%v; want the readable one and an error", len(got), err)
 	}
 }
+
+func TestMarkLoadedRefusesATypedIDWithoutAReasonBeforeTouchingAnything(t *testing.T) {
+	// A zero Service has no repository: the request must be refused before any lookup.
+	profile := &authorization.Profile{UserID: "USR004", Roles: []string{authorization.RoleLoader}}
+	err := Service{}.MarkLoaded(context.Background(), profile, "trip-1", "order-1", domain.LoadEntry{Method: domain.EntryManual})
+	if err == nil || !strings.HasPrefix(err.Error(), "invalid") {
+		t.Fatalf("MarkLoaded = %v, want an invalid error", err)
+	}
+}
+
+func TestLoadedAuditDetailRecordsHowTheLineWasEntered(t *testing.T) {
+	manual := loadedAuditDetail("trip-1", domain.LoadEntry{Method: domain.EntryManual, ReasonCode: domain.ReasonDamagedLabel, Note: "torn"})
+	if manual["entryMethod"] != "MANUAL" || manual["reasonCode"] != "DAMAGED_LABEL" || manual["note"] != "torn" || manual["tripId"] != "trip-1" {
+		t.Fatalf("manual audit detail = %v", manual)
+	}
+	if got := loadedAuditDetail("trip-1", domain.LoadEntry{})["entryMethod"]; got != "UNKNOWN" {
+		t.Fatalf("legacy entryMethod = %v, want UNKNOWN", got)
+	}
+	scan := loadedAuditDetail("trip-1", domain.LoadEntry{Method: domain.EntryScan})
+	if _, has := scan["reasonCode"]; has || scan["entryMethod"] != "SCAN" {
+		t.Fatalf("scan audit detail = %v", scan)
+	}
+}
+
+func TestDetailRowShowsEntryOnlyForLoadedLines(t *testing.T) {
+	row := map[string]any{}
+	addEntry(row, domain.OrderLoad{Status: domain.LoadLoaded, EntryMethod: domain.EntryManual, ManualReason: domain.ReasonUnreadable, ManualNote: "faded"})
+	if row["entryMethod"] != "MANUAL" || row["manualReasonCode"] != "UNREADABLE" || row["manualNote"] != "faded" {
+		t.Fatalf("manual row = %v", row)
+	}
+	legacy := map[string]any{}
+	addEntry(legacy, domain.OrderLoad{Status: domain.LoadLoaded})
+	if legacy["entryMethod"] != "UNKNOWN" {
+		t.Fatalf("legacy loaded row = %v", legacy)
+	}
+	pending := map[string]any{}
+	addEntry(pending, domain.OrderLoad{Status: domain.LoadPending, EntryMethod: domain.EntryManual, ManualReason: domain.ReasonOther})
+	if len(pending) != 0 {
+		t.Fatalf("a line that is not loaded must carry no entry, got %v", pending)
+	}
+}
+
+func TestManualEntryCountOnlyCountsLoadedTypedLines(t *testing.T) {
+	loads := []domain.OrderLoad{
+		{Status: domain.LoadLoaded, EntryMethod: domain.EntryManual, ManualReason: domain.ReasonNoCamera},
+		{Status: domain.LoadLoaded, EntryMethod: domain.EntryScan},
+		{Status: domain.LoadLoaded},
+		{Status: domain.LoadPending, EntryMethod: domain.EntryManual},
+	}
+	if got := manualEntryCount(loads); got != 1 {
+		t.Fatalf("manualEntryCount = %d, want 1", got)
+	}
+}

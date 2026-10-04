@@ -84,6 +84,11 @@ type OrderLoad struct {
 	// this line (for example "Moved from Stop 4"), so the loader can recheck it.
 	ChangedInVersion int    `json:"changedInVersion,omitempty"`
 	ChangeNote       string `json:"changeNote,omitempty"`
+	// EntryMethod is how the line was confirmed loaded (SCAN or MANUAL); empty
+	// when unknown. A MANUAL line carries ManualReason and an optional ManualNote.
+	EntryMethod  string `json:"entryMethod,omitempty"`
+	ManualReason string `json:"manualReasonCode,omitempty"`
+	ManualNote   string `json:"manualNote,omitempty"`
 }
 
 type Issue struct {

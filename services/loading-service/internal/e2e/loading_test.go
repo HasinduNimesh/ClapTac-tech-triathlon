@@ -108,6 +108,7 @@ func TestLoadingWorkflow(t *testing.T) {
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0021_loading_plan_version.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0042_loading_issue_decisions.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0044_loader_dock_checks.sql"))
+	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0075_loading_manual_entry.sql"))
 
 	peers := httptest.NewServer(peerStub())
 	t.Cleanup(peers.Close)

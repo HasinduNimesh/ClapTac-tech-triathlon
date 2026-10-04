@@ -49,7 +49,7 @@ function events(row: Tracking, t: (s: string) => string): Event[] {
     const proofs = row.delivery.proofs || [];
     list.push({ at: row.delivery.completedAt || row.delivery.occurredAt, actor: `${t("Driver")}${row.delivery.vehicleId ? ` · ${row.delivery.vehicleId}` : ""}`, title: `${t(row.delivery.outcome)}${row.delivery.reason ? ` · ${t(row.delivery.reason)}` : ""}`, detail: proofs.length ? `${proofs.length} ${t("proof item(s)")}${proofs.some((p) => p.pending) ? ` · ${t("saved on device, then synced")}` : ""}${proofs.find((p) => p.receiverName) ? ` · ${t("Received by")} ${proofs.find((p) => p.receiverName)!.receiverName}` : ""}` : undefined, kind: "driver" });
   }
-  if (row.receipt) list.push({ at: row.receipt.confirmedAt, actor: t("Store"), title: `${t("Receipt confirmed")}: ${row.receipt.receivedUnits} ${t("received")}${row.receipt.expectedUnits > row.receipt.receivedUnits ? `, ${row.receipt.expectedUnits - row.receipt.receivedUnits} ${t("short")}` : ""}`, kind: "store" });
+  if (row.receipt) list.push({ at: row.receipt.confirmedAt, actor: t("Store"), title: `${t("Receipt confirmed")}: ${row.receipt.receivedUnits} ${t("received")}${row.receipt.expectedUnits > row.receipt.receivedUnits ? `, ${row.receipt.expectedUnits - row.receipt.receivedUnits} ${t("short")}` : ""}${row.receipt.receivedTemperatureC != null ? ` Â· ${row.receipt.receivedTemperatureC} Â°C ${t("on arrival")}` : ""}`, kind: "store" });
   for (const i of row.receiptIssues || []) list.push({ at: i.createdAt, actor: t("Store"), title: `${t(i.issueType)} · ${i.affectedUnits} ${t("units")}`, detail: i.note, kind: "store" });
   if (!row.receipt && needsReceipt(row.stage)) list.push({ actor: t("Store"), title: t("Receipt waiting for confirmation"), kind: "pending" });
   return list;
@@ -91,7 +91,7 @@ export function OrderTimelinePage() {
                   <dl className="dp-kv-rows">
                     <div><dt>{t("Loader manifest")}</dt><dd>{row.planning.planRef ? <span className="dp-tag dp-tag--cool">{row.planning.planRef}</span> : "—"}</dd></div>
                     <div><dt>{t("Driver proof")}</dt><dd className="dp-cell-sub--green" style={{ color: "#3a57e8" }}>{proofs.length ? `${proofs.length} · ${proofs[0].uploadedAt ? colomboTime(proofs[0].uploadedAt) : t("pending upload")}` : "—"}</dd></div>
-                    <div><dt>{t("Store receipt")}</dt><dd className={row.receipt ? "dp-cell-sub--green" : "dp-cell-sub--amber"}>{row.receipt ? `${t("Confirmed")}${row.receipt.confirmedAt ? ` · ${colomboTime(row.receipt.confirmedAt)}` : ""}` : t("Waiting")}</dd></div>
+                    <div><dt>{t("Store receipt")}</dt><dd className={row.receipt ? "dp-cell-sub--green" : "dp-cell-sub--amber"}>{row.receipt ? `${t("Confirmed")}${row.receipt.confirmedAt ? ` · ${colomboTime(row.receipt.confirmedAt)}` : ""}${row.receipt.receivedTemperatureC != null ? `, ${row.receipt.receivedTemperatureC} Â°C` : ""}` : t("Waiting")}</dd></div>
                   </dl>
                   {short > 0 && <p className="dp-note dp-note--amber" style={{ marginTop: 12 }}>{`${short} ${t("unit shortage retained in the shared record.")}`}</p>}
                 </div>

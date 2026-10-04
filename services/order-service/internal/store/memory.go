@@ -136,7 +136,7 @@ func (m *Memory) List(filter domain.ListFilter) ([]domain.Order, error) {
 }
 
 func (m *Memory) Forecast(now time.Time) (domain.Forecast, error) {
-	return domain.Forecast{GeneratedAt: now.UTC(), ForecastVersion: "confirmed_order_mean_v1", Method: "four-week mean; sparse history falls back to zero", HistoryWeeks: 4, DriftModelVersion: "weekly_order_shift_v1", BacktestModelVersion: "prior_four_week_order_count_ape_v1", InputDrift: []domain.ForecastInputDrift{}, Weekly: []domain.ForecastBucket{}, Capacity: []domain.ForecastCapacity{}, ServiceMinutesPerStop: 20, ServiceEstimateVersion: "fixed_20m_v1", ServiceEstimateSource: "deterministic 20-minute fallback", ServiceTimeBacktestVersion: serviceTimeBacktestVersion, ServiceTimeEvaluation: []domain.ServiceTimeEvaluation{}}, nil
+	return domain.Forecast{GeneratedAt: now.UTC(), ForecastVersion: forecastVersion, Method: "four-week mean held flat across the next ten weeks; sparse history falls back to zero", HistoryWeeks: forecastHistoryWeeks, HorizonWeeks: ForecastHorizonWeeks, DriftModelVersion: "weekly_order_shift_v1", BacktestModelVersion: "prior_four_week_order_count_ape_v1", InputDrift: []domain.ForecastInputDrift{}, Weekly: []domain.ForecastBucket{}, Capacity: []domain.ForecastCapacity{}, ServiceMinutesPerStop: 20, ServiceEstimateVersion: "fixed_20m_v1", ServiceEstimateSource: "deterministic 20-minute fallback", ServiceTimeBacktestVersion: serviceTimeBacktestVersion, ServiceTimeEvaluation: []domain.ServiceTimeEvaluation{}}, nil
 }
 
 func (m *Memory) GetImported(source, externalID string) (domain.Order, error) {
@@ -219,7 +219,7 @@ func (m *Memory) ConfirmReceipt(order domain.Order, c domain.ReceiptConfirmation
 	if c.Issue != nil {
 		status = "confirmed_with_issue"
 	}
-	r := domain.Receipt{ID: fmt.Sprintf("receipt-%d", m.seq), OrderID: order.ID, DeliveryRunID: c.DeliveryRunID, DeliveryStopID: c.DeliveryStopID, DeliveryOutcome: c.DeliveryOutcome, ExpectedUnits: c.ExpectedUnits, ReceivedUnits: c.ReceivedUnits, Status: status, ConfirmedBy: c.ConfirmedBy, ConfirmedAt: time.Now(), Version: 1}
+	r := domain.Receipt{ID: fmt.Sprintf("receipt-%d", m.seq), OrderID: order.ID, DeliveryRunID: c.DeliveryRunID, DeliveryStopID: c.DeliveryStopID, DeliveryOutcome: c.DeliveryOutcome, ExpectedUnits: c.ExpectedUnits, ReceivedUnits: c.ReceivedUnits, Status: status, ConfirmedBy: c.ConfirmedBy, ConfirmedAt: time.Now(), Version: 1, ReceivedTemperatureC: c.ReceivedTemperatureC}
 	m.receipts[order.ID] = r
 	var added []domain.ReceiptIssue
 	if c.Issue != nil {

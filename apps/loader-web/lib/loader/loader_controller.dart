@@ -219,7 +219,7 @@ class LoaderController extends ChangeNotifier {
     }
   }
 
-  Future<void> _load(LoadingTrip trip, LoadingOrder order, TechCustody? custody) async {
+  Future<void> _load(LoadingTrip trip, LoadingOrder order, TechCustody? custody, [LoadEntry? entry]) async {
     if (custody != null) {
       final key = newOperationId();
       await api.post('/orders/${Uri.encodeComponent(order.orderId)}/custody', headers: {'Idempotency-Key': key}, body: {
@@ -231,14 +231,15 @@ class LoaderController extends ChangeNotifier {
         'idempotencyKey': key,
       });
     }
-    await api.put('/loading/trips/${trip.tripId}/orders/${order.orderId}/loaded', headers: {'Idempotency-Key': newOperationId()});
+    await api.put('/loading/trips/${trip.tripId}/orders/${order.orderId}/loaded', headers: {'Idempotency-Key': newOperationId()}, body: entry?.toJson());
   }
 
   /// Marks an order loaded. High-value Tech orders also record a custody
-  /// event (seal, serials, condition) before the load is confirmed.
-  Future<String?> markLoaded(LoadingTrip trip, LoadingOrder order, {TechCustody? custody}) => _act(trip.tripId, () async {
+  /// event (seal, serials, condition) before the load is confirmed. [entry] says
+  /// whether the order number was scanned or typed (with a reason).
+  Future<String?> markLoaded(LoadingTrip trip, LoadingOrder order, {TechCustody? custody, LoadEntry? entry}) => _act(trip.tripId, () async {
         await _ensureStarted(trip);
-        await _load(trip, order, custody);
+        await _load(trip, order, custody, entry);
       });
 
   /// "Mark Stop N loaded": every order at the stop that is not loaded or reported.

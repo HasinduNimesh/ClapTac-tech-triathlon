@@ -1,0 +1,10 @@
+export const FORECAST_WEEKS: number;
+export const FORECAST_DAYS: number;
+export const CALENDAR_BUFFER_DAYS: number;
+export type CalendarCell = { date: string; isOperating: boolean; known: boolean };
+export function addDays(date: string, days: number): string;
+export function calendarRange(today: string): { from: string; to: string };
+export function weekdayDefaults(items: { date: string; isOperating: boolean }[] | undefined | null): boolean[];
+export function buildCalendarGrid(today: string, items: { date: string; isOperating: boolean }[] | undefined | null): CalendarCell[];
+export function calendarCoverage(grid: CalendarCell[]): { lastSet: string | undefined; complete: boolean };
+export function rangeBounds(total: number, rangePercent: number | undefined): { low: number; high: number; pct: number };

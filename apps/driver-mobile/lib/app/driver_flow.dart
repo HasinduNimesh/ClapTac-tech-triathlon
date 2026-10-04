@@ -21,6 +21,7 @@ import '../theme/tokens.dart';
 import '../widgets/app_buttons.dart';
 import '../widgets/driver_shell.dart';
 import '../widgets/note_banner.dart';
+import 'driver_prefs.dart';
 import 'driver_session.dart';
 
 /// Signed-out → SignInScreen; signed-in → the tabbed driver home.
@@ -85,6 +86,21 @@ class _DriverHomeState extends State<_DriverHome> {
     _loadCheckTripId = session.trip.tripId;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _showLoadCheck();
+    });
+  }
+
+  bool _introShown = false;
+
+  /// DR-8: once per phone, after the first load check, say how to keep Waypoint on the home screen and
+  /// that only today's route is kept offline.
+  void _showIntroOnce() {
+    final prefs = session.prefs;
+    if (_introShown || prefs == null || !prefs.loaded || prefs.introSeen || !session.hasRoute || !session.loadResolved) return;
+    _introShown = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      await showModalBottomSheet<void>(context: context, isScrollControlled: true, builder: (sheetContext) => _FirstRunSheet(prefs: prefs));
+      await prefs.markIntroSeen();
     });
   }
 
@@ -397,6 +413,7 @@ class _DriverHomeState extends State<_DriverHome> {
           return _NoRoute(session: session);
         }
         _openLoadCheckOnce();
+        _showIntroOnce();
         _noticeNewMessage();
         switch (session.tab) {
           case DriverTab.route:
@@ -411,7 +428,7 @@ class _DriverHomeState extends State<_DriverHome> {
           case DriverTab.updates:
             return UpdatesScreen(items: session.visibleUpdates, onOpen: _openUpdate, onTabSelected: session.selectTab);
           case DriverTab.summary:
-            if (!session.routeComplete) return _InProgressSummary(trip: session.trip, onTabSelected: session.selectTab);
+            if (!session.routeComplete) return _InProgressSummary(trip: session.trip, prefs: session.prefs, onTabSelected: session.selectTab);
             return EndOfDayScreen(
               summary: session.summary,
               onFinishTrip: _finishTrip,
@@ -504,9 +521,10 @@ class _NoRoute extends StatelessWidget {
 }
 
 class _InProgressSummary extends StatelessWidget {
-  const _InProgressSummary({required this.trip, required this.onTabSelected});
+  const _InProgressSummary({required this.trip, required this.onTabSelected, this.prefs});
 
   final TripInfo trip;
+  final DriverPrefs? prefs;
   final ValueChanged<DriverTab> onTabSelected;
 
   @override
@@ -523,7 +541,68 @@ class _InProgressSummary extends StatelessWidget {
             title: 'Route in progress',
             text: '${trip.completedStops} of ${trip.stops.length} stops completed. The end-of-day summary appears when the last stop is recorded.',
           ),
+          if (prefs != null) ...[
+            const SizedBox(height: 16),
+            _LowDataSwitch(prefs: prefs!),
+          ],
         ],
+      ),
+    );
+  }
+}
+
+/// DR-6: low-data mode. Status updates always go before photos; this also takes smaller photos and
+/// checks for messages less often.
+class _LowDataSwitch extends StatelessWidget {
+  const _LowDataSwitch({required this.prefs});
+
+  final DriverPrefs prefs;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: prefs,
+      builder: (context, _) => SwitchListTile(
+        contentPadding: EdgeInsets.zero,
+        value: prefs.lowData,
+        onChanged: (value) => prefs.setLowData(value),
+        title: Text('Low-data mode', style: AppText.of(16, FontWeight.w600)),
+        subtitle: Text(
+          'For weak signal. Stop updates are sent first, photos are taken smaller and sent after, and messages are checked every 2 minutes.',
+          style: AppText.of(13, FontWeight.w400, color: AppColors.muted),
+        ),
+      ),
+    );
+  }
+}
+
+/// DR-8: the first-run sheet. The app is installed, so this is about keeping it one tap away and
+/// what stays on the phone.
+class _FirstRunSheet extends StatelessWidget {
+  const _FirstRunSheet({required this.prefs});
+
+  final DriverPrefs prefs;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Semantics(header: true, child: Text('Keep Waypoint on your home screen', style: AppText.of(20, FontWeight.w700))),
+            const SizedBox(height: 10),
+            Text('Press and hold the Waypoint icon in your app list, then drag it to the home screen so your route is one tap away.', style: AppText.of(15, FontWeight.w400)),
+            const SizedBox(height: 10),
+            Text("Only today's route is kept on this phone, so it still opens without signal. It is removed when you sign out and when the day changes.", style: AppText.of(15, FontWeight.w400)),
+            const SizedBox(height: 6),
+            _LowDataSwitch(prefs: prefs),
+            const SizedBox(height: 12),
+            AppButton(label: 'Got it', onPressed: () => Navigator.of(context).pop()),
+          ],
+        ),
       ),
     );
   }

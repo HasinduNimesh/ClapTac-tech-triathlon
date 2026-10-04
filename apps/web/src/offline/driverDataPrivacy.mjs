@@ -51,3 +51,17 @@ export function clearableCompletedTripIds({ pendingQueueCount, markers, details 
     return detail?.run?.status === "completed" && detail.run.completedAt === marker.value ? [tripId] : [];
   }))];
 }
+
+/**
+ * DR-8: only today's route stays on the device. Saved trips for another delivery date are dropped,
+ * unless work for them is still waiting to sync (that work is never discarded). Trips with no
+ * known date are kept.
+ */
+export function otherDayTripIds({ trips = [], details = [], queuedTripIds = [], today }) {
+  const waiting = new Set(queuedTripIds);
+  const dateOf = new Map();
+  for (const trip of trips) if (trip?.tripId && trip.deliveryDate) dateOf.set(trip.tripId, trip.deliveryDate);
+  for (const detail of details) if (detail?.tripId && detail.run?.deliveryDate) dateOf.set(detail.tripId, detail.run.deliveryDate);
+  const ids = new Set([...trips.map((t) => t?.tripId), ...details.map((d) => d?.tripId)].filter(Boolean));
+  return [...ids].filter((id) => dateOf.has(id) && dateOf.get(id) !== today && !waiting.has(id)).sort();
+}
