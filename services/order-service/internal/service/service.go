@@ -471,6 +471,7 @@ func (s Service) Create(profile *authorization.Profile, bearer string, req domai
 	if s.Audit != nil {
 		_ = s.Audit.PublishCreated("", profile.UserID, created.OrderRef, map[string]any{
 			"orderRef": created.OrderRef,
+			"orderId":  created.ID, "orderUnits": created.OrderUnits, "orderWeightKg": created.OrderWeightKg, "orderVolumeM3": created.OrderVolumeM3, "temperatureRequirement": created.TemperatureRequirement,
 			"outletId": created.OutletID,
 			"status":   created.Status,
 		})

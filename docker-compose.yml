@@ -216,6 +216,7 @@ services:
       M2M_CLIENT_ID: waypoint-shared-service
       M2M_CLIENT_SECRET: ${SHARED_M2M_CLIENT_SECRET:-local-shared-m2m}
       INTEGRATION_SERVICE_URL: http://integration-service:8080
+      PLANNING_SERVICE_URL: http://planning-service:8080
     healthcheck: *backend-healthcheck
     depends_on:
       bootstrap: { condition: service_completed_successfully }

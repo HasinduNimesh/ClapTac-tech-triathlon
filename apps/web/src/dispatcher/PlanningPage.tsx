@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
+import { PriorityReviews } from "../automations/PriorityReviews";
 import { Link } from "react-router-dom";
 import { ApiError, apiJSON } from "../api/client";
 import { todayInSriLanka } from "../api/date.mjs";
@@ -205,6 +206,7 @@ export function PlanningPage() {
       <div className={`dp-body${detail ? "" : " dp-body--flush"}`}>
         {error && <p className="dp-note dp-note--red" role="alert">{error}</p>}
         {info && <p className="dp-note dp-note--green" role="status">{info}</p>}
+        <PriorityReviews />
         {!detail && (
           <Panel title={loadingPlan ? t("Loading plan…") : `${t("No plan yet for")} ${dayLabel(date)}`} sub={t("Create the plan to pull in every confirmed order for this date, then generate allocations.")}>
             <div className="dp-row"><button type="button" className="dp-btn" onClick={() => void createPlan()} disabled={loadingPlan}>{t("Create or load plan")}</button></div>
