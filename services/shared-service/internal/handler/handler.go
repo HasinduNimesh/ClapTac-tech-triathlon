@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -244,10 +245,37 @@ func (h Handler) updateOutlet(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		store.Outlet
 		AccessInstructions *string `json:"accessInstructions"`
+		// Location is the outlet's verified position: {"latitude":..,"longitude":..} sets it, null
+		// clears it (back to the approximate district position), absent leaves it alone. The
+		// latitude/longitude a client echoes from a read are ignored, because on a read they may be
+		// approximate.
+		Location json.RawMessage `json:"location"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		apierrors.BadRequest(w, "invalid JSON")
 		return
+	}
+	var location store.LocationChange
+	if raw := bytes.TrimSpace(req.Location); len(raw) > 0 {
+		if string(raw) == "null" {
+			location.Clear = true
+		} else {
+			var pair struct {
+				Latitude  *float64 `json:"latitude"`
+				Longitude *float64 `json:"longitude"`
+			}
+			dec := json.NewDecoder(bytes.NewReader(raw))
+			dec.DisallowUnknownFields()
+			if err := dec.Decode(&pair); err != nil || pair.Latitude == nil || pair.Longitude == nil {
+				apierrors.BadRequest(w, "location needs both a latitude and a longitude, or null to clear it")
+				return
+			}
+			if err := store.ValidateLocation(*pair.Latitude, *pair.Longitude); err != nil {
+				apierrors.BadRequest(w, err.Error())
+				return
+			}
+			location = store.LocationChange{Set: true, Latitude: *pair.Latitude, Longitude: *pair.Longitude}
+		}
 	}
 	o := req.Outlet
 	o.ID = chi.URLParam(r, "id")
@@ -305,7 +333,7 @@ func (h Handler) updateOutlet(w http.ResponseWriter, r *http.Request) {
 	if profile != nil {
 		actor = profile.UserID
 	}
-	updated, err := h.Store.UpdateOutlet(r.Context(), o, o.Version, audit.Event{ActorID: actor, ActorType: "human", Action: "MASTER_DATA_OUTLET_UPDATED", ResourceType: "OUTLET", ResourceID: o.ID, Source: "shared-service"})
+	updated, err := h.Store.UpdateOutletLocation(r.Context(), o, o.Version, location, audit.Event{ActorID: actor, ActorType: "human", Action: "MASTER_DATA_OUTLET_UPDATED", ResourceType: "OUTLET", ResourceID: o.ID, Source: "shared-service"})
 	if err != nil {
 		if strings.Contains(err.Error(), "conflict") {
 			apierrors.Conflict(w, err.Error())

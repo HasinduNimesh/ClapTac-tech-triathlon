@@ -47,6 +47,10 @@ class StopInfo {
     required this.contactNote,
     required this.goods,
     this.orderRef = '',
+    this.district = '',
+    this.latitude,
+    this.longitude,
+    this.locationApproximate = false,
   });
 
   /// The server's id for this stop. Delivery operations are keyed by it, not by the outlet code,
@@ -65,6 +69,13 @@ class StopInfo {
   final String contactNote;
   final String goods;
   final String orderRef;
+  final String district;
+
+  /// Where the outlet is, when the server knows. [locationApproximate] means only the district centre
+  /// is known: it must not be used to navigate to the shop (see `StopDirections`).
+  final double? latitude;
+  final double? longitude;
+  final bool locationApproximate;
 
   /// Reads a stop saved with [toJson]. Anything of the wrong type throws [FormatException], never a
   /// cast error, so a damaged saved route is recognised and ignored.
@@ -81,6 +92,10 @@ class StopInfo {
         contactNote: _text(json, 'contactNote'),
         goods: _text(json, 'goods'),
         orderRef: _text(json, 'orderRef'),
+        district: _text(json, 'district'),
+        latitude: _decimalOrNull(json, 'latitude'),
+        longitude: _decimalOrNull(json, 'longitude'),
+        locationApproximate: _flag(json, 'locationApproximate'),
       );
 
   Map<String, Object?> toJson() => {
@@ -96,6 +111,10 @@ class StopInfo {
         'contactNote': contactNote,
         'goods': goods,
         'orderRef': orderRef,
+        'district': district,
+        if (latitude != null) 'latitude': latitude,
+        if (longitude != null) 'longitude': longitude,
+        'locationApproximate': locationApproximate,
       };
 
   String get window => windowStart.isEmpty && windowEnd.isEmpty ? 'No time window' : '$windowStart - $windowEnd';
@@ -262,6 +281,21 @@ int? _wholeOrNull(Map<String, Object?> json, String key) {
   if (value is int) return value;
   if (value is double && value == value.truncateToDouble()) return value.toInt();
   throw FormatException('$key is not a whole number');
+}
+
+/// A number with or without a fraction. Text is not one.
+double? _decimalOrNull(Map<String, Object?> json, String key) {
+  final value = json[key];
+  if (value == null) return null;
+  if (value is num && value.isFinite) return value.toDouble();
+  throw FormatException('$key is not a number');
+}
+
+bool _flag(Map<String, Object?> json, String key) {
+  final value = json[key];
+  if (value == null) return false;
+  if (value is bool) return value;
+  throw FormatException('$key is not true or false');
 }
 
 const _weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];

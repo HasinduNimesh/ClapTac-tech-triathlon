@@ -38,6 +38,7 @@ func main() {
 			ClientID:     os.Getenv("M2M_CLIENT_ID"),
 			ClientSecret: os.Getenv("M2M_CLIENT_SECRET"),
 			Scope:        "plans:read-internal orders:read-internal audit:write",
+			Resource:     getenv("OIDC_AUDIENCE", "waypoint-api"),
 		},
 	}
 	// Shortfall photos share the proof object store; without MINIO_ENDPOINT
