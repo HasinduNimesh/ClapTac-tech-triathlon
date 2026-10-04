@@ -66,7 +66,7 @@ jobs:
           targets=""
           if [[ "$all_images" == false ]]; then
             if [[ "$backend_image" == true ]]; then
-              targets="order-service planning-service fleet-service loading-service delivery-service shared-service integration-service agent-orchestrator"
+              targets="order-service planning-service fleet-service loading-service delivery-service shared-service integration-service agent-orchestrator agent-assistants"
             fi
             if [[ "$web_image" == true ]]; then
               targets="${targets:+$targets }web"
@@ -199,6 +199,7 @@ jobs:
           - agent-orchestrator
           - web
           - loader-web
+          - agent-assistants
     steps:
       - uses: actions/checkout@v4
       - name: Image name
@@ -214,7 +215,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build and push backend service
-        if: matrix.service != 'web' && matrix.service != 'loader-web'
+        if: matrix.service != 'web' && matrix.service != 'loader-web' && matrix.service != 'agent-assistants'
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -240,6 +241,15 @@ jobs:
           tags: ${{ steps.image.outputs.name }}
           cache-from: type=gha,scope=web
           cache-to: type=gha,mode=max,scope=web
+      - name: Build and push agent assistants
+        if: matrix.service == 'agent-assistants'
+        uses: docker/build-push-action@v6
+        with:
+          context: services/agent-assistants
+          push: true
+          tags: ${{ steps.image.outputs.name }}
+          cache-from: type=gha,scope=agent-assistants
+          cache-to: type=gha,mode=max,scope=agent-assistants
       - name: Build and push loader app
         if: matrix.service == 'loader-web'
         uses: docker/build-push-action@v6
@@ -293,7 +303,7 @@ jobs:
           revision="$1"
           prefix="$2"
           audience="$3"
-          services="order-service planning-service fleet-service loading-service delivery-service shared-service integration-service agent-orchestrator web loader-web"
+          services="order-service planning-service fleet-service loading-service delivery-service shared-service integration-service agent-orchestrator agent-assistants web loader-web"
           # Every compose call sees the image tag being deployed without editing .env first.
           # The remote shell reads this script from stdin. Compose must not consume
           # the rest of it while pulling images or starting containers.
@@ -329,6 +339,43 @@ jobs:
           if bad:
               raise SystemExit("Production Compose identity configuration is incomplete: " + ", ".join(bad))
           ' "$audience"
+          # Refuse before changing anything if compose would have to start a service that is built from
+          # source and has neither a published image nor one already on this VM. Such a service stopped a
+          # rollout half way once: the database was migrated and some services were recreated but not started.
+          unpublished="$(dc config --format json | python3 -c '
+          import json, sys
+          listed = set(sys.argv[1].split())
+          print(" ".join(sorted(n for n, s in json.load(sys.stdin)["services"].items() if "build" in s and not s.get("profiles") and n not in listed)))
+          ' "$services")"
+          project="$(basename "$PWD" | tr '[:upper:]' '[:lower:]')"
+          for name in $unpublished; do
+            sudo -n docker image inspect "$project-$name" >/dev/null 2>&1 || {
+              echo "Service '$name' is built from source and has no published or local image, so this deploy could not start it. Add it to the images job and the service list before deploying." >&2
+              exit 1
+            }
+          done
+          # Refuse before changing anything if a service asks ThunderID for a scope it does not define:
+          # ThunderID refuses a token request that contains an unknown scope, which takes that service's
+          # calls to the others down with it. The code at this revision is checked out above.
+          thunder_resource="$HOME/.config/waypoint/thunderid/resources/resource_servers/waypoint-api.yaml"
+          undefined_scopes="$(sudo -n cat "$thunder_resource" | python3 -c '
+          import glob, re, sys, yaml
+          doc = yaml.safe_load(sys.stdin)
+          defined = {r["handle"] + ":" + a["handle"] for r in doc["resources"] for a in r.get("actions", [])}
+          asked = {}
+          for path in sorted(glob.glob("services/*/cmd/server/main.go")):
+              for literal in re.findall(r"oauth\.TokenSource\{([^{}]*)\}", open(path).read()):
+                  found = re.search(r"Scope:\s*\"([^\"]*)\"", literal)
+                  for scope in (found.group(1).split() if found else []):
+                      if scope not in defined:
+                          asked.setdefault(path.split("/")[1], set()).add(scope)
+          print("; ".join(svc + ": " + " ".join(sorted(scopes)) for svc, scopes in sorted(asked.items())))
+          ')"
+          if [ -n "$undefined_scopes" ]; then
+            echo "ThunderID does not define scopes that the services at this revision ask for ($undefined_scopes)." >&2
+            echo "Add them to the Waypoint API resource in $thunder_resource and restart ThunderID first, or those services will be refused tokens." >&2
+            exit 1
+          fi
           # Pull first: if the registry or an image is missing nothing has been touched yet.
           dc pull --quiet $services
           # The web and loader images carry their sign-in addresses and API audience; refuse ones built for
