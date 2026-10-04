@@ -242,3 +242,17 @@ func TestPendingReceiptCarriesReportByAndDriverCountMismatchNeedsIssue(t *testin
 		t.Fatalf("confirmed receipt still pending: %v", tasks)
 	}
 }
+
+func TestReceiptAboveDriverCountButAtOrderedUnitsAcceptedWithIssue(t *testing.T) {
+	s, _, _, p := receiptService("PARTIAL")
+	driver := 16
+	s.Delivery = deliveryReaderStub{value: domain.DeliveryTracking{RunID: "run-1", TripID: "trip-1", RunStatus: "completed", StopID: "stop-1", Outcome: "PARTIAL", CompletedAt: timePtr(time.Now().Add(-time.Minute)), DeliveredUnits: &driver}}
+	// Store counts the full ordered 20 while the driver recorded 16: not below the order, but a discrepancy issue is required.
+	if _, _, _, err := s.ConfirmReceipt(p, "order-1", domain.ReceiptConfirmation{ReceivedUnits: 20}); err == nil {
+		t.Fatal("count above the driver's record accepted without an issue")
+	}
+	r, issues, created, err := s.ConfirmReceipt(p, "order-1", domain.ReceiptConfirmation{ReceivedUnits: 20, Issue: &domain.ReceiptIssueRequest{IssueType: "QUANTITY_MISMATCH", AffectedUnits: 4, Note: "Driver recorded 16", IdempotencyKey: "above-driver-1"}})
+	if err != nil || !created || r.ReceivedUnits != 20 || r.Status != "confirmed_with_issue" || len(issues) != 1 || issues[0].AffectedUnits != 4 {
+		t.Fatalf("confirm above driver count: %+v %v %v %v", r, issues, created, err)
+	}
+}

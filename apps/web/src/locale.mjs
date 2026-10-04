@@ -1419,4 +1419,16 @@ Object.assign(labels.ta, {
   "could not be marked as in the workshop, so it can still be planned. The replacement is not confirmed until this succeeds.": "பட்டறையில் உள்ளதாகக் குறிக்க முடியவில்லை, எனவே இதைத் தொடர்ந்து திட்டமிட முடியும். இது வெற்றி பெறும் வரை மாற்று வாகனம் உறுதிசெய்யப்படாது.",
   "Trips already published:": "ஏற்கனவே வெளியிடப்பட்ட பயணங்கள்:",
   "Retry workshop update": "பட்டறைப் புதுப்பிப்பை மீண்டும் முயலவும்",
+  "Differs from driver record": "රියදුරු වාර්තාවට වෙනස්",
+  "Count differs from the driver's record": "ගණන රියදුරුගේ වාර්තාවට වෙනස් වේ",
+  "you counted": "ඔබ ගණන් කළේ",
+  "Report the difference so the dispatcher can review it before you confirm.": "ඔබ තහවුරු කිරීමට පෙර සම්ප්‍රේෂකයාට සමාලෝචනය කළ හැකි වන පරිදි වෙනස වාර්තා කරන්න.",
+  "Confirm receipt & report difference": "ලැබීම තහවුරු කර වෙනස වාර්තා කරන්න",
+});
+Object.assign(labels.ta, {
+  "Differs from driver record": "ஓட்டுநர் பதிவுடன் வேறுபடுகிறது",
+  "Count differs from the driver's record": "எண்ணிக்கை ஓட்டுநரின் பதிவுடன் வேறுபடுகிறது",
+  "you counted": "நீங்கள் எண்ணியது",
+  "Report the difference so the dispatcher can review it before you confirm.": "நீங்கள் உறுதிப்படுத்தும் முன் அனுப்புநர் மதிப்பாய்வு செய்யும்படி வேறுபாட்டைப் புகாரளிக்கவும்.",
+  "Confirm receipt & report difference": "பெறுதலை உறுதிப்படுத்தி வேறுபாட்டைப் புகாரளிக்கவும்",
 });
