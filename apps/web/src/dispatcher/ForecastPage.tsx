@@ -4,25 +4,23 @@ import { DEPOT_LABELS, sameDepot } from "../api/loading";
 import { useLocale } from "../i18n";
 import { useDepot } from "./DispatcherLayout";
 import { operatingDaysPerWeek } from "./forecastCapacity.mjs";
+import { buildCalendarGrid, calendarCoverage, calendarRange, CalendarCell, rangeBounds } from "./forecastHorizon.mjs";
 import { isRefrigerated, Vehicle } from "./types";
 import { BRAND_COLORS, ChipGroup, DpHero, Note, Panel, Stat, StatRow, Tag } from "./ui";
 import { dateTime, dayLabel, useApi } from "./useApi";
 
 type Forecast = {
-  generatedAt: string; forecastVersion: string; method: string; historyWeeks: number; driftModelVersion: string; backtestModelVersion: string;
+  generatedAt: string; forecastVersion: string; method: string; historyWeeks: number; horizonWeeks?: number; driftModelVersion: string; backtestModelVersion: string;
   inputDrift: { depot: string; brand: string; previousOrderCount: number; recentOrderCount: number; changePercent?: number; backtestAPEPercent?: number; status: string }[];
-  weekly: { weekStarting: string; depot: string; brand: string; chilledOrders: number; ambientOrders: number; estimatedWeightKg: number; estimatedVolumeM3: number; estimate: boolean }[];
+  weekly: { weekStarting: string; horizonWeek?: number; rangePercent?: number; depot: string; brand: string; chilledOrders: number; ambientOrders: number; estimatedWeightKg: number; estimatedVolumeM3: number; estimate: boolean }[];
   serviceMinutesPerStop: number; serviceEstimateVersion: string; serviceEstimateSource: string;
   serviceTimeBacktestVersion?: string; serviceTimeBacktestWindowStart?: string; serviceTimeBacktestWindowEnd?: string;
   serviceTimeEvaluation?: { depot: string; brand: string; actualStopCount: number; configuredMinutes: number; meanObservedMinutes?: number; meanAbsoluteErrorMinutes?: number; status: string }[];
   capacity: { depot: string; projectedWeightKg: number; projectedVolumeM3: number; estimatedWeightCapacityKg: number; estimatedVolumeCapacityM3: number; pressure: string }[];
 };
-type CalendarDay = { date: string; isOperating: boolean };
-type Week = { start: string; byBrand: Record<string, number>; total: number; chilled: number };
+type Week = { start: string; byBrand: Record<string, number>; total: number; chilled: number; rangePct: number };
 const BRANDS = ["Fresh", "Style", "Tech"];
-const RANGE = 0.1;
 
-function addDays(date: string, days: number) { const d = new Date(`${date}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + days); return d.toISOString().slice(0, 10); }
 function weekNo(date: string) { const d = new Date(`${date}T00:00:00Z`); const day = (d.getUTCDay() + 6) % 7; d.setUTCDate(d.getUTCDate() - day + 3); const first = new Date(Date.UTC(d.getUTCFullYear(), 0, 4)); return 1 + Math.round(((d.getTime() - first.getTime()) / 86400000 - 3 + ((first.getUTCDay() + 6) % 7)) / 7); }
 const approx = (v: number) => `≈ ${Math.round(v).toLocaleString("en-LK")} m³`;
 
@@ -34,15 +32,17 @@ export function ForecastPage() {
   const result = useApi<{ forecast: Forecast }>("/orders/forecast");
   const forecast = result.data?.forecast;
   const policy = useApi<{ policy: { maxTripsPerVehicle: number } }>("/shared/policies/current");
-  const calendar = useApi<{ items: CalendarDay[] }>(`/shared/calendar?from=${today}&to=${addDays(today, 41)}`);
+  const calendar = useApi<{ items: { date: string; isOperating: boolean }[] }>(`/shared/calendar?from=${calendarRange(today).from}&to=${calendarRange(today).to}`);
   const fleet = useApi<{ items: Vehicle[] }>("/fleet/vehicles");
 
   const buckets = (forecast?.weekly || []).filter((b) => !depot || sameDepot(b.depot, depot));
   const weeksMap = new Map<string, Week>();
   for (const b of buckets) {
-    const w = weeksMap.get(b.weekStarting) || { start: b.weekStarting, byBrand: {}, total: 0, chilled: 0 };
+    const w = weeksMap.get(b.weekStarting) || { start: b.weekStarting, byBrand: {}, total: 0, chilled: 0, rangePct: 0 };
     w.byBrand[b.brand] = (w.byBrand[b.brand] || 0) + b.estimatedVolumeM3;
     w.total += b.estimatedVolumeM3;
+    // Older services send no per-week range; keep the previous fixed 10%.
+    w.rangePct = Math.max(w.rangePct, b.rangePercent ?? 10);
     const orders = b.chilledOrders + b.ambientOrders;
     w.chilled += orders > 0 ? b.estimatedVolumeM3 * (b.chilledOrders / orders) : 0;
     weeksMap.set(b.weekStarting, w);
@@ -67,11 +67,12 @@ export function ForecastPage() {
   const reeferTripsAvailable = tripsPerVehicle ? reefers.length * tripsPerVehicle : 0;
   const reeferTripsNeeded = (w: Week) => (reeferM3 > 0 && operatingDays ? Math.ceil(w.chilled / operatingDays / reeferM3) : 0);
   const reeferShort = [...weeks].map((w) => ({ w, need: reeferTripsNeeded(w) })).filter((x) => reeferTripsAvailable > 0 && x.need > reeferTripsAvailable).sort((a, b) => b.need - a.need)[0];
-  const max = Math.max(1, ...weeks.map((w) => w.total * (1 + RANGE)));
+  const max = Math.max(1, ...weeks.map((w) => rangeBounds(w.total, w.rangePct).high));
 
-  const days = calendar.data?.items || [];
+  const days = buildCalendarGrid(today, calendar.data?.items);
+  const coverage = calendarCoverage(days);
   const weekOfDay = (date: string) => weeks.filter((w) => w.start <= date).slice(-1)[0];
-  const dayState = (day: CalendarDay) => {
+  const dayState = (day: CalendarCell) => {
     if (!day.isOperating) return "off";
     const w = weekOfDay(day.date);
     if (!w || !avg) return "normal";
@@ -82,13 +83,13 @@ export function ForecastPage() {
 
   return (
     <>
-      <DpHero title={t("Demand forecast")} subtitle={t("Estimated order volume for the next weeks, by depot and brand, to plan vehicles, drivers and refrigerated capacity.")}>
+      <DpHero title={t("Demand forecast")} subtitle={t("Estimated order volume for the next ten weeks, by depot and brand, to plan vehicles, drivers and refrigerated capacity.")}>
         <div className="dp-row" style={{ background: "#fff", padding: 4, borderRadius: 8 }}>
           <ChipGroup label={t("Depot")} value={depot} onChange={setDepot} options={[...Object.entries(DEPOT_LABELS).map(([code, label]) => ({ value: code, label })), { value: "", label: t("Both depots") }]} />
         </div>
       </DpHero>
       {forecast && <StatRow cols={4}>
-        <Stat icon="▥" label={`${t("Estimated volume next week")}${next ? ` (W${weekNo(next.start)})` : ""}`} value={next ? approx(next.total) : "—"} sub={next ? `${t("Likely range")} ${Math.round(next.total * (1 - RANGE))}–${Math.round(next.total * (1 + RANGE))} m³` : t("No estimate yet")} />
+        <Stat icon="▥" label={`${t("Estimated volume next week")}${next ? ` (W${weekNo(next.start)})` : ""}`} value={next ? approx(next.total) : "—"} sub={next ? `${t("Likely range")} ${Math.round(rangeBounds(next.total, next.rangePct).low)}–${Math.round(rangeBounds(next.total, next.rangePct).high)} m³` : t("No estimate yet")} />
         <Stat icon="❄" iconTone="cool" label={t("Estimated chilled volume")} value={next ? approx(next.chilled) : "—"} sub={next && next.total ? `${Math.round((next.chilled / next.total) * 100)}% ${t("of the total")}` : ""} />
         <Stat icon="▦" iconTone="amber" label={t("Busiest week ahead")} value={busiest ? `W${weekNo(busiest.start)} · ${dayLabel(busiest.start)}` : "—"} sub={busiest ? approx(busiest.total) : ""} subTone="amber" />
         {reeferShort
@@ -102,7 +103,7 @@ export function ForecastPage() {
         {!forecast && !result.error && <p role="status">{t("Loading estimates…")}</p>}
         {forecast && <>
           <div className="dp-grid-2">
-            <Panel title={t("Weekly demand by brand")} sub={`${t("Estimated total volume per week, m³")} · ${depot ? DEPOT_LABELS[depot] : t("Both depots")}`} actions={<ul className="dp-legend" style={{ flexDirection: "row", gap: 14 }}>{BRANDS.map((b) => <li key={b}><span className="dp-swatch" style={{ background: BRAND_COLORS[b.toLowerCase()] }} />{t(b)}</li>)}<li>│ {t("Likely range")} (±10%)</li></ul>}>
+            <Panel title={t("Weekly demand by brand")} sub={`${t("Estimated total volume per week, m³")} · ${depot ? DEPOT_LABELS[depot] : t("Both depots")}`} actions={<ul className="dp-legend" style={{ flexDirection: "row", gap: 14 }}>{BRANDS.map((b) => <li key={b}><span className="dp-swatch" style={{ background: BRAND_COLORS[b.toLowerCase()] }} />{t(b)}</li>)}<li>│ {t("Likely range")} ({t("widens with distance")})</li></ul>}>
               {weeks.length === 0 ? <p className="muted">{t("No confirmed order history is available for an estimate.")}</p> : <>
                 <div className="dp-chart" role="img" aria-label={t("Weekly demand by brand")}>
                   {weeks.map((w) => {
@@ -110,7 +111,7 @@ export function ForecastPage() {
                     return (
                       <div key={w.start} className={`dp-chart-col${peak ? " dp-chart-col--peak" : ""}`}>
                         {peak && <span className="dp-chart-tag" style={{ color: "#c2410c" }}>{t("Peak")}</span>}
-                        <span className="dp-chart-value">≈{Math.round(w.total)}</span>
+                        <span className="dp-chart-value" title={`${t("Likely range")} ±${w.rangePct}%`}>≈{Math.round(w.total)}</span>
                         <div className="dp-chart-bar" style={{ height: `${(w.total / max) * 82}%` }}>
                           {BRANDS.map((b) => <span key={b} style={{ height: `${w.total ? ((w.byBrand[b] || 0) / w.total) * 100 : 0}%`, background: BRAND_COLORS[b.toLowerCase()] }} />)}
                         </div>
@@ -132,6 +133,7 @@ export function ForecastPage() {
                 {days.map((day) => { const s = dayState(day); return <span key={day.date} className={`dp-cal-day${s === "off" ? " dp-cal-day--off" : s === "busy" ? " dp-cal-day--busy" : s === "peak" ? " dp-cal-day--peak" : ""}${day.date === today ? " dp-cal-day--today" : ""}`} title={`${day.date} · ${t(s === "off" ? "No deliveries" : s === "peak" ? "Peak" : s === "busy" ? "Busy" : "Normal")}`}>{Number(day.date.slice(8))}</span>; })}
               </div>
               {calendar.error && <p className="muted">{t("Operating calendar is unavailable.")}</p>}
+              {!calendar.error && calendar.data && !coverage.complete && <p className="muted">{coverage.lastSet ? `${t("Operating calendar set up to")} ${coverage.lastSet}. ${t("Later days use the usual weekday pattern.")}` : t("Operating calendar is not set for these weeks. Days use the usual weekday pattern.")}</p>}
               <ul className="dp-legend" style={{ flexDirection: "row", flexWrap: "wrap", gap: 12, marginTop: 12 }}>
                 <li><span className="dp-swatch" style={{ background: "#e9ecef" }} />{t("Normal")}</li>
                 <li><span className="dp-swatch" style={{ background: "#fff4de" }} />{t("Busy")}</li>

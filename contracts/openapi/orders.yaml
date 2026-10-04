@@ -70,6 +70,32 @@ paths:
       responses:
         "200": { description: Created or existing follow-up order }
         "403": { description: Internal order scope required }
+  /orders/forecast:
+    get:
+      operationId: getOrderForecast
+      security: [{ bearerAuth: [] }]
+      description: >
+        Deterministic demand estimate for the next ten weeks (horizonWeeks, 70 days), starting with the
+        current Monday-based week in Sri Lanka time. The baseline is the mean of confirmed order volume
+        over the previous four complete weeks, held flat across the horizon: no trend or seasonality is
+        modelled, so beyond the first week the estimate is stationary. Every depot/brand bucket carries a
+        rangePercent, the half-width of its likely range, that widens with distance (10 percent in
+        horizon week 1, plus 2 points for each week further out, so 28 percent in week 10); the range is a
+        planning heuristic, not a calibrated interval. Weekly rows are ordered by week then depot and
+        brand, and all ten weeks are returned whenever any history exists (none when there is none).
+        capacity compares the projected weight and volume of the busiest projected week with the
+        fleet's estimated capacity per depot. Requires order:view-all.
+      responses:
+        "200":
+          description: Forecast
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  forecast: { $ref: "#/components/schemas/Forecast" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
   /orders/cutoff:
     get:
       operationId: getOrderCutoff
@@ -195,6 +221,43 @@ components:
       required: true
       schema: { type: string }
   schemas:
+    Forecast:
+      type: object
+      properties:
+        generatedAt: { type: string, format: date-time }
+        forecastVersion: { type: string, example: confirmed_order_mean_v2 }
+        method: { type: string }
+        historyWeeks: { type: integer, example: 4, description: Complete prior weeks averaged into the baseline. }
+        horizonWeeks: { type: integer, example: 10, description: Weeks projected ahead; weekly holds this many distinct weekStarting values. }
+        weekly:
+          type: array
+          items: { $ref: "#/components/schemas/ForecastBucket" }
+        capacity:
+          type: array
+          items:
+            type: object
+            properties:
+              depot: { type: string }
+              projectedWeightKg: { type: number }
+              projectedVolumeM3: { type: number }
+              estimatedWeightCapacityKg: { type: number }
+              estimatedVolumeCapacityM3: { type: number }
+              pressure: { type: string, enum: [low, medium, high] }
+        inputDrift: { type: array, items: { type: object } }
+        serviceTimeEvaluation: { type: array, items: { type: object } }
+    ForecastBucket:
+      type: object
+      properties:
+        weekStarting: { type: string, format: date }
+        horizonWeek: { type: integer, minimum: 1, maximum: 10, description: 1 is the current week. }
+        rangePercent: { type: number, description: Half-width of the likely range in percent; widens with horizonWeek. }
+        depot: { type: string }
+        brand: { type: string }
+        chilledOrders: { type: integer }
+        ambientOrders: { type: integer }
+        estimatedWeightKg: { type: number }
+        estimatedVolumeM3: { type: number }
+        estimate: { type: boolean }
     CreateOrder:
       type: object
       required: [requestedDeliveryDate, orderUnits, orderWeightKg, orderVolumeM3, temperatureRequirement]

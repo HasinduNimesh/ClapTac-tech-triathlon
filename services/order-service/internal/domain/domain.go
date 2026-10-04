@@ -54,6 +54,7 @@ type Forecast struct {
 	ForecastVersion                string                  `json:"forecastVersion"`
 	Method                         string                  `json:"method"`
 	HistoryWeeks                   int                     `json:"historyWeeks"`
+	HorizonWeeks                   int                     `json:"horizonWeeks"`
 	DriftModelVersion              string                  `json:"driftModelVersion"`
 	BacktestModelVersion           string                  `json:"backtestModelVersion"`
 	InputDrift                     []ForecastInputDrift    `json:"inputDrift"`
@@ -87,6 +88,8 @@ type ForecastInputDrift struct {
 }
 type ForecastBucket struct {
 	WeekStarting      string  `json:"weekStarting"`
+	HorizonWeek       int     `json:"horizonWeek"`
+	RangePercent      float64 `json:"rangePercent"`
 	Depot             string  `json:"depot"`
 	Brand             string  `json:"brand"`
 	ChilledOrders     int     `json:"chilledOrders"`

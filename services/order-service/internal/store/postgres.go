@@ -153,8 +153,8 @@ func (p Postgres) Forecast(now time.Time) (domain.Forecast, error) {
 	start := now.In(loc)
 	// Use complete prior calendar weeks only, avoiding partial-week bias.
 	weekStart := start.AddDate(0, 0, -int((int(start.Weekday())+6)%7))
-	historyStart := weekStart.AddDate(0, 0, -28)
-	out := domain.Forecast{GeneratedAt: now.UTC(), ForecastVersion: "confirmed_order_mean_v1", Method: "mean of confirmed order volume over the previous four complete weeks, projected into the next four weeks; estimates only", HistoryWeeks: 4, DriftModelVersion: forecastDriftVersion, BacktestModelVersion: forecastBacktestVersion, InputDrift: []domain.ForecastInputDrift{}, Weekly: []domain.ForecastBucket{}, Capacity: []domain.ForecastCapacity{}}
+	historyStart := weekStart.AddDate(0, 0, -7*forecastHistoryWeeks)
+	out := domain.Forecast{GeneratedAt: now.UTC(), ForecastVersion: forecastVersion, Method: forecastMethod, HistoryWeeks: forecastHistoryWeeks, HorizonWeeks: ForecastHorizonWeeks, DriftModelVersion: forecastDriftVersion, BacktestModelVersion: forecastBacktestVersion, InputDrift: []domain.ForecastInputDrift{}, Weekly: []domain.ForecastBucket{}, Capacity: []domain.ForecastCapacity{}}
 	rows, err := p.Pool.Query(ctx, `
 		SELECT COALESCE(NULLIF(o.depot,''),'UNASSIGNED'), x.brand,
 			COUNT(*) FILTER (WHERE x.temperature_requirement='chilled')::int,
@@ -165,11 +165,6 @@ func (p Postgres) Forecast(now time.Time) (domain.Forecast, error) {
 		GROUP BY 1,2 ORDER BY 1,2`, historyStart.Format("2006-01-02"), weekStart.Format("2006-01-02"))
 	if err != nil {
 		return out, err
-	}
-	type forecastGroup struct {
-		depot, brand     string
-		chilled, ambient int
-		weight, volume   float64
 	}
 	groups := []forecastGroup{}
 	for rows.Next() {
@@ -185,7 +180,7 @@ func (p Postgres) Forecast(now time.Time) (domain.Forecast, error) {
 		return out, err
 	}
 	rows.Close()
-	driftStart := historyStart.AddDate(0, 0, -28)
+	driftStart := historyStart.AddDate(0, 0, -7*forecastHistoryWeeks)
 	driftRows, err := p.Pool.Query(ctx, `
 		SELECT COALESCE(NULLIF(o.depot,''),'UNASSIGNED'), x.brand,
 			COUNT(*) FILTER (WHERE x.requested_delivery_date >= $1 AND x.requested_delivery_date < $2)::int,
@@ -211,14 +206,9 @@ func (p Postgres) Forecast(now time.Time) (domain.Forecast, error) {
 		return out, err
 	}
 	driftRows.Close()
-	// SQL above groups full-window history; dividing by four gives the stable
-	// weekly baseline. Counts are rounded to nearest whole order.
-	for w := 0; w < 4; w++ {
-		d := weekStart.AddDate(0, 0, 7*w)
-		for _, g := range groups {
-			out.Weekly = append(out.Weekly, domain.ForecastBucket{WeekStarting: d.Format("2006-01-02"), Depot: g.depot, Brand: g.brand, ChilledOrders: int(math.Round(float64(g.chilled) / 4)), AmbientOrders: int(math.Round(float64(g.ambient) / 4)), EstimatedWeightKg: math.Round(g.weight/4*100) / 100, EstimatedVolumeM3: math.Round(g.volume/4*1000) / 1000, Estimate: true})
-		}
-	}
+	// SQL above groups full-window history; projectWeekly divides by the history
+	// weeks for the stable weekly baseline and repeats it over the whole horizon.
+	out.Weekly = projectWeekly(weekStart, groups)
 	var minutes int
 	if err := p.Pool.QueryRow(ctx, `SELECT COALESCE(ROUND(AVG(minutes)),0)::int FROM shared.service_allowance WHERE minutes>0`).Scan(&minutes); err != nil {
 		return out, err

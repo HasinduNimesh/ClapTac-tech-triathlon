@@ -1,6 +1,7 @@
 import { automationLabels } from "./automations/labels.mjs";
 import { storeWorkspaceLabels } from "./store-manager/storeWorkspaceLabels.mjs";
 import { dispatcherWorkspaceLabels } from "./dispatcher/dispatcherLabels.mjs";
+import { auditGapLabels } from "./auditGapLabels.mjs";
 export const labels = {
   en: {},
   si: { "Summary refreshed from the server": "සේවාදායකයෙන් සාරාංශය යාවත්කාලීන කරන ලදී", "Summary reflects saved work on this device": "මෙම උපාංගයේ සුරැකි වැඩ සාරාංශයේ පෙන්වයි", "Refresh server summary": "සේවාදායක සාරාංශය යාවත්කාලීන කරන්න", "Updates are saved, but the server summary could not be refreshed. Retry when connected.": "යාවත්කාලීන කිරීම් සුරැකි නමුත් සේවාදායක සාරාංශය යාවත්කාලීන කළ නොහැකි විය. සම්බන්ධ වූ විට නැවත උත්සාහ කරන්න.", Home: "මුල් පිටුව", Login: "පිවිසෙන්න", "My orders": "මගේ ඇණවුම්", Tracking: "ගමන් තත්ත්වය", Receipts: "භාරගැනීම්", Orders: "ඇණවුම්", Planning: "සැලසුම්", "Audit & KPIs": "විගණනය සහ දර්ශක", "Master data": "මූලික දත්ත", Forecast: "පුරෝකථනය", Loading: "පැටවීම", "My route": "මගේ මාර්ගය", "Sign out": "ඉවත් වන්න", Language: "භාෂාව", English: "English", Sinhala: "සිංහල", Tamil: "தமிழ்", "Demand forecast and capacity": "ඉල්ලුම් පුරෝකථනය සහ ධාරිතාව", "Failed": "අසාර්ථක විය", "Refused": "ප්‍රතික්ෂේප කළේය", "Weekly demand by depot and brand": "ඩිපෝව සහ වෙළඳ නාමය අනුව සතිපතා ඉල්ලුම", "Estimated capacity pressure": "ඇස්තමේන්තුගත ධාරිතා පීඩනය", "Sign in": "පිවිසෙන්න", "Sign-in could not be started. Check your connection and try again.": "පිවිසීම ආරම්භ කළ නොහැකි විය. ඔබගේ සම්බන්ධතාව පරීක්ෂා කර නැවත උත්සාහ කරන්න.", "Connecting to identity provider…": "හඳුනාගැනීමේ සේවාවට සම්බන්ධ වෙමින්…", "Continue to identity provider": "හඳුනාගැනීමේ සේවාව වෙත ඉදිරියට යන්න",
@@ -1468,3 +1469,7 @@ Object.assign(labels.ta, {
 
 
 });
+
+// Feature-audit gap work (PL-10, LD-6, LO-6, LO-2 grouping, ST-3, XR-3, receipt temperature).
+Object.assign(labels.si, auditGapLabels.si);
+Object.assign(labels.ta, auditGapLabels.ta);
