@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { apiJSON } from "../api/client";
 import { todayInSriLanka } from "../api/date.mjs";
 import { DeliveryStop, DeliveryTripDetail, DeliveryTripSummary, LatenessProbability } from "../api/delivery";
-import { DEPOT_LABELS, LoadingTripSummary, sameDepot } from "../api/loading";
+import { DEPOT_LABELS, LoadingTripSummary, depotCode, sameDepot } from "../api/loading";
 import { PlanDetail } from "../api/planning";
 import { useAuth } from "../auth/AuthContext";
 import { useLocale } from "../i18n";
@@ -13,7 +13,7 @@ import { evaluatedLatenessCalibrations } from "./latenessCalibration.mjs";
 import { singleFlightMessagePost } from "./singleFlightMessagePost.mjs";
 import { useDepot } from "./DispatcherLayout";
 import { Incident, Outlet, outletMap } from "./types";
-import { DEPOT_LOCATIONS, LatLng, MapLine, MapMarker, WaypointMap } from "../components/WaypointMap";
+import { LatLng, MapLine, MapMarker, WaypointMap, depotPosition } from "../components/WaypointMap";
 import { Check, ChipGroup, DpHero, Drawer, Note, Panel, Stat, StatRow, Tag, Toast } from "./ui";
 import { clock, dateTime, errorText, isChilled, minutesAgo, useApi, useToken } from "./useApi";
 
@@ -220,25 +220,25 @@ function TripMap({ rows, outlets, onOpen }: { rows: Row[]; outlets: Map<string, 
   const depots = new Set<string>();
   for (const row of rows) {
     const stops = row.detail?.stops || [];
-    const depotCode = row.summary.depot || "DEPOT_NORTH";
-    const depot = DEPOT_LOCATIONS[depotCode] || DEPOT_LOCATIONS.DEPOT_NORTH;
-    depots.add(depotCode);
-    const path: LatLng[] = [depot, ...stops.map(at).filter((p): p is LatLng => Boolean(p))];
+    const depotAt = depotPosition(row.summary.depot);
+    if (depotAt) depots.add(depotCode(row.summary.depot));
+    const path: LatLng[] = [...(depotAt ? [depotAt] : []), ...stops.map(at).filter((p): p is LatLng => Boolean(p))];
     const focus = selected === row.summary.tripId;
     lines.push({ id: row.summary.tripId, points: path, color: focus ? "#3a57e8" : "#9db3ee", weight: focus ? 5 : 3, dashed: row.state === "waiting" });
     const last = [...stops].reverse().find((s) => s.outcomeCode || s.arrivedAt);
-    const truck = at(last) || depot;
+    // A truck is drawn only where it has really been reported: its last stop, else its depot.
+    const truck = at(last) || depotAt;
     const next = at(row.next);
-    if (next && row.state !== "done") lines.push({ id: `${row.summary.tripId}-next`, points: [truck, next], color: color(row.state), dashed: true, weight: 3 });
+    if (truck && next && row.state !== "done") lines.push({ id: `${row.summary.tripId}-next`, points: [truck, next], color: color(row.state), dashed: true, weight: 3 });
     if (focus) {
       for (const s of stops) {
         const p = at(s);
         if (p) markers.push({ id: `${row.summary.tripId}-${s.id}`, at: p, kind: "stop", color: s.outcomeCode ? "#008b52" : "#3a57e8", label: String(s.stopSequence), title: `${s.stopSequence}. ${s.outletId} ${s.outletName || ""}` });
       }
     }
-    markers.push({ id: row.summary.tripId, at: truck, kind: "truck", color: color(row.state), selected: focus, label: `${row.summary.vehicleId} · ${stateLabel(row.state)}`, title: `${row.summary.vehicleId} · ${stateLabel(row.state)}`, onClick: () => setSelected(row.summary.tripId) });
+    if (truck) markers.push({ id: row.summary.tripId, at: truck, kind: "truck", color: color(row.state), selected: focus, label: `${row.summary.vehicleId} · ${stateLabel(row.state)}`, title: `${row.summary.vehicleId} · ${stateLabel(row.state)}`, onClick: () => setSelected(row.summary.tripId) });
   }
-  for (const d of depots) markers.push({ id: `depot-${d}`, at: DEPOT_LOCATIONS[d] || DEPOT_LOCATIONS.DEPOT_NORTH, kind: "depot", color: "#232d42", label: `${DEPOT_LABELS[d] || d} ${t("depot")}`, title: `${DEPOT_LABELS[d] || d} ${t("depot")}` });
+  for (const d of depots) markers.push({ id: `depot-${d}`, at: depotPosition(d)!, kind: "depot", color: "#232d42", label: `${DEPOT_LABELS[d] || d} ${t("depot")}`, title: `${DEPOT_LABELS[d] || d} ${t("depot")}` });
   const chosen = rows.find((r) => r.summary.tripId === selected);
   return (
     <div className="dp-panel-body">

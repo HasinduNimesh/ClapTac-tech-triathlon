@@ -35,6 +35,18 @@ type Service struct {
 
 var validReceiptIssueTypes = map[string]bool{"MISSING": true, "DAMAGED": true, "QUANTITY_MISMATCH": true, "OTHER": true}
 
+// CutoffLocalTime is the daily order cutoff in Sri Lanka time that orders are held to: the planning
+// policy's (which a dispatcher can change), or 16:00 when the policy cannot be read. Screens that tell
+// people the cutoff read it from here so they never state a time the service is not applying.
+func (s Service) CutoffLocalTime() string {
+	if s.Policy != nil {
+		if configured, err := s.Policy.CutoffLocalTime(); err == nil && configured != "" {
+			return configured
+		}
+	}
+	return "16:00"
+}
+
 func (s Service) Tracking(profile *authorization.Profile, id string) (domain.Tracking, error) {
 	o, err := s.Get(profile, id)
 	if err != nil {
@@ -416,12 +428,7 @@ func (s Service) Create(profile *authorization.Profile, bearer string, req domai
 		now = s.Now()
 	}
 	if s.Cutoff != nil {
-		cutoffTime := "16:00"
-		if s.Policy != nil {
-			if configured, err := s.Policy.CutoffLocalTime(); err == nil && configured != "" {
-				cutoffTime = configured
-			}
-		}
+		cutoffTime := s.CutoffLocalTime()
 		calendar := s.Cutoff
 		if s.Calendar != nil {
 			loc, _ := time.LoadLocation(cutoff.Zone)

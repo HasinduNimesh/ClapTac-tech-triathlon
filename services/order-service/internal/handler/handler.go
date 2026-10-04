@@ -38,6 +38,7 @@ type OrderWorkflows interface {
 
 func (h Handler) Routes(r chi.Router) {
 	r.Route("/api/v1/orders", func(r chi.Router) {
+		r.With(authorization.RequireAnyWith(h.Authn, h.Profiles, authorization.PermOrderViewOwn, authorization.PermOrderViewAll)).Get("/cutoff", h.cutoff)
 		r.With(authorization.RequireWith(h.Authn, h.Profiles, authorization.PermOrderViewAll)).Get("/forecast", h.forecast)
 		r.With(authorization.RequireWith(h.Authn, h.Profiles, authorization.PermOrderViewAll)).Get("/export.csv", h.exportCSV)
 		r.With(authorization.RequireWith(h.Authn, h.Profiles, authorization.PermOrderViewAll)).Post("/import.csv", h.importCSV)
@@ -211,6 +212,15 @@ func (h Handler) importCSV(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"version": 1, "sourceSystem": source, "created": created, "duplicates": duplicates, "items": results})
+}
+
+// cutoff tells apps the order cutoff the service applies, as HH:MM Sri Lanka time.
+func (h Handler) cutoff(w http.ResponseWriter, r *http.Request) {
+	local := h.Service.CutoffLocalTime()
+	if len(local) > 5 {
+		local = local[:5]
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"cutoff": map[string]string{"localTime": local, "timezone": "Asia/Colombo"}})
 }
 
 func (h Handler) forecast(w http.ResponseWriter, r *http.Request) {

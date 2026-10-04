@@ -14,6 +14,7 @@ import { queueRetentionWarning } from "../offline/queueRetention.mjs";
 import { hasQueuedRouteCompletion } from "../offline/routeCompletion.mjs";
 import { cacheDetail, drainQueue, resumeSync, SyncBanner } from "../offline/sync";
 import { createSingleFlightAction } from "./singleFlightAction.mjs";
+import { navigationTarget } from "./navigation.mjs";
 
 function stopLabel(stop: DeliveryStop) {
   return stop.outletName || stop.outletId || stop.orderRef || `Stop ${stop.stopSequence}`;
@@ -744,6 +745,7 @@ export function DriverTripsPage() {
           <dl className="stop-guidance">
             {stop.plannedWindowOpen && <><dt>{t("Delivery window")}</dt><dd>{stop.plannedWindowOpen}–{stop.plannedWindowClose || ""}</dd></>}
             {stop.district && <><dt>{t("District")}</dt><dd>{stop.district}</dd></>}
+            {(() => { const target = navigationTarget(stop); return <><dt>{t("Directions")}</dt><dd><a href={target.href} target="_blank" rel="noreferrer">{target.exact ? t("Navigate to this stop") : t("Search for this shop in maps")}</a>{!target.exact && <span className="muted"> · {t("Exact location not recorded. Check the shop's name and area before driving, or ask dispatch.")}</span>}</dd></>; })()}
             {stop.dockType && <><dt>{t("Access")}</dt><dd>{t(stop.dockType)}</dd></>}
             {stop.parkingConstraint && <><dt>{t("Parking")}</dt><dd>{t(stop.parkingConstraint.replace(/_/g, " "))}</dd></>}
             {stop.accessInstructions && <><dt>{t("Landmark and final approach")}</dt><dd className="driver-access-instructions">{stop.accessInstructions}</dd></>}

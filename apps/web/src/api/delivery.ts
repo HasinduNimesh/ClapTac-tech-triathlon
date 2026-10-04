@@ -11,6 +11,10 @@ export type DeliveryStop = {
   chilledTemperatureMaxC?: number;
   temperatureReadings?: TemperatureReading[];
   district?: string;
+  // The outlet's position; approximate means only the district centre is known.
+  latitude?: number;
+  longitude?: number;
+  locationApproximate?: boolean;
   dockType?: string;
   parkingConstraint?: string;
   accessInstructions?: string;

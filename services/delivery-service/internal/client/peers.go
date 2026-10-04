@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/HasinduNimesh/ClapTac-tech-triathlon/pkg/auth"
@@ -132,6 +133,42 @@ func (p Peers) Outlet(ctx context.Context, id string) (domain.Outlet, error) {
 		return domain.Outlet{}, err
 	}
 	return out.Outlet, nil
+}
+
+// outletPositions keeps the outlet list for a short time so serving trips does not ask shared-service for
+// every outlet on every request. A corrected position reaches drivers within the TTL.
+var outletPositions struct {
+	sync.Mutex
+	url  string
+	at   time.Time
+	byID map[string]domain.Outlet
+}
+
+const outletPositionsTTL = 30 * time.Second
+
+// Outlets returns every outlet by id, including each one's position.
+func (p Peers) Outlets(ctx context.Context) (map[string]domain.Outlet, error) {
+	outletPositions.Lock()
+	defer outletPositions.Unlock()
+	if outletPositions.byID != nil && outletPositions.url == p.SharedURL && time.Since(outletPositions.at) < outletPositionsTTL {
+		return outletPositions.byID, nil
+	}
+	tok, err := p.m2m(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var out struct {
+		Items []domain.Outlet `json:"items"`
+	}
+	if err := p.getJSON(ctx, p.SharedURL+"/api/v1/shared/outlets", tok, &out); err != nil {
+		return nil, err
+	}
+	byID := make(map[string]domain.Outlet, len(out.Items))
+	for _, o := range out.Items {
+		byID[o.ID] = o
+	}
+	outletPositions.url, outletPositions.at, outletPositions.byID = p.SharedURL, time.Now(), byID
+	return byID, nil
 }
 
 type Profiles struct {

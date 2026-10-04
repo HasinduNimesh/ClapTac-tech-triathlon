@@ -33,7 +33,7 @@ func main() {
 		sharedURL = "http://shared-service:8080"
 	}
 	repo := store.Store{Pool: pool}
-	publisher := client.AuditPublisher{SharedURL: sharedURL, M2M: &oauth.TokenSource{TokenURL: getenv("OIDC_TOKEN_URL", "http://thunderid:8090/oauth2/token"), ClientID: os.Getenv("M2M_CLIENT_ID"), ClientSecret: os.Getenv("M2M_CLIENT_SECRET"), Scope: "audit:write"}}
+	publisher := client.AuditPublisher{SharedURL: sharedURL, M2M: &oauth.TokenSource{TokenURL: getenv("OIDC_TOKEN_URL", "http://thunderid:8090/oauth2/token"), ClientID: os.Getenv("M2M_CLIENT_ID"), ClientSecret: os.Getenv("M2M_CLIENT_SECRET"), Scope: "audit:write", Resource: getenv("OIDC_AUDIENCE", "waypoint-api")}}
 	go flushAuditOutbox(context.Background(), repo, publisher, app.Logger)
 	h := handler.Handler{
 		Authn:    app.Authenticator,

@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -30,6 +32,7 @@ type Handler struct {
 func (h Handler) Routes(r chi.Router) {
 	r.Route("/api/v1/shared", func(r chi.Router) {
 		r.Get("/profiles/me", h.authed(h.me))
+		r.Put("/profiles/me/display-name", h.authed(h.updateMyDisplayName))
 		r.With(authorization.RequireAnyWith(h.Authn, h.Store, authorization.PermOutletsReadInternal, authorization.PermOrderViewAll, authorization.PermOrderViewOwn, authorization.PermFleetView)).Get("/outlets", h.listOutlets)
 		r.With(authorization.RequireAnyWith(h.Authn, h.Store, authorization.PermOutletsReadInternal, authorization.PermOrderViewAll, authorization.PermOrderViewOwn, authorization.PermFleetView)).Get("/outlets/{id}", h.outlet)
 		r.With(authorization.RequireWith(h.Authn, h.Store, authorization.PermMasterDataUpdate)).Put("/outlets/{id}", h.updateOutlet)
@@ -259,10 +262,37 @@ func (h Handler) updateOutlet(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		store.Outlet
 		AccessInstructions *string `json:"accessInstructions"`
+		// Location is the outlet's verified position: {"latitude":..,"longitude":..} sets it, null
+		// clears it (back to the approximate district position), absent leaves it alone. The
+		// latitude/longitude a client echoes from a read are ignored, because on a read they may be
+		// approximate.
+		Location json.RawMessage `json:"location"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		apierrors.BadRequest(w, "invalid JSON")
 		return
+	}
+	var location store.LocationChange
+	if raw := bytes.TrimSpace(req.Location); len(raw) > 0 {
+		if string(raw) == "null" {
+			location.Clear = true
+		} else {
+			var pair struct {
+				Latitude  *float64 `json:"latitude"`
+				Longitude *float64 `json:"longitude"`
+			}
+			dec := json.NewDecoder(bytes.NewReader(raw))
+			dec.DisallowUnknownFields()
+			if err := dec.Decode(&pair); err != nil || pair.Latitude == nil || pair.Longitude == nil {
+				apierrors.BadRequest(w, "location needs both a latitude and a longitude, or null to clear it")
+				return
+			}
+			if err := store.ValidateLocation(*pair.Latitude, *pair.Longitude); err != nil {
+				apierrors.BadRequest(w, err.Error())
+				return
+			}
+			location = store.LocationChange{Set: true, Latitude: *pair.Latitude, Longitude: *pair.Longitude}
+		}
 	}
 	o := req.Outlet
 	o.ID = chi.URLParam(r, "id")
@@ -320,7 +350,7 @@ func (h Handler) updateOutlet(w http.ResponseWriter, r *http.Request) {
 	if profile != nil {
 		actor = profile.UserID
 	}
-	updated, err := h.Store.UpdateOutlet(r.Context(), o, o.Version, audit.Event{ActorID: actor, ActorType: "human", Action: "MASTER_DATA_OUTLET_UPDATED", ResourceType: "OUTLET", ResourceID: o.ID, Source: "shared-service"})
+	updated, err := h.Store.UpdateOutletLocation(r.Context(), o, o.Version, location, audit.Event{ActorID: actor, ActorType: "human", Action: "MASTER_DATA_OUTLET_UPDATED", ResourceType: "OUTLET", ResourceID: o.ID, Source: "shared-service"})
 	if err != nil {
 		if strings.Contains(err.Error(), "conflict") {
 			apierrors.Conflict(w, err.Error())
@@ -539,6 +569,49 @@ func (h Handler) me(w http.ResponseWriter, r *http.Request) {
 	profile, err := h.Store.ProfileBySubject(r.Context(), p.Subject)
 	if err != nil {
 		apierrors.NotFound(w, "application user not found")
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"profile": profile})
+}
+
+func (h Handler) updateMyDisplayName(w http.ResponseWriter, r *http.Request) {
+	p, _ := auth.PrincipalFrom(r.Context())
+	var req struct {
+		DisplayName string `json:"displayName"`
+	}
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
+		apierrors.BadRequest(w, "invalid display name request")
+		return
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		apierrors.BadRequest(w, "invalid display name request")
+		return
+	}
+	name := strings.TrimSpace(req.DisplayName)
+	if name == "" || utf8.RuneCountInString(name) > 120 {
+		apierrors.BadRequest(w, "display name must be between 1 and 120 characters")
+		return
+	}
+	for _, char := range name {
+		if unicode.IsControl(char) {
+			apierrors.BadRequest(w, "display name contains a control character")
+			return
+		}
+	}
+	if err := h.Store.SetDisplayName(r.Context(), p.Subject, name); err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			apierrors.NotFound(w, "application user not found")
+		} else {
+			apierrors.Internal(w, "display name could not be saved")
+		}
+		return
+	}
+	profile, err := h.Store.ProfileBySubject(r.Context(), p.Subject)
+	if err != nil {
+		apierrors.Internal(w, "profile could not be loaded")
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"profile": profile})
