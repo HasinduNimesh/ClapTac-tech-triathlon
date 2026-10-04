@@ -46,6 +46,7 @@ const (
 	PermMasterDataUpdate       = "masterdata:update"
 	PermPolicyReadInternal     = "policy:read-internal"
 	PermPlanAcknowledge        = "plan:acknowledge"
+	PermDashboardManageOwn     = "dashboard:manage-own"
 )
 
 var RolePermissions = map[string][]string{
@@ -54,6 +55,7 @@ var RolePermissions = map[string][]string{
 		PermOrderViewOwn,
 		PermReceiptConfirm,
 		PermDeliveryIssueCreate,
+		PermDashboardManageOwn,
 	},
 	RoleDispatcher: {
 		PermOrderViewAll,
@@ -70,6 +72,7 @@ var RolePermissions = map[string][]string{
 		PermLoadingDecide,
 		PermAuditRead,
 		PermMasterDataUpdate,
+		PermDashboardManageOwn,
 	},
 	RoleLoader: {
 		PermPlanAcknowledge,

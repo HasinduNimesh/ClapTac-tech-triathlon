@@ -50,6 +50,11 @@ func (h Handler) Routes(r chi.Router) {
 		r.Post("/internal/notifications/status", h.scopeWrite("notifications:write", h.updateNotificationStatus))
 		r.With(authorization.RequireWith(h.Authn, h.Store, authorization.PermAuditRead)).Get("/audit/events", h.searchAudit)
 		r.With(authorization.RequireWith(h.Authn, h.Store, authorization.PermAuditRead)).Get("/audit/kpis", h.auditKPIs)
+		dashboards := authorization.RequireWith(h.Authn, h.Store, authorization.PermDashboardManageOwn)
+		r.With(dashboards).Get("/dashboards", h.listDashboards)
+		r.With(dashboards).Post("/dashboards", h.createDashboard)
+		r.With(dashboards).Put("/dashboards/{id}", h.updateDashboard)
+		r.With(dashboards).Delete("/dashboards/{id}", h.deleteDashboard)
 	})
 }
 

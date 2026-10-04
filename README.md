@@ -43,6 +43,17 @@ Open:
 
 The checked-in `database/seeds/` files are generated from the official `Tech-Triathlon 2026 - Datasets/` release via `scripts/convert-official-dataset.py` (120 outlets, 60 vehicles, 910 calendar dates — matching the official counts). The travel and service-allowance tables are a documented lossy approximation of the official reference model; see `database/seeds/README.md`. After pulling an updated official dataset, re-run `python3 scripts/convert-official-dataset.py`, then `./scripts/validate-seeds.py`, then `make seed-competition-data`. The importer upserts outlet/vehicle rows and reloads the optional reference tables.
 
+## Agents, workflows and prediction models
+
+| Kind | Where in Waypoint |
+|---|---|
+| Agent (reads people's words, suggests, a person says yes) | A1 order text helper (sparkle button on Place an Order); A2 Create new dashboard; the guarded chat assistant (M7). A1/A2 live in `services/agent-assistants` (Python, LangGraph) and only return drafts. |
+| Automated workflow (fixed steps) | Order received, plan publish/acknowledge, deferral notice, loading shortfall, offline sync, delivery and receipt, breakdown reassignment, audit record keeping (Go services). |
+| Prediction model (a number or range) | Arrival range and lateness probability, history-based demand forecast. |
+| Rule (yes/no against a limit) | Planning constraints: weight, volume, cooling, van-only, depot, trips, window, fuel. |
+
+Set `LLM_BASE_URL` and `LLM_MODEL` to switch the helpers on; without them the helpers are hidden and every screen works as before. Run their tests with `./scripts/test-agent-assistants.sh`.
+
 ## Seeded judge accounts
 
 Each account has one server-side role; there is no role selector. The local development password is `waypoint` for all four:
