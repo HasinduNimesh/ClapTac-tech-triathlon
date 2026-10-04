@@ -176,3 +176,8 @@ test("offline recovery banners translate exact messages and queue counts", () =>
   assert.notEqual(translate("ta", "3 upload(s)/event(s) pending on this device"), "3 upload(s)/event(s) pending on this device");
   assert.equal(translate("en", "Offline · 3 queued"), "Offline · 3 queued");
 });
+
+test("the W15 estimate fallback banner is translated", async () => {
+  const { ESTIMATES_UNAVAILABLE_MESSAGE } = await import("../src/api/estimateAvailability.mjs");
+  for (const locale of ["si", "ta"]) assert.notEqual(translate(locale, ESTIMATES_UNAVAILABLE_MESSAGE), ESTIMATES_UNAVAILABLE_MESSAGE, `missing ${locale} translation for the estimate fallback banner`);
+});

@@ -2,7 +2,7 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiJSON } from "../api/client";
 import { todayInSriLanka } from "../api/date.mjs";
-import { DeliveryStop, DeliveryTripDetail, DeliveryTripSummary, LatenessProbability } from "../api/delivery";
+import { DeliveryStop, DeliveryTripDetail, DeliveryTripSummary, LatenessProbability, LiveLocation } from "../api/delivery";
 import { DEPOT_LABELS, LoadingTripSummary, sameDepot } from "../api/loading";
 import { PlanDetail } from "../api/planning";
 import { useAuth } from "../auth/AuthContext";
@@ -14,6 +14,8 @@ import { singleFlightMessagePost } from "./singleFlightMessagePost.mjs";
 import { useDepot } from "./DispatcherLayout";
 import { Incident, Outlet, outletMap } from "./types";
 import { DEPOT_LOCATIONS, LatLng, MapLine, MapMarker, WaypointMap } from "../components/WaypointMap";
+import { LiveLocationMap } from "../components/LiveLocationMap";
+import { ESTIMATES_UNAVAILABLE_MESSAGE, validArrivalAt } from "../api/estimateAvailability.mjs";
 import { Check, ChipGroup, DpHero, Drawer, Note, Panel, Stat, StatRow, Tag, Toast } from "./ui";
 import { clock, dateTime, errorText, isChilled, minutesAgo, useApi, useToken } from "./useApi";
 
@@ -288,6 +290,7 @@ function TripDrawer({ tripId, plan, serviceMinutes, serviceVersion, onClose }: {
   const [messages, setMessages] = useState<TripMessage[]>([]);
   const [history, setHistory] = useState<LatenessProbability[]>([]);
   const [historyState, setHistoryState] = useState<"loading" | "ready" | "unavailable">("loading");
+  const [location, setLocation] = useState<LiveLocation | null>(null);
   const [error, setError] = useState("");
   const [body, setBody] = useState("");
   const [stopId, setStopId] = useState("");
@@ -305,6 +308,21 @@ function TripDrawer({ tripId, plan, serviceMinutes, serviceVersion, onClose }: {
     } catch (e) { setHistoryState("unavailable"); setError(errorText(e)); }
   }
   useEffect(() => { if (tripId) void open(tripId); else setDetail(null); }, [tripId]);
+  useEffect(() => {
+    if (!detail?.tripId || detail.status !== "in_progress") { setLocation(null); return; }
+    let active = true;
+    let latestRequest = 0;
+    const refresh = async () => {
+      const request = ++latestRequest;
+      try {
+        const result = await apiJSON<{ location: LiveLocation | null }>(`/delivery/trips/${encodeURIComponent(detail.tripId)}/location`, token);
+        if (active && request === latestRequest) setLocation(result.location || null);
+      } catch { if (active && request === latestRequest) setLocation(null); }
+    };
+    void refresh();
+    const timer = window.setInterval(() => { void refresh(); }, 15_000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [detail?.tripId, detail?.status, token]);
 
   async function send(e: FormEvent) {
     e.preventDefault();
@@ -322,6 +340,8 @@ function TripDrawer({ tripId, plan, serviceMinutes, serviceVersion, onClose }: {
       {error && <p className="dp-note dp-note--red" role="alert">{error}</p>}
       {!detail && !error && <p role="status">{t("Loading trip…")}</p>}
       {detail && <>
+        {(serviceVersion === fallbackServiceTime.version || historyState === "unavailable" || detail.stops.some((s) => !validArrivalAt(plan?.allocations?.find((a) => a.tripId === detail.tripId && a.orderId === s.orderId)?.plannedArrivalAt))) && <p className="dp-note" role="status">{t(ESTIMATES_UNAVAILABLE_MESSAGE)}</p>}
+        <LiveLocationMap key={detail.tripId} location={location} />
         <ol className="dp-checks" style={{ listStyle: "none" }}>
           {detail.stops.map((s, index, stops) => {
             const allocation = plan?.allocations?.find((a) => a.tripId === detail.tripId && a.orderId === s.orderId);
