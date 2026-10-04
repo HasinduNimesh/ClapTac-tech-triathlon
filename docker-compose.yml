@@ -270,6 +270,7 @@ services:
         VITE_OIDC_ISSUER: ${VITE_OIDC_ISSUER:-http://localhost:8090}
         VITE_OIDC_CLIENT_ID: ${VITE_OIDC_CLIENT_ID:-waypoint-web}
         VITE_OIDC_REDIRECT_URI: ${VITE_OIDC_REDIRECT_URI:-http://localhost/auth/callback}
+        VITE_OIDC_AUDIENCE: ${VITE_OIDC_AUDIENCE:-waypoint-api}
         VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api/v1}
     expose:
       - "80"
@@ -281,6 +282,7 @@ services:
       start_period: 5s
 
   loader-web:
+    image: ${WAYPOINT_IMAGE_PREFIX:-waypoint}/loader-web:${WAYPOINT_TAG:-local}
     build:
       context: ./apps/loader-web
       args:

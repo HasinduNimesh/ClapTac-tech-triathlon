@@ -12,18 +12,22 @@ production deployment → Run workflow** is started on `main` and all checks pas
 
 ## Images
 
-Every push to `main` that passes its checks builds all nine images (the eight
-Go services and the web app) on GitHub and pushes them to
+Every push to `main` that passes its checks builds all ten images (the eight
+Go services, the web app and the Flutter loader) on GitHub and pushes them to
 `ghcr.io/<owner>/<repo>/<service>`, tagged with the full commit SHA. There is no
 `latest` tag: a tag always names one commit. The VM never builds; it pulls the
 images for the commit being deployed.
 
-The web app bakes its sign-in addresses in at build time, so the published web
-image is for production. The defaults are `https://id.waypoint.claptac.dev`,
-client `waypoint-web` and `https://waypoint.claptac.dev/auth/callback`. If the
-production values differ, set the repository variables `PROD_OIDC_ISSUER`,
-`PROD_WEB_OIDC_CLIENT_ID` and `PROD_WEB_REDIRECT_URI` (Settings → Secrets and
-variables → Actions → Variables). They are public addresses, not secrets.
+The web app and the loader bake their sign-in addresses and the API audience in
+at build time, so those two images are for production. The defaults are
+`https://id.waypoint.claptac.dev`, client `waypoint-web`
+(`waypoint-loader` for the loader), `https://waypoint.claptac.dev/auth/callback`
+and the audience `https://waypoint.claptac.dev/api/v1`. The audience must equal
+`OIDC_AUDIENCE` in the VM `.env`: the deploy refuses to start if it does not. If
+the production values differ, set the repository variables `PROD_OIDC_ISSUER`,
+`PROD_OIDC_AUDIENCE`, `PROD_WEB_OIDC_CLIENT_ID`, `PROD_LOADER_OIDC_CLIENT_ID` and
+`PROD_WEB_REDIRECT_URI` (Settings → Secrets and variables → Actions →
+Variables). They are public addresses, not secrets.
 Local `docker compose up --build` still builds development images tagged
 `waypoint/<service>:local`.
 
@@ -60,6 +64,44 @@ echo '<token>' | sudo docker login ghcr.io -u <github-user> --password-stdin
 The credential stays in root's Docker config on the VM; it is not stored in
 GitHub. The token's owner needs read access to the repository.
 
+## Confirm what the VM actually runs (before anything else)
+
+The presence of `.env.production` or `docker-compose.production.yml` on the VM
+does not mean they are in use. This workflow assumes the *active* setup is plain
+`docker-compose.yml` with `.env`. Check it from the running containers (read-only):
+
+```
+sudo docker inspect $(sudo docker compose ps -q nginx) \
+  --format '{{index .Config.Labels "com.docker.compose.project.config_files"}} | {{index .Config.Labels "com.docker.compose.project.environment_file"}}'
+sudo docker ps --format '{{.Names}}\t{{.Image}}'
+```
+
+If this shows an overlay file or a different env file, or storage other than what
+`.env` configures, stop: the deploy job has to be changed to match. Moving the VM
+to the production overlay and R2 (PR #18) is a separate infrastructure decision.
+
+## One-time checkout move
+
+The deploy fast-forwards the VM checkout to `main` and **refuses to run if the
+checkout is on another branch**. The VM is on `codex/public-deployment` (PR #18,
+not merged) with a local edit to `docker-compose.yml`. Move it deliberately, with
+a way back:
+
+1. Keep what is there: `git branch backup/vm-$(date +%Y%m%d)` and
+   `git diff > ~/vm-local-changes.patch` (and `git stash list` if anything is stashed).
+2. The only thing the local Compose edit needs to preserve is the nginx port. Set
+   `NGINX_BIND=127.0.0.1:8080:80` in `.env`; `main`'s Compose reads it.
+3. Check which files exist only on that branch (`git diff --stat main...HEAD`),
+   for example `scripts/production/create_user.py`, the Caddy file and the
+   production docs. They will disappear from the working tree when you switch.
+   Copy any you still use out of the repository first.
+4. `git checkout -- docker-compose.yml && git fetch origin && git checkout main && git merge --ff-only origin/main`.
+5. `sudo docker compose config --quiet`, and confirm the effective ports and the
+   OIDC and audience values before running the workflow.
+
+This has not been tried on the VM; do it before the first run and tell the
+workflow's author what differed.
+
 ## VM assumptions and rollout
 
 The job expects `~/ClapTac-tech-triathlon`, an existing `.env`, Docker Compose,
@@ -67,11 +109,14 @@ Caddy, and `NGINX_BIND=127.0.0.1:8080:80` in `.env`. It fetches `main` and
 fast-forwards the VM checkout to the *exact* commit checked by CI. A divergent
 branch or Compose conflict stops deployment. It validates Compose, pulls the
 images for that commit (stopping before anything changes if one is missing or
-the registry login is not set up), checks that the web image carries the
-production sign-in address, saves a PostgreSQL custom-format dump in the VM
-user's home directory, writes `WAYPOINT_IMAGE_PREFIX` and `WAYPOINT_TAG` into
-the VM `.env` (only those two lines), starts Compose without building, then
-checks the public health endpoint. It does not remove
+the registry login is not set up), checks that the web and loader images carry
+the production sign-in address and API audience, saves a PostgreSQL custom-format
+dump in the VM user's home directory, **runs the migrations** (`migrate`) before
+any updated service starts, writes `WAYPOINT_IMAGE_PREFIX` and `WAYPOINT_TAG`
+into the VM `.env` (only those two lines), and starts Compose without building.
+It then requires every service and nginx to report healthy, and checks
+`/health/live`, `/loader-app/` and the identity server's discovery document.
+Compose also has to show `OIDC_AUDIENCE` equal to the audience above. It does not remove
 orphan containers: `waypoint-thunderid-prod` is managed separately.
 
 The VM's current local Compose edit will block this update to that file. Before
@@ -84,9 +129,9 @@ check, and this workflow does not perform an automatic rollback.
 
 To roll back, set `WAYPOINT_TAG` in the VM `.env` to the previous commit SHA
 (a failed deploy prints it; earlier tags are still in the registry) and run
-`sudo docker compose up -d --no-build`. Database migrations only go forward and
-the backup is the way back for data, so check that the older images work with the
-current schema before rolling back across a migration.
+`sudo docker compose up -d --no-build`. Migrations only go forward and the backup
+is the way back for data, kept separate from image rollback: check that the older
+images work with the current schema before rolling back across a migration.
 
 The deploy preflight requires the effective web issuer and redirect URI, plus
 the API issuer, JWKS URL, and token endpoint, to point to the production
