@@ -51,7 +51,7 @@ export function ReceiptConfirmPage() {
   const tech = order?.brand.toLowerCase() === "tech";
   const due = tracking ? reportBy(tracking) : undefined;
   const driverShort = (tracking?.delivery?.loadingShortfallSummary || []).reduce((s, x) => s + (x.affectedUnits || 0), 0);
-  const driverDelivered = order ? order.orderUnits - driverShort : 0;
+  const driverDelivered = order ? (tracking?.delivery?.deliveredUnits ?? order.orderUnits - driverShort) : 0;
 
   async function confirm(e: FormEvent) {
     e.preventDefault();
@@ -133,7 +133,7 @@ export function ReceiptConfirmPage() {
                   <div><h3 className="dp-h3">{t("Evidence for this discrepancy")}</h3><p className="dp-panel-sub">{t("Describe what arrived, for example a delivery note number or damage seen.")}</p></div>
                   <label className="dp-field">{t("Note")}<textarea value={note} onChange={(e) => setNote(e.target.value)} maxLength={1000} placeholder={t("e.g. 4 crates of 24 received, seal intact")} /></label>
                   <p className="muted" style={{ margin: 0, fontSize: "0.75rem" }}>{t("Optional for shortages · required for damage")}</p>
-                  <div className="dp-note dp-note--amber"><strong>{t("Report-by deadline")}</strong>{due ? `${formatDay(colomboDate(due))}, ${colomboTime(due)} · ${REPORT_WINDOW_HOURS} ${t("hours after delivery")}` : t("Opens after delivery")}</div>
+                  <div className="dp-note dp-note--amber"><strong>{t("Report-by deadline")}</strong>{due ? `${formatDay(colomboDate(due))}, ${colomboTime(due)} · ${tracking?.receiptDue ? t("2 working days after delivery") : `${REPORT_WINDOW_HOURS} ${t("hours after delivery")}`}` : t("Opens after delivery")}{tracking?.receiptDue?.state === "overdue" && <span className="dp-tag dp-tag--red" style={{ marginLeft: 8 }}>{t("Overdue")}</span>}{(tracking?.receiptDue?.state === "due_tomorrow" || tracking?.receiptDue?.state === "due_today") && <span className="dp-tag dp-tag--amber" style={{ marginLeft: 8 }}>{tracking.receiptDue.state === "due_today" ? t("Due today") : t("Due tomorrow")}</span>}</div>
                   <button type="submit" className="dp-btn dp-btn--block" disabled={busy || (short > 0 && issueType === "DAMAGED" && !note.trim())}>{short > 0 ? t("Confirm receipt & report shortage") : t("Confirm Receipt")}</button>
                 </div>
               </aside>

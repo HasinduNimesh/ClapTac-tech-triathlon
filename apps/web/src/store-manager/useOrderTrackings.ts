@@ -14,7 +14,9 @@ export type Tracking = {
     returnedGoods?: { goods: string; units: number; reason: string; resolution: string; occurredAt: string; followupOrderRef?: string; followupDate?: string };
     proofs?: { type: string; mimeType: string; pending: boolean; uploadedAt?: string; receiverName?: string }[];
     loadingShortfallSummary?: { type?: string; affectedUnits?: number; note?: string }[];
+    deliveredUnits?: number;
   };
+  receiptDue?: { reportBy: string; state: "open" | "due_tomorrow" | "due_today" | "overdue" };
   receipt?: { id?: string; status: string; receivedUnits: number; expectedUnits: number; confirmedAt?: string; confirmedBy?: string };
   receiptIssues?: { id: string; issueType: string; affectedUnits: number; note?: string; createdAt?: string; createdBy?: string }[];
   custody?: { id: string; stage: string; sealId: string; serialNumbers: string[]; condition: string; recordedBy: string; recordedAt: string; receiverName?: string }[];

@@ -1210,3 +1210,22 @@ for (const locale of ["si", "ta"]) Object.assign(labels[locale], helperLabels[lo
 // W14 audit export
 Object.assign(labels.si, { "Export CSV": "CSV ලෙස අපනයනය" });
 Object.assign(labels.ta, { "Export CSV": "CSV ஆக ஏற்றுமதி" });
+// W12 receipt report-by deadline
+Object.assign(labels.si, {
+  "2 working days after delivery": "බෙදාහැරීමෙන් වැඩ කරන දින 2කට පසු",
+  "Overdue": "කල් ඉකුත් වී ඇත",
+  "Due today": "අද නියමිතයි",
+  "Due tomorrow": "හෙට නියමිතයි",
+  "Report-by deadline passed.": "වාර්තා කළ යුතු අවසාන දිනය පසු වී ඇත.",
+  "Report-by deadline is today.": "වාර්තා කළ යුතු අවසාන දිනය අදයි.",
+  "Report-by deadline is tomorrow.": "වාර්තා කළ යුතු අවසාන දිනය හෙට වේ.",
+});
+Object.assign(labels.ta, {
+  "2 working days after delivery": "டெலிவரிக்குப் பிறகு 2 வேலை நாட்கள்",
+  "Overdue": "காலக்கெடு கடந்தது",
+  "Due today": "இன்று கடைசி நாள்",
+  "Due tomorrow": "நாளை கடைசி நாள்",
+  "Report-by deadline passed.": "அறிக்கையிட வேண்டிய காலக்கெடு முடிந்துவிட்டது.",
+  "Report-by deadline is today.": "அறிக்கையிட வேண்டிய காலக்கெடு இன்று.",
+  "Report-by deadline is tomorrow.": "அறிக்கையிட வேண்டிய காலக்கெடு நாளை.",
+});

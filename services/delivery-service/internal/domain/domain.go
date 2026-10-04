@@ -232,6 +232,7 @@ type OrderTracking struct {
 	CompletedAt             *time.Time     `json:"completedAt,omitempty"`
 	Proofs                  []ProofSummary `json:"proofs"`
 	LoadingShortfallSummary []any          `json:"loadingShortfallSummary"`
+	DeliveredUnits          *int           `json:"deliveredUnits,omitempty"`
 }
 
 type OutletLastServed struct {

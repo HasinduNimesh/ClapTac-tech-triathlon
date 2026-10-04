@@ -80,7 +80,11 @@ func (s Service) Tracking(profile *authorization.Profile, id string) (domain.Tra
 			return domain.Tracking{}, fmt.Errorf("delivery unavailable: %w", e)
 		}
 	}
+	if t.Delivery != nil && (t.Delivery.Outcome == "DELIVERED" || t.Delivery.Outcome == "PARTIAL") {
+		t.ReceiptDue = s.receiptDeadline(t.Delivery)
+	}
 	if receipt, issues, e := s.Repo.GetReceipt(o.ID); e == nil {
+		t.ReceiptDue = nil
 		t.Receipt = &receipt
 		t.ReceiptIssues = issues
 		if receipt.Status == "confirmed_with_issue" {
@@ -235,7 +239,11 @@ func (s Service) PendingReceipts(profile *authorization.Profile) ([]domain.Recei
 			return nil, e
 		}
 		if t.Delivery != nil && (t.Delivery.Outcome == "DELIVERED" || t.Delivery.Outcome == "PARTIAL") && t.Receipt == nil {
-			out = append(out, domain.ReceiptTask{Order: o, Tracking: t})
+			task := domain.ReceiptTask{Order: o, Tracking: t}
+			if t.ReceiptDue != nil {
+				task.ReportBy, task.ReportState = &t.ReceiptDue.ReportBy, t.ReceiptDue.State
+			}
+			out = append(out, task)
 		}
 	}
 	return out, nil
@@ -287,6 +295,9 @@ func (s Service) ConfirmReceipt(profile *authorization.Profile, id string, req d
 	}
 	if req.ReceivedUnits < o.OrderUnits && req.Issue == nil {
 		return domain.Receipt{}, nil, false, fmt.Errorf("invalid: a discrepancy issue is required when received units are below expected units")
+	}
+	if d.DeliveredUnits != nil && req.ReceivedUnits != *d.DeliveredUnits && req.Issue == nil {
+		return domain.Receipt{}, nil, false, fmt.Errorf("invalid: received units differ from the driver's recorded count; report the discrepancy so the dispatcher can review it")
 	}
 	if req.Issue != nil {
 		req.Issue.IssueType = strings.ToUpper(strings.TrimSpace(req.Issue.IssueType))
@@ -647,4 +658,66 @@ func (s Service) CreateDeliveryFollowup(sourceOrderID, stopID, tripDate string, 
     if err != nil { return domain.Order{}, err }
     if len(results) != 1 { return domain.Order{}, fmt.Errorf("%w: follow-up result", ErrUnavailable) }
     return results[0].Order, nil
+}
+
+// ReceiptReportWorkingDays is how many working days a store has to report a
+// shortage after the driver records the delivery.
+const ReceiptReportWorkingDays = 2
+
+// operatingCalendar returns the configured operating calendar around from, or
+// the static cutoff calendar when none is available.
+func (s Service) operatingCalendar(from time.Time) *cutoff.Calendar {
+	if s.Calendar == nil {
+		return s.Cutoff
+	}
+	loc, _ := time.LoadLocation(cutoff.Zone)
+	if loc == nil {
+		loc = time.UTC
+	}
+	days, err := s.Calendar.OperatingDays(from.In(loc).Format("2006-01-02"), from.In(loc).AddDate(0, 0, 21).Format("2006-01-02"))
+	if err != nil {
+		return s.Cutoff
+	}
+	configured := make([]cutoff.Day, 0, len(days))
+	for _, d := range days {
+		if parsed, e := time.ParseInLocation("2006-01-02", d.Date, loc); e == nil {
+			configured = append(configured, cutoff.Day{Date: parsed, IsOperating: d.IsOperating})
+		}
+	}
+	if len(configured) == 0 {
+		return s.Cutoff
+	}
+	return cutoff.Load(configured)
+}
+
+func (s Service) receiptDeadline(d *domain.DeliveryTracking) *domain.ReceiptDeadline {
+	at := d.CompletedAt
+	if at == nil {
+		at = d.OccurredAt
+	}
+	if at == nil {
+		return nil
+	}
+	now := time.Now()
+	if s.Now != nil {
+		now = s.Now()
+	}
+	return ComputeReceiptDeadline(s.operatingCalendar(*at), *at, now)
+}
+
+// ComputeReceiptDeadline sets the report-by time to the end of the 2nd working
+// day after delivery and classifies it against now.
+func ComputeReceiptDeadline(cal *cutoff.Calendar, deliveredAt, now time.Time) *domain.ReceiptDeadline {
+	by := cal.AddWorkingDays(deliveredAt, ReceiptReportWorkingDays)
+	state := "open"
+	today := now.In(by.Location())
+	switch {
+	case now.After(by):
+		state = "overdue"
+	case today.Format("2006-01-02") == by.Format("2006-01-02"):
+		state = "due_today"
+	case cal.AddWorkingDays(today, 1).Format("2006-01-02") == by.Format("2006-01-02"):
+		state = "due_tomorrow"
+	}
+	return &domain.ReceiptDeadline{ReportBy: by, State: state}
 }
