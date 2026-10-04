@@ -75,6 +75,9 @@ func (s *stubLoader) UpdateIssue(context.Context, *authorization.Profile, string
 func (s *stubLoader) DeleteIssue(context.Context, *authorization.Profile, string, string, string) error {
 	return s.issueErr
 }
+func (s *stubLoader) DecideIssue(context.Context, *authorization.Profile, string, string, string, string, string) (domain.Issue, error) {
+	return s.issue, s.issueErr
+}
 func (s *stubLoader) Ready(context.Context, *authorization.Profile, string) (map[string]any, error) {
 	return s.detail, s.readyErr
 }

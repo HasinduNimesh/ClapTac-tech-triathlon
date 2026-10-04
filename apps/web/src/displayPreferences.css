@@ -1,0 +1,12 @@
+/* Display preferences (Settings › Language and accessibility) */
+html[data-text-size="large"] { font-size: 112.5%; }
+html[data-text-size="xlarge"] { font-size: 125%; }
+html[data-contrast="high"] .muted,
+html[data-contrast="high"] .dp-stat-label,
+html[data-contrast="high"] .dp-stat-sub,
+html[data-contrast="high"] .dp-panel-sub,
+html[data-contrast="high"] .dp-cell-sub,
+html[data-contrast="high"] .dp-list-text { color: #1b2333 !important; }
+html[data-contrast="high"] .dp-panel,
+html[data-contrast="high"] .dp-stat,
+html[data-contrast="high"] .sm-panel { border: 1px solid #4a5568; }

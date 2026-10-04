@@ -29,6 +29,7 @@ const (
 	PermLoadingIssue           = "loading:issue"
 	PermLoadingReady           = "loading:ready"
 	PermLoadingReadInternal    = "loading:read-internal"
+	PermLoadingDecide          = "loading:decide"
 	PermPlansReadInternal      = "plans:read-internal"
 	PermDeliveriesReadInternal = "deliveries:read-internal"
 	PermTripViewAssigned       = "trip:view-assigned"
@@ -66,6 +67,7 @@ var RolePermissions = map[string][]string{
 		PermFleetUpdate,
 		PermDeliveryViewAll,
 		PermLoadingViewAll,
+		PermLoadingDecide,
 		PermAuditRead,
 		PermMasterDataUpdate,
 	},

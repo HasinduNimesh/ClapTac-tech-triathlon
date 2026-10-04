@@ -6,7 +6,7 @@ import { useLocale } from "../i18n";
 import iconChev from "../assets/store-manager/icon-chev.svg";
 import iconPlus from "../assets/store-manager/icon-plus.svg";
 import { deferralExplanation } from "./deferralMessage.mjs";
-import { isDeferred, needsReceipt } from "./orderStage.mjs";
+import { colomboTime, isDeferred, needsReceipt } from "./orderStage.mjs";
 import { StoreManagerHero } from "./StoreManagerHero";
 import { Tracking, useOrderTrackings } from "./useOrderTrackings";
 
@@ -31,6 +31,14 @@ function saveAcknowledged(userId: string, ids: Set<string>) {
   }
 }
 
+const etaKey = (userId: string) => `sm-seen-eta:${userId}`;
+type EtaChange = { row: Tracking; from: string; to: string; minutes: number };
+const ETA_THRESHOLD_MINUTES = 30;
+
+function readSeenEta(userId: string): Record<string, string> {
+  try { return JSON.parse(window.localStorage.getItem(etaKey(userId)) || "{}") as Record<string, string>; } catch { return {}; }
+}
+
 export function StoreManagerNotificationsPage() {
   const { profile } = useAuth();
   const { t } = useLocale();
@@ -40,7 +48,37 @@ export function StoreManagerNotificationsPage() {
 
   const receipts = rows.filter((row) => needsReceipt(row.stage));
   const deferred = rows.filter((row) => isDeferred(row.stage) && !acknowledged.has(deferralKey(row)));
-  const noticeCount = receipts.length + deferred.length;
+  const [seenEta, setSeenEta] = useState<Record<string, string>>(() => readSeenEta(userId));
+  const etaChanges: EtaChange[] = rows.flatMap((row) => {
+    const now = row.planning.plannedArrivalAt;
+    const before = seenEta[row.order.id];
+    if (!now || !before || before === now || row.delivery?.outcome) return [];
+    const minutes = Math.round((new Date(now).getTime() - new Date(before).getTime()) / 60000);
+    return Math.abs(minutes) >= ETA_THRESHOLD_MINUTES ? [{ row, from: before, to: now, minutes }] : [];
+  });
+  const noticeCount = receipts.length + deferred.length + etaChanges.length;
+
+  useEffect(() => {
+    if (loading || loadFailed) return;
+    // First sighting of a planned arrival becomes the baseline; later moves under the threshold update it quietly.
+    const next = { ...seenEta };
+    let changed = false;
+    for (const row of rows) {
+      const now = row.planning.plannedArrivalAt;
+      if (!now) continue;
+      const before = next[row.order.id];
+      if (!before || Math.abs(new Date(now).getTime() - new Date(before).getTime()) < ETA_THRESHOLD_MINUTES * 60000) {
+        if (before !== now) { next[row.order.id] = now; changed = true; }
+      }
+    }
+    if (changed) { setSeenEta(next); try { window.localStorage.setItem(etaKey(userId), JSON.stringify(next)); } catch { /* optional */ } }
+  }, [rows, loading, loadFailed]);
+
+  function acknowledgeEta(change: EtaChange) {
+    const next = { ...seenEta, [change.row.order.id]: change.to };
+    setSeenEta(next);
+    try { window.localStorage.setItem(etaKey(userId), JSON.stringify(next)); } catch { /* optional */ }
+  }
 
   useEffect(() => {
     if (loading || loadFailed || skipped > 0) return;
@@ -97,7 +135,21 @@ export function StoreManagerNotificationsPage() {
                 <h3 className="sm-notification-title">{row.order.orderRef} · {t("delivery needs receipt confirmation")}</h3>
                 <p className="sm-notification-desc muted">{t("Driver has recorded delivery. Confirm the count and report shortage or damage.")}</p>
               </div>
-              <Link to="/store-manager/receipts" className="sm-notif-action sm-notif-action--solid">{t("Confirm receipt")}</Link>
+              <Link to={`/store-manager/receipts?order=${encodeURIComponent(row.order.id)}`} className="sm-notif-action sm-notif-action--solid">{t("Confirm receipt")}</Link>
+            </div>
+          ))}
+
+          {etaChanges.map((change) => (
+            <div key={change.row.order.id} className="sm-notification-item">
+              <div className="sm-notification-meta"><span className="sm-notif-badge sm-notif-badge--receipt" style={{ background: "#fff4de", color: "#a45c00" }}>{t("ETA CHANGE")}</span></div>
+              <div className="sm-notification-body">
+                <h3 className="sm-notification-title">{change.row.order.orderRef} · {t("arrival moved by")} {Math.abs(change.minutes)} {t("minutes")}</h3>
+                <p className="sm-notification-desc muted">{`${t("New expected arrival")} ${colomboTime(change.to)} · ${t("was")} ${colomboTime(change.from)}`}</p>
+              </div>
+              <div className="sm-notif-actions">
+                <Link to={`/store-manager/orders/${encodeURIComponent(change.row.order.id)}/track`} className="sm-notif-action sm-notif-action--outline">{t("View order")}</Link>
+                <button type="button" className="sm-notif-action sm-notif-action--outline" onClick={() => acknowledgeEta(change)}>{t("Acknowledge update")}</button>
+              </div>
             </div>
           ))}
 
@@ -111,7 +163,7 @@ export function StoreManagerNotificationsPage() {
                   <p className="sm-notification-desc muted">{t(why.message)}{row.planning.reasonComment ? ` · ${row.planning.reasonComment}` : ""}</p>
                 </div>
                 <div className="sm-notif-actions">
-                  <Link to={`/store-manager/orders?order=${encodeURIComponent(row.order.id)}`} className="sm-notif-action sm-notif-action--outline">{t("View order")}</Link>
+                  <Link to={`/store-manager/orders/${encodeURIComponent(row.order.id)}/timeline`} className="sm-notif-action sm-notif-action--outline">{t("View order")}</Link>
                   <button type="button" className="sm-notif-action sm-notif-action--outline" onClick={() => acknowledge(row)}>{t("Acknowledge update")}</button>
                 </div>
               </div>
