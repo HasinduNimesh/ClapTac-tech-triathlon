@@ -48,6 +48,7 @@ function AppRoutes() {
       <HabitHelper />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/" element={<HomePage />} />
         <Route element={<RoleGate role="STORE_MANAGER"><StoreManagerLayout /></RoleGate>}>
           <Route path="/store-manager" element={<StoreManagerDashboardPage />} />
           <Route path="/store-manager/automations" element={<AutomationsPage />} />
@@ -79,7 +80,6 @@ function AppRoutes() {
           <Route path="/dispatcher/*" element={<NotFoundPage inWorkspace workspace="dispatcher" />} />
         </Route>
         <Route element={<Layout />}>
-          <Route path="/" element={<HomePage />} />
           <Route path="/auth/callback" element={<CallbackPage />} />
           <Route path="/loader" element={<RoleGate role="LOADER"><LoaderAppRedirect /></RoleGate>} />
           <Route path="/loader/loading" element={<RoleGate role="LOADER"><LoaderAppRedirect /></RoleGate>} />

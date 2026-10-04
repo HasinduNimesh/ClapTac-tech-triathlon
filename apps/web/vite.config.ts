@@ -20,7 +20,7 @@ export default defineConfig({
         globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
         navigateFallback: "/index.html",
         // /loader-app/ is the separate Flutter loader app; without this the service worker answers it with this app's page.
-        navigateFallbackDenylist: [/^\/api/, /^\/health/, /^\/oauth2/, /^\/loader-app/],
+        navigateFallbackDenylist: [/^\/api/, /^\/health/, /^\/oauth2/, /^\/loader-app/, /^\/downloads/],
       },
     }),
   ],
