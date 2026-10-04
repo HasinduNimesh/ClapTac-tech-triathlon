@@ -27,6 +27,7 @@ import (
 	planclient "github.com/HasinduNimesh/ClapTac-tech-triathlon/services/planning-service/internal/client"
 	planhandler "github.com/HasinduNimesh/ClapTac-tech-triathlon/services/planning-service/internal/handler"
 	planservice "github.com/HasinduNimesh/ClapTac-tech-triathlon/services/planning-service/internal/service"
+	plandomain "github.com/HasinduNimesh/ClapTac-tech-triathlon/services/planning-service/internal/domain"
 	planstore "github.com/HasinduNimesh/ClapTac-tech-triathlon/services/planning-service/internal/store"
 )
 
@@ -973,4 +974,69 @@ func repoRoot(t *testing.T) string {
 	}
 	t.Fatal("go.mod not found")
 	return ""
+}
+
+func TestPlanningRemovingTheLastOrderRemovesTheEmptyTrip(t *testing.T) {
+	ctx := context.Background()
+	req := testcontainers.ContainerRequest{
+		Image:        "postgres:16-alpine",
+		ExposedPorts: []string{"5432/tcp"},
+		Env: map[string]string{
+			"POSTGRES_USER": "waypoint", "POSTGRES_PASSWORD": "waypoint", "POSTGRES_DB": "waypoint",
+		},
+		WaitingFor: wait.ForLog("database system is ready to accept connections").WithOccurrence(2).WithStartupTimeout(60 * time.Second),
+	}
+	pg, err := startPostgresContainer(ctx, testcontainers.GenericContainerRequest{ContainerRequest: req, Started: true})
+	if err != nil {
+		t.Skipf("testcontainers postgres:16-alpine unavailable: %v", err)
+	}
+	t.Cleanup(func() { _ = pg.Terminate(ctx) })
+	host, _ := pg.Host(ctx)
+	port, _ := pg.MappedPort(ctx, "5432")
+	dsn := "postgres://waypoint:waypoint@" + host + ":" + port.Port() + "/waypoint?sslmode=disable"
+	root := repoRoot(t)
+	for _, name := range []string{"0001_init.sql", "0007_planning.sql", "0013_planning_stop_times.sql", "0020_planning_publications.sql"} {
+		applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", name))
+	}
+	pool, err := db.Open(ctx, dsn, "planning")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+	repo := planstore.Postgres{Pool: pool}
+	plan, err := repo.Create(ctx, "2026-11-05", "usr-dispatcher")
+	if err != nil {
+		t.Fatal(err)
+	}
+	add := func(orderID, vehicle string, tripNo int) plandomain.Allocation {
+		trip, err := repo.EnsureTrip(ctx, plan.ID, vehicle, tripNo)
+		if err != nil {
+			t.Fatal(err)
+		}
+		seq, _ := repo.NextSeq(ctx, trip.ID)
+		a, err := repo.InsertAllocation(ctx, plandomain.Allocation{PlanID: plan.ID, OrderID: orderID, TripID: trip.ID, VehicleID: vehicle, Sequence: seq})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return a
+	}
+	first := add("ord-1", "VEH001", 1)
+	second := add("ord-2", "VEH001", 2)
+	if trips, _ := repo.ListTrips(ctx, plan.ID); len(trips) != 2 {
+		t.Fatalf("two trips before removal, got %d", len(trips))
+	}
+	if err := repo.DeleteAllocation(ctx, plan.ID, first.ID); err != nil {
+		t.Fatal(err)
+	}
+	trips, _ := repo.ListTrips(ctx, plan.ID)
+	if len(trips) != 1 || trips[0].ID != second.TripID {
+		t.Fatalf("the trip emptied by removing its only order must go with it: %+v", trips)
+	}
+	if err := repo.DeleteAllocation(ctx, plan.ID, first.ID); err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("removing the same allocation twice must be not found, got %v", err)
+	}
+	third := add("ord-3", "VEH001", 1)
+	if trips, _ := repo.ListTrips(ctx, plan.ID); len(trips) != 2 || third.TripID == "" {
+		t.Fatalf("adding an order to that vehicle again recreates the trip: %+v", trips)
+	}
 }
