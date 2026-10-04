@@ -92,10 +92,10 @@ func TestAuditSearchKPIsAndAppendOnly(t *testing.T) {
 	if _, err = pool.Exec(ctx, string(migration)); err != nil {
 		t.Fatalf("apply notification migration: %v", err)
 	}
-	migration, err = os.ReadFile("../../../../database/migrations/0042_shared_arrival_notifications.sql")
+	migration, err = os.ReadFile("../../../../database/migrations/0056_shared_arrival_notifications.sql")
 	if err != nil { t.Fatal(err) }
 	if _, err = pool.Exec(ctx, string(migration)); err != nil { t.Fatalf("apply arrival notification migration: %v", err) }
-    migration, err = os.ReadFile("../../../../database/migrations/0045_shared_rejected_delivery.sql")
+    migration, err = os.ReadFile("../../../../database/migrations/0059_shared_rejected_delivery.sql")
     if err != nil { t.Fatal(err) }
     if _, err = pool.Exec(ctx, string(migration)); err != nil { t.Fatalf("apply rejected delivery migration: %v", err) }
 

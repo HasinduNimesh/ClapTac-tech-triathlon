@@ -120,7 +120,7 @@ func TestDriverEventsPublishArrivalPredictionsAndNotifyTheStore(t *testing.T) {
 		"0028_delivery_proof_retention.sql", "0029_delivery_lateness_history_index.sql", "0034_delivery_planned_arrival_snapshot.sql",
 		"0030_outlet_access_instructions.sql", "0031_cold_chain_readings.sql", "0038_delivery_proof_receiver_name.sql",
 		"0039_delivery_driver_incidents.sql", "0040_delivery_stop_expected_units.sql", "0041_delivery_outcome_units.sql",
-		"0041_delivery_checkout.sql", "0043_delivery_arrival_predictions.sql", "0044_delivery_returns.sql",
+		"0055_delivery_checkout.sql", "0057_delivery_arrival_predictions.sql", "0058_delivery_returns.sql",
 	} {
 		applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", migration))
 	}

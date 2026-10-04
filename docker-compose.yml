@@ -216,6 +216,7 @@ services:
       M2M_CLIENT_ID: waypoint-shared-service
       M2M_CLIENT_SECRET: ${SHARED_M2M_CLIENT_SECRET:-local-shared-m2m}
       INTEGRATION_SERVICE_URL: http://integration-service:8080
+      PLANNING_SERVICE_URL: http://planning-service:8080
     healthcheck: *backend-healthcheck
     depends_on:
       bootstrap: { condition: service_completed_successfully }
@@ -260,6 +261,24 @@ services:
       fleet-service: { condition: service_healthy }
       loading-service: { condition: service_healthy }
       delivery-service: { condition: service_healthy }
+      shared-service: { condition: service_healthy }
+
+  agent-assistants:
+    # A1 order assistant and A2 dashboard assistant (Python/LangGraph). Agent
+    # tier: no DATABASE_URL; reads business services with the caller's token.
+    build: { context: ./services/agent-assistants }
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-local}
+      OIDC_ISSUER: ${OIDC_ISSUER:-http://localhost:8090}
+      OIDC_JWKS_URL: http://thunderid:8090/oauth2/jwks
+      OIDC_AUDIENCE: ${OIDC_AUDIENCE:-waypoint-api}
+      SHARED_SERVICE_URL: http://shared-service:8080
+      ORDER_SERVICE_URL: http://order-service:8080
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+    depends_on:
+      order-service: { condition: service_healthy }
       shared-service: { condition: service_healthy }
 
   web:
@@ -320,6 +339,7 @@ services:
       - shared-service
       - integration-service
       - agent-orchestrator
+      - agent-assistants
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/health/live"]
       interval: 10s
@@ -348,7 +368,17 @@ services:
   grafana:
     profiles: ["observability"]
     image: grafana/grafana:11.3.0
+    environment:
+      # Local development keeps Grafana's own admin/admin. Anywhere else set GRAFANA_ADMIN_PASSWORD in
+      # .env before starting it (docs/observability.md); scripts/start-grafana.sh refuses without one.
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
     volumes:
+      - grafana_data:/var/lib/grafana
       - ./infrastructure/observability/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./infrastructure/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports:
@@ -366,3 +396,4 @@ services:
 
 volumes:
   postgres_data:
+  grafana_data:

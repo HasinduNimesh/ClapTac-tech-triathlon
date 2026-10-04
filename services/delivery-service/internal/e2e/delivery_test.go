@@ -233,9 +233,9 @@ func TestDeliveryWorkflow(t *testing.T) {
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0039_delivery_driver_incidents.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0040_delivery_stop_expected_units.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0041_delivery_outcome_units.sql"))
-	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0041_delivery_checkout.sql"))
-	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0043_delivery_arrival_predictions.sql"))
-	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0044_delivery_returns.sql"))
+	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0055_delivery_checkout.sql"))
+	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0057_delivery_arrival_predictions.sql"))
+	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0058_delivery_returns.sql"))
 
 	peers := httptest.NewServer(peerStub())
 	t.Cleanup(peers.Close)

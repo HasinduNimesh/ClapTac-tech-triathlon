@@ -1,8 +1,7 @@
 import { Link, useSearchParams } from "react-router-dom";
-import { useAuth } from "../auth/AuthContext";
 import { DashboardGrid } from "./DashboardCards";
 import { DashboardMenu } from "./DashboardMenu";
-import { loadDashboards } from "./dashboards";
+import { useDashboards } from "./dashboards";
 import { useLocale } from "../i18n";
 import { formatCutoff, withTime } from "./cutoff.mjs";
 import { useOrderCutoff } from "./useOrderCutoff";
@@ -36,12 +35,9 @@ function nextStep(row: Tracking, t: (key: string) => string) {
 export function StoreManagerDashboardPage() {
   const { t, locale } = useLocale();
   const cutoffTime = formatCutoff(useOrderCutoff(), locale);
-  const { profile } = useAuth();
   const [params, setParams] = useSearchParams();
   const { rows, loading, loadFailed, unavailable, reload } = useOrderTrackings();
-  const userId = profile?.userId || "anonymous";
-  const outletId = profile?.outletIds?.[0] || "outlet";
-  const dashboards = loadDashboards(userId, outletId);
+  const { dashboards } = useDashboards();
   const selected = dashboards.find((d) => d.id === params.get("dashboard"));
   const heroActions = (
     <>
