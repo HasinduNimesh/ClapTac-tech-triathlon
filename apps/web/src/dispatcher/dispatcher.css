@@ -3,7 +3,7 @@
    (shell, sidebar, top bar and hero reuse the sm-* store-manager styles)
    ===================== */
 
-.dp-shell {
+:root {
   --dp-canvas: #e9ecef;
   --dp-surface: #ffffff;
   --dp-ink: #232d42;
@@ -20,6 +20,9 @@
   --dp-cool: #007f91;
   --dp-cool-bg: #e7f6f8;
   --dp-shadow: 0 2px 8px rgba(17, 38, 146, 0.08);
+}
+
+.dp-shell {
   color: var(--dp-ink);
 }
 

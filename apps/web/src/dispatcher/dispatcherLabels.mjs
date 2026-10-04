@@ -91,3 +91,14 @@ Object.assign(dispatcherWorkspaceLabels.ta, {
   "Capacity usage (weight)": "திறன் பயன்பாடு (எடை)",
   "Capacity usage (volume)": "திறன் பயன்பாடு (கன அளவு)"
 });
+
+Object.assign(dispatcherWorkspaceLabels.si, {
+  "New plan version published · the loader must acknowledge it before the trip can depart": "නව සැලසුම් අනුවාදය ප්‍රකාශයට පත් කළා · ගමන පිටත් වීමට පෙර පටවන්නා එය පිළිගත යුතුය",
+  "The plan was left open for revision. Finish it in Plan and allocate; the loader's trip stays blocked until a new plan is confirmed.": "සැලසුම සංශෝධනය සඳහා විවෘතව ඇත. එය සැලසුම් සහ වෙන් කිරීමේදී සම්පූර්ණ කරන්න; නව සැලසුමක් තහවුරු වන තෙක් පටවන්නාගේ ගමන අවහිරව පවතී.",
+  "Acknowledges the new plan version, then Ready to depart unlocks": "නව සැලසුම් අනුවාදය පිළිගනී, ඉන්පසු පිටත් වීමට සූදානම අගුළු හැරේ",
+});
+Object.assign(dispatcherWorkspaceLabels.ta, {
+  "New plan version published · the loader must acknowledge it before the trip can depart": "புதிய திட்டப் பதிப்பு வெளியிடப்பட்டது · பயணம் புறப்படும் முன் ஏற்றுநர் அதை ஏற்க வேண்டும்",
+  "The plan was left open for revision. Finish it in Plan and allocate; the loader's trip stays blocked until a new plan is confirmed.": "திட்டம் திருத்தத்திற்காக திறந்தே உள்ளது. அதைத் திட்டமிடல் மற்றும் ஒதுக்கீட்டில் முடிக்கவும்; புதிய திட்டம் உறுதிசெய்யப்படும் வரை ஏற்றுநரின் பயணம் தடுக்கப்பட்டிருக்கும்.",
+  "Acknowledges the new plan version, then Ready to depart unlocks": "புதிய திட்டப் பதிப்பை ஏற்கிறது, பின்னர் புறப்படத் தயார் திறக்கும்",
+});

@@ -106,3 +106,31 @@ func TestDepotNamesFromTheDatasetMatchProfileCodes(t *testing.T) {
 		t.Fatal("depot aliases do not match")
 	}
 }
+
+func TestMoveToNextRunDoesNotReleaseTheTripUntilThePlanDropsTheOrder(t *testing.T) {
+	loads := []domain.OrderLoad{{ID: "l1", OrderID: "o1", Status: domain.LoadShortfall}}
+	moved := map[string][]domain.Issue{"l1": {{Decision: domain.DecisionMoveToNextRun}}}
+
+	// Planning has not published a plan without the order yet (the calls after
+	// the decision failed, or are still running): the line is still on the trip.
+	pending, undecided, unpublished := departureBlockers(loads, moved, map[string]bool{"o1": true})
+	if len(pending) != 0 || len(undecided) != 0 || len(unpublished) != 1 {
+		t.Fatalf("move with the order still planned: pending=%v undecided=%v unpublished=%v", pending, undecided, unpublished)
+	}
+
+	// The confirmed plan no longer carries the order: the trip may leave.
+	pending, undecided, unpublished = departureBlockers(loads, moved, map[string]bool{})
+	if len(pending)+len(undecided)+len(unpublished) != 0 {
+		t.Fatalf("move after the plan dropped the order: %v %v %v", pending, undecided, unpublished)
+	}
+}
+
+func TestPartialLoadReleasesTheTripAndHoldOrNoDecisionDoNot(t *testing.T) {
+	loads := []domain.OrderLoad{{ID: "l1", OrderID: "o1", Status: domain.LoadShortfall}}
+	for decision, wantBlocked := range map[string]bool{domain.DecisionPartialLoad: false, domain.DecisionHold: true, "": true} {
+		_, undecided, _ := departureBlockers(loads, map[string][]domain.Issue{"l1": {{Decision: decision}}}, map[string]bool{"o1": true})
+		if (len(undecided) > 0) != wantBlocked {
+			t.Fatalf("decision %q: blocked=%v want %v", decision, len(undecided) > 0, wantBlocked)
+		}
+	}
+}

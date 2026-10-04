@@ -87,7 +87,7 @@ export function StoreManagerLayout() {
   );
 
   return (
-    <div className="sm-shell dp-shell">
+    <div className="sm-shell">
       <a className="skip-link" href="#sm-main">{t("Skip to main content")}</a>
 
       <aside className="sm-sidebar" aria-label={t("Store Manager navigation")}>

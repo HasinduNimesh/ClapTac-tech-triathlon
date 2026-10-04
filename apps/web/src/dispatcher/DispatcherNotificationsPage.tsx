@@ -138,17 +138,23 @@ function LoadExceptionDrawer({ trip, plan, token, onClose, onDone }: { trip: Loa
     if (!trip) return;
     setBusy(true); setError("");
     const code = decision === "partial" ? "PARTIAL_LOAD" : decision === "hold" ? "HOLD" : "MOVE_TO_NEXT_RUN";
-    try {
-      const summary = short.map((o) => `${o.orderRef || o.orderId}: ${(o.issues || []).map((i) => `${i.type} ${i.affectedUnits}`).join(", ")}`).join("; ");
-      // The decision is recorded on each shortfall first; the loading service
-      // keeps Ready locked until every shortfall has a decision that allows departure.
+    const recordDecisions = async () => {
       for (const order of short) {
         for (const issue of order.issues || []) {
           await apiJSON(`/loading/trips/${trip.tripId}/orders/${order.orderId}/issues/${issue.id}/decision`, token, { method: "POST", body: JSON.stringify({ decision: code, note }) });
         }
       }
+    };
+    let planLeftOpen = false;
+    try {
+      const summary = short.map((o) => `${o.orderRef || o.orderId}: ${(o.issues || []).map((i) => `${i.type} ${i.affectedUnits}`).join(", ")}`).join("; ");
       if (decision === "move") {
         if (!plan) throw new Error(t("No plan is loaded for this date."));
+        // Planning goes first and the decision is recorded last, so a failed planning call
+        // leaves the shortfall undecided and the trip blocked. The loading service also
+        // refuses Ready until the confirmed plan no longer carries the line and the
+        // loader has acknowledged that version, whatever order these calls ran in.
+        planLeftOpen = true;
         if (plan.plan.status === "confirmed") await apiJSON(`/planning/plans/${plan.plan.id}/revise`, token, { method: "POST" });
         for (const order of short) {
           const allocation = (plan.allocations || []).find((a) => a.tripId === trip.tripId && a.orderId === order.orderId);
@@ -156,13 +162,16 @@ function LoadExceptionDrawer({ trip, plan, token, onClose, onDone }: { trip: Loa
           await apiJSON(`/planning/plans/${plan.plan.id}/deferrals`, token, { method: "POST", body: JSON.stringify({ orderId: order.orderId, reasonCode: "MANUAL_DISPATCHER_DEFERRAL", comment: `Loader shortfall before departure: ${summary}${note ? ` · ${note}` : ""}` }) });
         }
         await apiJSON(`/planning/plans/${plan.plan.id}/confirm`, token, { method: "POST" });
-        onDone(t("New plan version published · affected lines moved to the next run"));
+        planLeftOpen = false;
+        await recordDecisions();
+        onDone(t("New plan version published · the loader must acknowledge it before the trip can depart"));
       } else {
+        await recordDecisions();
         const body = decision === "partial" ? `Dispatcher decision: accept partial load and depart on time. ${summary}.` : `Dispatcher decision: hold the trip until replacement stock arrives. ${summary}.`;
         try { await apiJSON(`/delivery/trips/${trip.tripId}/messages`, token, { method: "POST", body: JSON.stringify({ body: note ? `${body} ${note}` : body }) }); } catch { /* the decision is already recorded on the shortfall */ }
         onDone(decision === "partial" ? t("Partial load accepted · driver and loader notified") : t("Trip on hold · driver and loader notified"));
       }
-    } catch (e) { setError(errorText(e)); }
+    } catch (e) { setError(`${errorText(e)}${planLeftOpen ? ` ${t("The plan was left open for revision. Finish it in Plan and allocate; the loader's trip stays blocked until a new plan is confirmed.")}` : ""}`); }
     finally { setBusy(false); }
   }
 
@@ -195,7 +204,7 @@ function LoadExceptionDrawer({ trip, plan, token, onClose, onDone }: { trip: Loa
       <p className="dp-section-label">{t("What changes")}</p>
       <dl className="dp-kv-rows">
         <div><dt>{t("Plan version")}</dt><dd>{decision === "move" ? `v${plan?.publication?.version || plan?.plan.currentVersion || 1} → v${(plan?.publication?.version || plan?.plan.currentVersion || 1) + 1}` : t("Unchanged")}</dd></div>
-        <div><dt>{t("Loader")}</dt><dd>{decision === "hold" ? t("Ready to depart stays locked") : t("Ready to depart unlocks")}</dd></div>
+        <div><dt>{t("Loader")}</dt><dd>{decision === "hold" ? t("Ready to depart stays locked") : decision === "move" ? t("Acknowledges the new plan version, then Ready to depart unlocks") : t("Ready to depart unlocks")}</dd></div>
         <div><dt>{t("Driver")}</dt><dd>{decision === "move" ? t("Gets the new version on the phone") : t("Gets the decision as a trip message")}</dd></div>
         <div><dt>{t("Logged as")}</dt><dd>{t("Decided by you, with time")}</dd></div>
       </dl>
