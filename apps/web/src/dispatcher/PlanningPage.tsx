@@ -126,7 +126,7 @@ export function PlanningPage() {
   async function deferSelected(e: FormEvent) {
     e.preventDefault();
     await run("Deferred", async () => {
-      await apiJSON(`/planning/plans/${planId}/deferrals`, token, { method: "POST", body: JSON.stringify({ orderId: deferOrder, reasonCode: reason, comment, nextRunTarget: nextRunTarget || undefined }) });
+      await apiJSON(`/planning/plans/${planId}/deferrals`, token, { method: "POST", body: JSON.stringify({ orderId: deferOrder, reasonCode: reason, comment, nextRunTarget }) });
       await refresh(planId);
       setDeferOrder(""); setNextRunTarget(""); setComment("");
     });
@@ -342,7 +342,7 @@ export function PlanningPage() {
                 {detail.deferrals.length === 0 ? <p className="dp-empty">{t("No orders deferred in this plan.")}</p> : (
                   <div className="dp-table-wrap"><table className="dp-table">
                     <thead><tr><th>{t("Order")}</th><th>{t("Outlet")}</th><th>{t("Reason")}</th><th>{t("Comment")}</th><th>{t("Next run")}</th></tr></thead>
-                    <tbody>{detail.deferrals.map((d) => <tr key={d.id}><td>{ordersById.get(d.orderId)?.orderRef || d.orderId}</td><td>{d.outletId}</td><td>{t(d.reasonCode)}</td><td>{d.comment || "—"}</td><td>{d.nextRunTarget ? dayLabel(d.nextRunTarget) : t("Next available run")}</td></tr>)}</tbody>
+                    <tbody>{detail.deferrals.map((d) => <tr key={d.id}><td>{ordersById.get(d.orderId)?.orderRef || d.orderId}</td><td>{d.outletId}</td><td>{t(d.reasonCode)}</td><td>{d.comment || "—"}</td><td>{d.nextRunTarget ? dayLabel(d.nextRunTarget) : t("Next available run")}{ordersById.get(d.orderId)?.priorityNextPlan && <> <Tag tone="red">{t("Priority for next plan")}</Tag></>}</td></tr>)}</tbody>
                   </table></div>
                 )}
               </>}
@@ -415,10 +415,10 @@ export function PlanningPage() {
       </div>
 
       <Drawer open={Boolean(deferOrder && detail)} onClose={() => setDeferOrder("")} narrow title={t("Edit deferral reason")} sub={t("Update the reason for deferring this order and add any notes.")}
-        footer={<><button type="button" className="dp-btn dp-btn--secondary" onClick={() => setDeferOrder("")}>{t("Cancel")}</button><button type="submit" form="defer-form" className="dp-btn">{t("Confirm deferral")}</button></>}>
+        footer={<><button type="button" className="dp-btn dp-btn--secondary" onClick={() => setDeferOrder("")}>{t("Cancel")}</button><button type="submit" form="defer-form" className="dp-btn" disabled={!reason || !nextRunTarget}>{t("Confirm deferral")}</button></>}>
         {deferOrderData && detail && <form id="defer-form" className="dp-stack" onSubmit={deferSelected}>
           <div className="dp-subcard">
-            <div className="dp-row dp-row--between"><span className="muted">{t("Selected order")}</span>{deferOrderData.deferredLastRun && <Tag tone="amber">{t("Deferred last run")}</Tag>}</div>
+            <div className="dp-row dp-row--between"><span className="muted">{t("Selected order")}</span>{deferOrderData.deferredLastRun && <Tag tone="amber">{t("Deferred last run")}</Tag>}{deferOrderData.deferredLastRun && <Tag tone="red">{t("Priority for next plan")}</Tag>}</div>
             <p className="dp-stat-value">{deferOrderData.orderRef}</p>
             <dl className="dp-kv">
               <div><dt>{t("Outlet")}</dt><dd>{outletLabel(deferOrderData)}</dd></div>
@@ -434,7 +434,7 @@ export function PlanningPage() {
           </div>}
           <label className="dp-field">{t("Deferral reason")}<select aria-label={t("Deferral reason")} value={reason} onChange={(e) => setReason(e.target.value)}>{DEFER_REASONS.map((r) => <option key={r} value={r}>{t(r)}</option>)}</select></label>
           <label className="dp-field">{t("Additional notes (optional)")}<textarea aria-label={t("Deferral comment")} value={comment} onChange={(e) => setComment(e.target.value)} maxLength={500} placeholder={t("Comment")} /><span>{comment.length} / 500</span></label>
-          <label className="dp-field">{t("Next run recommendation")}<input aria-label={t("Expected next-run date")} type="date" value={nextRunTarget} onChange={(e) => setNextRunTarget(e.target.value)} min={dayAfter(detail.plan.deliveryDate)} /><span>{t("Based on available capacity and current demand. Leave empty for the next available run.")}</span></label>
+          <label className="dp-field">{t("Next run recommendation")}<input aria-label={t("Expected next-run date")} type="date" required value={nextRunTarget} onChange={(e) => setNextRunTarget(e.target.value)} min={dayAfter(detail.plan.deliveryDate)} /><span>{t("Required. The store is told this date in its deferral notice.")}</span></label>
           <div className="dp-subcard"><h3 className="dp-h3">{t("Current priority")}</h3><p style={{ margin: "4px 0 0" }}>{t("Priority score")} {deferOrderData.fairnessScore} · {deferOrderData.outletDeferralCount || 0} {t("previous deferral(s)")}</p><p className="muted" style={{ margin: 0, fontSize: "0.8125rem" }}>{t("Repeat deferrals raise this outlet's priority on the next plan.")}</p></div>
         </form>}
       </Drawer>

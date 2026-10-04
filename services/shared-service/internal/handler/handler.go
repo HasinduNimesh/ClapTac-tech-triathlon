@@ -102,6 +102,13 @@ func (h Handler) enqueueNotification(w http.ResponseWriter, r *http.Request) {
 	e.OutletID = strings.TrimSpace(e.OutletID)
 	e.OrderRef = strings.TrimSpace(e.OrderRef)
 	e.Reason = strings.TrimSpace(e.Reason)
+	e.NextRun = strings.TrimSpace(e.NextRun)
+	if e.NextRun != "" {
+		if _, err := time.Parse("2006-01-02", e.NextRun); err != nil {
+			apierrors.BadRequest(w, "nextRun must be YYYY-MM-DD")
+			return
+		}
+	}
 	if e.EventKey == "" || len(e.EventKey) > 200 || e.OutletID == "" || e.OrderRef == "" || len(e.OrderRef) > 80 {
 		apierrors.BadRequest(w, "event key, outlet and order reference are required")
 		return

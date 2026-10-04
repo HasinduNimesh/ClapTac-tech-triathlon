@@ -62,6 +62,10 @@ type Order struct {
 	// Dispatcher can see a pattern before deferring it again.
 	DeferredLastRun bool   `json:"deferredLastRun,omitempty"`
 	LastDeferralDate string `json:"lastDeferralDate,omitempty"`
+	// PriorityNextPlan flags an outlet deferred on two consecutive runs so the
+	// next plan treats it as priority. It is a flag only; the allocation score
+	// is not changed by it.
+	PriorityNextPlan bool `json:"priorityNextPlan,omitempty"`
 }
 
 type Vehicle struct {

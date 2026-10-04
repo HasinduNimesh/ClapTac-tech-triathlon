@@ -724,6 +724,20 @@ func TestPlanningDeferralNextRunAndRepeatWarning(t *testing.T) {
 		t.Fatalf("a next-run target on or before the plan date should be rejected 400, got %d: %s", badDeferRes.StatusCode, badDeferBody)
 	}
 
+	// W3: a deferral without a next run does not save.
+	noRun, _ := http.NewRequest(http.MethodPost, planSrv.URL+"/api/v1/planning/plans/"+createdA.Plan.ID+"/deferrals", strings.NewReader(`{"orderId":"ord-1","reasonCode":"NO_ELIGIBLE_VEHICLE"}`))
+	noRun.Header.Set("Authorization", "Bearer usr-dispatcher")
+	noRun.Header.Set("Content-Type", "application/json")
+	noRunRes, err := http.DefaultClient.Do(noRun)
+	if err != nil {
+		t.Fatal(err)
+	}
+	noRunBody := readBody(noRunRes)
+	noRunRes.Body.Close()
+	if noRunRes.StatusCode != http.StatusBadRequest {
+		t.Fatalf("a deferral without nextRunTarget should be rejected 400, got %d: %s", noRunRes.StatusCode, noRunBody)
+	}
+
 	deferReq, _ := http.NewRequest(http.MethodPost, planSrv.URL+"/api/v1/planning/plans/"+createdA.Plan.ID+"/deferrals", strings.NewReader(`{"orderId":"ord-1","reasonCode":"NO_ELIGIBLE_VEHICLE","comment":"No reefer free today","nextRunTarget":"2026-09-30"}`))
 	deferReq.Header.Set("Authorization", "Bearer usr-dispatcher")
 	deferReq.Header.Set("Content-Type", "application/json")

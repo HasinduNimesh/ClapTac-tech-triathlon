@@ -187,6 +187,7 @@ type NotificationEvent struct {
 	NewArrivalAt string `json:"newArrivalAt,omitempty"`
 	// For LOAD_SHORTFALL, Units is the number of units short and Reason carries the
 	// dispatcher decision (PARTIAL_LOAD, HOLD or MOVE_TO_NEXT_RUN).
+	NextRun      string `json:"nextRun,omitempty"`
 }
 
 type EnqueueResult struct {
@@ -232,19 +233,19 @@ func (s Store) EnqueueNotification(ctx context.Context, e NotificationEvent) (En
 		switch locale {
 		case "si":
 			if e.Type == "DEFERRAL" {
-				body = fmt.Sprintf("Waypoint: ඇණවුම %s කල් දමා ඇත. හේතුව: %s. ඊළඟ බෙදාහැරීම සඳහා Dispatcher අමතන්න.", e.OrderRef, reason)
+				body = fmt.Sprintf("Waypoint: ඇණවුම %s කල් දමා ඇත. හේතුව: %s. ඊළඟ බෙදාහැරීම: %s. වැඩිදුර විස්තර සඳහා Dispatcher අමතන්න.", e.OrderRef, reason, nextRunText(e.NextRun))
 			} else {
 				body = fmt.Sprintf("Waypoint: ඇණවුම %s පැමිණීම විනාඩි %dකින් ප්‍රමාද වේ.", e.OrderRef, e.DelayMinutes)
 			}
 		case "ta":
 			if e.Type == "DEFERRAL" {
-				body = fmt.Sprintf("Waypoint: ஆர்டர் %s ஒத்திவைக்கப்பட்டது. காரணம்: %s. அடுத்த விநியோகத்துக்கு Dispatcher-ஐ தொடர்புகொள்ளவும்.", e.OrderRef, reason)
+				body = fmt.Sprintf("Waypoint: ஆர்டர் %s ஒத்திவைக்கப்பட்டது. காரணம்: %s. அடுத்த விநியோகம்: %s. மேலும் விவரங்களுக்கு Dispatcher-ஐ தொடர்புகொள்ளவும்.", e.OrderRef, reason, nextRunText(e.NextRun))
 			} else {
 				body = fmt.Sprintf("Waypoint: ஆர்டர் %s வருகை %d நிமிடங்கள் தாமதமாகும்.", e.OrderRef, e.DelayMinutes)
 			}
 		default:
 			if e.Type == "DEFERRAL" {
-				body = fmt.Sprintf("Waypoint: order %s was deferred (%s). Contact the dispatcher about the next delivery run.", e.OrderRef, reason)
+				body = fmt.Sprintf("Waypoint: order %s was deferred. Reason: %s. Next delivery run: %s. Contact the dispatcher if you need more detail.", e.OrderRef, reason, nextRunText(e.NextRun))
 			} else {
 				body = fmt.Sprintf("Waypoint: order %s is expected to arrive %d minutes later than planned.", e.OrderRef, e.DelayMinutes)
 			}
@@ -802,4 +803,11 @@ func ShortfallBody(locale string, e NotificationEvent) string {
 		return fmt.Sprintf("Waypoint: ஆர்டர் %s இல் %d அலகுகள் குறைவு; %s.", e.OrderRef, e.Units, o.ta)
 	}
 	return fmt.Sprintf("Waypoint: order %s is %d units short; %s.", e.OrderRef, e.Units, o.en)
+}
+
+func nextRunText(date string) string {
+	if date == "" {
+		return "to be confirmed"
+	}
+	return date
 }

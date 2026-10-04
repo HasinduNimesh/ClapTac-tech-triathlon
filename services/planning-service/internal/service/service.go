@@ -377,18 +377,10 @@ func (s Service) Defer(ctx context.Context, profile *authorization.Profile, plan
 	if !validReasons[code] {
 		return fmt.Errorf("invalid: reasonCode")
 	}
-	// FR-53: the next-run target is optional (not every deferral has a known
-	// retry date yet), but when given it must be a real date after this plan's
-	// own delivery date - a "next run" that is today or earlier is meaningless.
-	if nextRunTarget != "" {
-		target, parseErr := time.Parse("2006-01-02", nextRunTarget)
-		if parseErr != nil {
-			return fmt.Errorf("invalid: nextRunTarget")
-		}
-		planDate, _ := time.Parse("2006-01-02", pl.DeliveryDate)
-		if !target.After(planDate) {
-			return fmt.Errorf("invalid: nextRunTarget")
-		}
+	// W3: a deferral will not save without a reason, a decider and a next run.
+	var vErr error
+	if nextRunTarget, vErr = validateDeferral(actorID(profile), code, nextRunTarget, pl.DeliveryDate); vErr != nil {
+		return vErr
 	}
 	allocs, _ := s.Repo.ListAllocations(ctx, pl.ID)
 	for _, a := range allocs {
@@ -422,8 +414,8 @@ func (s Service) Defer(ctx context.Context, profile *authorization.Profile, plan
 		return err
 	}
 	telemetry.OrdersDeferred.Inc()
-	s.Peers.Publish(ctx, audit.ActionOrderDeferred, actorID(profile), "ORDER", orderID, map[string]any{"reasonCode": code})
-	if err := s.Peers.QueueNotification(ctx, "deferral:"+pl.ID+":"+orderID, outletID, "DEFERRAL", orderRef, code, 0); err != nil && s.Peers.Logger != nil {
+	s.Peers.Publish(ctx, audit.ActionOrderDeferred, actorID(profile), "ORDER", orderID, map[string]any{"reasonCode": code, "nextRunTarget": nextRunTarget})
+	if err := s.Peers.QueueNotification(ctx, "deferral:"+pl.ID+":"+orderID, outletID, "DEFERRAL", orderRef, code, 0, nextRunTarget); err != nil && s.Peers.Logger != nil {
 		s.Peers.Logger.Error("notification_enqueue_failed", "event", "deferral", "order_id", orderID, "error", err)
 	}
 	return nil
@@ -756,7 +748,7 @@ func (s Service) ConfirmBreakdown(ctx context.Context, profile *authorization.Pr
 			continue
 		}
 		o := orders[a.OrderID]
-		if err := s.Peers.QueueNotification(ctx, fmt.Sprintf("breakdown:%s:%d:%s", pl.ID, updated.CurrentVersion, a.OrderID), o.OutletID, "MAJOR_DELAY", o.OrderRef, "", delay); err != nil && s.Peers.Logger != nil {
+		if err := s.Peers.QueueNotification(ctx, fmt.Sprintf("breakdown:%s:%d:%s", pl.ID, updated.CurrentVersion, a.OrderID), o.OutletID, "MAJOR_DELAY", o.OrderRef, "", delay, ""); err != nil && s.Peers.Logger != nil {
 			s.Peers.Logger.Error("notification_enqueue_failed", "event", "major_delay", "order_id", a.OrderID, "error", err)
 		}
 	}
@@ -1133,6 +1125,7 @@ func (s Service) detail(ctx context.Context, pl domain.Plan) (map[string]any, er
 	for _, d := range deferred {
 		deferredIDs[d.OrderID] = true
 	}
+	markPriorityNextPlan(world.Orders, deferredIDs)
 	reasons, reasonsErr := s.Repo.ListUnallocatedReasons(ctx, pl.ID)
 	reasonsAvailable := reasonsErr == nil
 	if !reasonsAvailable && s.Peers.Logger != nil {
@@ -1340,4 +1333,29 @@ func holdDispatcherDeferrals(world allocate.Input) (allocate.Input, []domain.Con
     }
     world.Orders = candidates
     return world, pending
+}
+
+// validateDeferral enforces the three required parts of a deferral: a known
+// reason code, a decider, and a next-run date after the plan's delivery date.
+// It returns the normalised next-run date.
+func validateDeferral(decider, code, nextRunTarget, planDeliveryDate string) (string, error) {
+	if !validReasons[code] {
+		return "", fmt.Errorf("invalid: reasonCode")
+	}
+	if strings.TrimSpace(decider) == "" {
+		return "", fmt.Errorf("invalid: decider required")
+	}
+	nextRunTarget = strings.TrimSpace(nextRunTarget)
+	if nextRunTarget == "" {
+		return "", fmt.Errorf("invalid: nextRunTarget is required")
+	}
+	target, err := time.Parse("2006-01-02", nextRunTarget)
+	if err != nil {
+		return "", fmt.Errorf("invalid: nextRunTarget")
+	}
+	planDate, _ := time.Parse("2006-01-02", planDeliveryDate)
+	if !target.After(planDate) {
+		return "", fmt.Errorf("invalid: nextRunTarget")
+	}
+	return nextRunTarget, nil
 }

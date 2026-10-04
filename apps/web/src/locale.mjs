@@ -1232,3 +1232,12 @@ Object.assign(labels.ta, {
 // W11: sync conflicts list with Settle on the dispatcher Notifications page.
 Object.assign(labels.si, { "Sync conflict settled": "සමමුහුර්ත ගැටුම විසඳා ඇත", "Recorded on plan": "සටහන් කළ සැලැස්ම", "current plan": "වත්මන් සැලැස්ම", "Settled by": "විසඳූයේ", "Settle": "විසඳන්න" });
 Object.assign(labels.ta, { "Sync conflict settled": "ஒத்திசைவு மோதல் தீர்க்கப்பட்டது", "Recorded on plan": "பதிவு செய்யப்பட்ட திட்டம்", "current plan": "தற்போதைய திட்டம்", "Settled by": "தீர்த்தவர்", "Settle": "தீர்க்கவும்" });
+// W3 deferral rules
+Object.assign(labels.si, {
+  "Required. The store is told this date in its deferral notice.": "අවශ්‍යයි. කල් දැමීම් දැනුම්දීමේදී මෙම දිනය වෙළඳසැලට දැනුම් දෙනු ලැබේ.",
+  "Priority for next plan": "ඊළඟ සැලසුමට ප්‍රමුඛතාව",
+});
+Object.assign(labels.ta, {
+  "Required. The store is told this date in its deferral notice.": "கட்டாயம். ஒத்திவைப்பு அறிவிப்பில் இந்தத் தேதி கடைக்குத் தெரிவிக்கப்படும்.",
+  "Priority for next plan": "அடுத்த திட்டத்திற்கு முன்னுரிமை",
+});
