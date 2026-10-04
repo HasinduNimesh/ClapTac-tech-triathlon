@@ -39,7 +39,7 @@ func TestSavedDashboardsAreOwnerScopedVersionedAndAudited(t *testing.T) {
 	if _, err = pool.Exec(ctx, `CREATE SCHEMA audit;
 	CREATE TABLE audit.events (event_id text primary key, correlation_id text, actor_id text, actor_type text, action text not null, resource_type text, resource_id text, previous_state jsonb, new_state jsonb, reason text, timestamp timestamptz not null default now(), source text);
 	CREATE SCHEMA shared;
-	CREATE TABLE shared.users(id text primary key, identity_subject text unique, role text);
+	CREATE TABLE shared.users(id text primary key, identity_subject text unique, display_name text not null default '', role text);
 	CREATE TABLE shared.store_manager_profiles(user_id text, outlet_id text);
 	CREATE TABLE shared.loader_profiles(user_id text, depot text);
 	CREATE TABLE shared.driver_profiles(user_id text, vehicle_id text);
