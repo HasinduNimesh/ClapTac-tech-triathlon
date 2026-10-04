@@ -13,6 +13,7 @@ import (
 	"github.com/HasinduNimesh/ClapTac-tech-triathlon/pkg/authorization"
 	"github.com/HasinduNimesh/ClapTac-tech-triathlon/pkg/objectstore"
 	"github.com/HasinduNimesh/ClapTac-tech-triathlon/pkg/telemetry"
+	"github.com/HasinduNimesh/ClapTac-tech-triathlon/pkg/validation"
 	"github.com/HasinduNimesh/ClapTac-tech-triathlon/services/delivery-service/internal/client"
 	"github.com/HasinduNimesh/ClapTac-tech-triathlon/services/delivery-service/internal/domain"
 	"github.com/HasinduNimesh/ClapTac-tech-triathlon/services/delivery-service/internal/store"
@@ -194,8 +195,13 @@ func (s Service) Prepare(ctx context.Context, profile *authorization.Profile, tr
 	for _, o := range trip.Orders {
 		st := domain.Stop{
 			AllocationID: o.AllocationID, OrderID: o.OrderID, OrderRef: o.OrderRef, OutletID: o.OutletID,
-			Brand: o.Brand, StopSequence: o.StopSequence, TemperatureRequirement: o.TemperatureRequirement,
+			UnitLabel: "units",
+			Brand:     o.Brand, StopSequence: o.StopSequence, TemperatureRequirement: o.TemperatureRequirement,
 			LoadingStatus: o.LoadingStatus, LoadingShortfallSummary: o.ShortfallSummary, PlannedArrivalAt: o.PlannedArrivalAt,
+		}
+		if o.ExpectedUnits > 0 {
+			units := o.ExpectedUnits
+			st.ExpectedUnits = &units
 		}
 		if o.OutletID != "" {
 			if out, e := s.Peers.Outlet(ctx, o.OutletID); e == nil {
@@ -332,11 +338,11 @@ func (s Service) applyArrive(ctx context.Context, profile *authorization.Profile
 	return s.detail(ctx, run)
 }
 
-func (s Service) Outcome(ctx context.Context, profile *authorization.Profile, tripID, stopID, opID, depends, code, reason, note, occurred string) (map[string]any, error) {
-	return s.applyOutcome(ctx, profile, tripID, stopID, opID, depends, code, reason, note, occurred)
+func (s Service) Outcome(ctx context.Context, profile *authorization.Profile, tripID, stopID, opID, depends, code, reason, note, occurred string, deliveredUnits *int) (map[string]any, error) {
+	return s.applyOutcome(ctx, profile, tripID, stopID, opID, depends, code, reason, note, occurred, deliveredUnits)
 }
 
-func (s Service) applyOutcome(ctx context.Context, profile *authorization.Profile, tripID, stopID, opID, depends, code, reason, note, occurred string) (map[string]any, error) {
+func (s Service) applyOutcome(ctx context.Context, profile *authorization.Profile, tripID, stopID, opID, depends, code, reason, note, occurred string, deliveredUnits *int) (map[string]any, error) {
 	if res, ok, err := s.replayOrReject(ctx, opID, depends); ok {
 		return res, err
 	}
@@ -348,6 +354,14 @@ func (s Service) applyOutcome(ctx context.Context, profile *authorization.Profil
 	if code != domain.OutcomeDelivered && code != domain.OutcomePartial && code != domain.OutcomeNotDelivered && code != domain.OutcomeFailed && code != domain.OutcomeRefused {
 		return s.record(ctx, opID, run.ID, stopID, domain.OpStopOutcome, domain.ResultRejected, map[string]any{"detail": "invalid outcome"}, fmt.Errorf("invalid: outcome code"))
 	}
+	if deliveredUnits != nil {
+		if stop.ExpectedUnits == nil || *deliveredUnits < 0 || *deliveredUnits > *stop.ExpectedUnits ||
+			(code == domain.OutcomeDelivered && *deliveredUnits != *stop.ExpectedUnits) ||
+			(code == domain.OutcomePartial && (*deliveredUnits == 0 || *deliveredUnits == *stop.ExpectedUnits)) ||
+			(code != domain.OutcomeDelivered && code != domain.OutcomePartial && *deliveredUnits != 0) {
+			return s.record(ctx, opID, run.ID, stopID, domain.OpStopOutcome, domain.ResultRejected, map[string]any{"detail": "deliveredUnits must match the outcome and expectedUnits"}, fmt.Errorf("invalid: deliveredUnits must match outcome and expectedUnits"))
+		}
+	}
 	if code == domain.OutcomeNotDelivered || code == domain.OutcomeFailed || code == domain.OutcomeRefused {
 		if !validNonDeliveryReason(reason) {
 			return s.record(ctx, opID, run.ID, stopID, domain.OpStopOutcome, domain.ResultRejected, map[string]any{"detail": "valid reasonCode required"}, fmt.Errorf("invalid: valid reasonCode required for non-delivery"))
@@ -355,7 +369,8 @@ func (s Service) applyOutcome(ctx context.Context, profile *authorization.Profil
 		reason = strings.ToUpper(strings.TrimSpace(reason))
 	}
 	if stop.Status != domain.StopArrived {
-		if stop.Status == domain.StopCompleted && stop.OutcomeCode == code {
+		if stop.Status == domain.StopCompleted && stop.OutcomeCode == code &&
+			(deliveredUnits == nil || (stop.DeliveredUnits != nil && *deliveredUnits == *stop.DeliveredUnits)) {
 			_ = s.Repo.InsertOp(ctx, domain.SyncOp{OperationID: opID, RunID: run.ID, StopID: stopID, OperationType: domain.OpStopOutcome, ResultStatus: domain.ResultApplied, ResultPayload: map[string]any{"code": code}})
 			telemetry.DeliverySyncOps.WithLabelValues(domain.ResultApplied).Inc()
 			return s.detail(ctx, run)
@@ -373,7 +388,7 @@ func (s Service) applyOutcome(ctx context.Context, profile *authorization.Profil
 		}
 	}
 	occurredAt := parseTime(occurred)
-	if err := s.Repo.MarkOutcome(ctx, stop.ID, code, reason, note, occurredAt); err != nil {
+	if err := s.Repo.MarkOutcome(ctx, stop.ID, code, reason, note, occurredAt, deliveredUnits); err != nil {
 		telemetry.DeliverySyncConflicts.Inc()
 		return s.record(ctx, opID, run.ID, stopID, domain.OpStopOutcome, domain.ResultConflict, map[string]any{"detail": err.Error()}, err)
 	}
@@ -419,7 +434,7 @@ func (s Service) UploadProof(ctx context.Context, profile *authorization.Profile
 	if mime != "image/png" && mime != "image/jpeg" {
 		return domain.Proof{}, fmt.Errorf("invalid: PNG or JPEG only")
 	}
-	if !hasMagic(mime, body) {
+	if !validation.HasImageMagic(mime, body) {
 		return domain.Proof{}, fmt.Errorf("invalid: file content does not match PNG or JPEG")
 	}
 	max := domain.MaxPhotoBytes
@@ -579,7 +594,16 @@ func (s Service) syncOne(ctx context.Context, profile *authorization.Profile, op
 		code, _ := op.Payload["code"].(string)
 		reason, _ := op.Payload["reason"].(string)
 		note, _ := op.Payload["note"].(string)
-		_, err := s.applyOutcome(ctx, profile, tripOf(ctx, s, op), op.StopID, op.OperationID, op.DependsOnOperationID, code, reason, note, op.OccurredAt)
+		var deliveredUnits *int
+		if raw, present := op.Payload["deliveredUnits"]; present {
+			number, ok := raw.(float64)
+			if !ok || number < 0 || number > 2147483647 || number != float64(int(number)) {
+				return s.recordSyncRejection(ctx, op, "deliveredUnits must be a non-negative integer")
+			}
+			units := int(number)
+			deliveredUnits = &units
+		}
+		_, err := s.applyOutcome(ctx, profile, tripOf(ctx, s, op), op.StopID, op.OperationID, op.DependsOnOperationID, code, reason, note, op.OccurredAt, deliveredUnits)
 		return syncResult(op.OperationID, err)
 	case domain.OpTemperatureReading:
 		value, ok := op.Payload["valueC"].(float64)
@@ -816,6 +840,7 @@ func loadingPreview(trip domain.LoadingTrip) map[string]any {
 		stops = append(stops, map[string]any{
 			"orderId": o.OrderID, "orderRef": o.OrderRef, "outletId": o.OutletID, "brand": o.Brand,
 			"stopSequence": o.StopSequence, "loadingStatus": o.LoadingStatus, "status": domain.StopPending,
+			"expectedUnits": o.ExpectedUnits, "unitLabel": "units",
 			"loadingShortfallSummary": o.ShortfallSummary,
 		})
 	}
@@ -856,16 +881,6 @@ func completedCount(stops []domain.Stop) int {
 		}
 	}
 	return n
-}
-
-func hasMagic(mime string, body []byte) bool {
-	if mime == "image/png" && len(body) >= 8 {
-		return string(body[:8]) == "\x89PNG\r\n\x1a\n"
-	}
-	if mime == "image/jpeg" && len(body) >= 3 {
-		return body[0] == 0xff && body[1] == 0xd8 && body[2] == 0xff
-	}
-	return false
 }
 
 func NewOperationID() string {

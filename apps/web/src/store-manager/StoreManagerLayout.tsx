@@ -8,6 +8,9 @@ import iconVector from "../assets/store-manager/icon-vector.svg";
 import iconBox from "../assets/store-manager/icon-box.svg";
 import iconBell from "../assets/store-manager/icon-bell.svg";
 import iconHelp from "../assets/store-manager/icon-help.svg";
+import iconSetting from "../assets/store-manager/icon-setting.svg";
+import "../dispatcher/dispatcher.css";
+import "./storeManager.css";
 import iconUser from "../assets/store-manager/icon-user.svg";
 
 export function StoreManagerLayout() {
@@ -53,6 +56,10 @@ export function StoreManagerLayout() {
         <NavLink to="/store-manager/notifications" className={({ isActive }) => `sm-nav-item${isActive ? " active" : ""}`} onClick={() => setNavOpen(false)}>
           <span className="sm-nav-icon" aria-hidden="true"><img src={iconBell} alt="" width={15} height={16} /></span>
           {t("Notifications")}
+        </NavLink>
+        <NavLink to="/store-manager/settings" className={({ isActive }) => `sm-nav-item${isActive ? " active" : ""}`} onClick={() => setNavOpen(false)}>
+          <span className="sm-nav-icon" aria-hidden="true"><img src={iconSetting} alt="" width={20} height={20} /></span>
+          {t("Settings")}
         </NavLink>
         <span className="sm-nav-item sm-nav-item--static">
           <span className="sm-nav-icon" aria-hidden="true"><img src={iconHelp} alt="" width={6} height={18} /></span>
