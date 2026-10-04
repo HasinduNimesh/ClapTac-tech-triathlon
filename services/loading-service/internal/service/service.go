@@ -865,7 +865,7 @@ func planningInfo(t domain.PlanningTrip) map[string]any {
 // acknowledgedAt is when this loader acknowledged the current plan version.
 func acknowledgedAt(t domain.PlanningTrip, profile *authorization.Profile) *time.Time {
 	for _, ack := range t.PlanAcknowledgements {
-		if ack.ActorID == actor(profile) && ack.ActorRole == authorization.RoleLoader && t.PlanVersion > 0 {
+		if ack.ActorID == actor(profile) && ack.ActorRole == authorization.RoleLoader && ack.CoversTrip(t.TripID) && t.PlanVersion > 0 {
 			at := ack.AcknowledgedAt
 			return &at
 		}
@@ -875,7 +875,7 @@ func acknowledgedAt(t domain.PlanningTrip, profile *authorization.Profile) *time
 
 func acknowledgedVersion(t domain.PlanningTrip, profile *authorization.Profile) int {
 	for _, ack := range t.PlanAcknowledgements {
-		if ack.ActorID == actor(profile) && ack.ActorRole == authorization.RoleLoader && t.PlanVersion > 0 {
+		if ack.ActorID == actor(profile) && ack.ActorRole == authorization.RoleLoader && ack.CoversTrip(t.TripID) && t.PlanVersion > 0 {
 			return t.PlanVersion
 		}
 	}

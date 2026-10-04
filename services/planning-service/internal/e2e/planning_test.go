@@ -93,6 +93,7 @@ func TestPlanningGenerateConfirm(t *testing.T) {
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0035_planning_disruption_risks.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0036_planning_unallocated_reasons.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0037_planning_deferral_next_run.sql"))
+	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0073_planning_ack_trip_identity.sql"))
 
 	probe := &peerProbe{}
 	peers := httptest.NewServer(peerStubWith(probe))
@@ -361,14 +362,14 @@ func TestPlanningGenerateConfirm(t *testing.T) {
 	}
 	// Repeating the same acknowledgement must remain idempotent for the
 	// current publication rather than creating duplicate receipts.
-	if err := (planstore.Postgres{Pool: planPool}).Acknowledge(ctx, created.Plan.ID, 1, "USR003", authorization.RoleLoader); err != nil {
+	if err := (planstore.Postgres{Pool: planPool}).Acknowledge(ctx, created.Plan.ID, 1, "USR003", authorization.RoleLoader, "", ""); err != nil {
 		t.Fatalf("duplicate current-version acknowledgement should be idempotent: %v", err)
 	}
 	var ackCount int
 	if err := planPool.QueryRow(ctx, `SELECT count(*) FROM planning.plan_acknowledgements WHERE plan_id=$1::uuid AND version=1 AND actor_id='USR003' AND actor_role=$2`, created.Plan.ID, authorization.RoleLoader).Scan(&ackCount); err != nil || ackCount != 1 {
 		t.Fatalf("duplicate acknowledgement created %d receipts (err=%v)", ackCount, err)
 	}
-	if err := (planstore.Postgres{Pool: planPool}).Acknowledge(ctx, created.Plan.ID, 0, "USR003", authorization.RoleLoader); err == nil || err.Error() != "stale_version" {
+	if err := (planstore.Postgres{Pool: planPool}).Acknowledge(ctx, created.Plan.ID, 0, "USR003", authorization.RoleLoader, "", ""); err == nil || err.Error() != "stale_version" {
 		t.Fatalf("stale ack should be rejected, got %v", err)
 	}
 	var movedVehicle string
@@ -423,7 +424,7 @@ func TestPlanningGenerateConfirm(t *testing.T) {
 	if err := planPool.QueryRow(ctx, `SELECT vehicle_id FROM planning.allocations WHERE order_id='ord-1'`).Scan(&movedVehicle); err != nil || movedVehicle != "VEH002" {
 		t.Fatalf("breakdown allocation did not move atomically: %s %v", movedVehicle, err)
 	}
-	if err := (planstore.Postgres{Pool: planPool}).Acknowledge(ctx, created.Plan.ID, 1, "USR003", authorization.RoleLoader); err == nil || err.Error() != "stale_version" {
+	if err := (planstore.Postgres{Pool: planPool}).Acknowledge(ctx, created.Plan.ID, 1, "USR003", authorization.RoleLoader, "", ""); err == nil || err.Error() != "stale_version" {
 		t.Fatalf("superseded version acknowledgement should fail, got %v", err)
 	}
 	orderID, _ := allocation["orderId"].(string)
@@ -463,6 +464,14 @@ func (staticProfiles) Resolve(_ context.Context, subject string) (*authorization
 		return &authorization.Profile{UserID: "USR001", Subject: subject, Roles: []string{"STORE_MANAGER"}, OutletIDs: []string{"OUT034"}}, nil
 	case "usr-loader":
 		return &authorization.Profile{UserID: "USR003", Subject: subject, Roles: []string{authorization.RoleLoader}}, nil
+	case "usr-driver-a":
+		return &authorization.Profile{UserID: "USR010", Subject: subject, Roles: []string{authorization.RoleDriver}, VehicleID: "VEH-A"}, nil
+	case "usr-driver-b":
+		return &authorization.Profile{UserID: "USR011", Subject: subject, Roles: []string{authorization.RoleDriver}, VehicleID: "VEH-B"}, nil
+	case "usr-loader-north":
+		return &authorization.Profile{UserID: "USR012", Subject: subject, Roles: []string{authorization.RoleLoader}, Depot: "DEPOT_NORTH"}, nil
+	case "usr-loader-south":
+		return &authorization.Profile{UserID: "USR013", Subject: subject, Roles: []string{authorization.RoleLoader}, Depot: "DEPOT_SOUTH"}, nil
 	default:
 		return &authorization.Profile{Subject: subject}, nil
 	}
@@ -505,6 +514,7 @@ func TestPlanningUnallocatedReasonPersists(t *testing.T) {
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0035_planning_disruption_risks.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0036_planning_unallocated_reasons.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0037_planning_deferral_next_run.sql"))
+	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0073_planning_ack_trip_identity.sql"))
 
 	peers := httptest.NewServer(overweightOrderPeerStub())
 	t.Cleanup(peers.Close)
@@ -715,6 +725,7 @@ func TestPlanningDeferralNextRunAndRepeatWarning(t *testing.T) {
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0035_planning_disruption_risks.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0036_planning_unallocated_reasons.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0037_planning_deferral_next_run.sql"))
+	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0073_planning_ack_trip_identity.sql"))
 
 	peers := httptest.NewServer(peerStub())
 	t.Cleanup(peers.Close)

@@ -18,6 +18,7 @@ import type { SyncConflictNotice } from "../offline/syncQueue.mjs";
 import { StopSyncStatus } from "./StopSyncStatus";
 import { createSingleFlightAction } from "./singleFlightAction.mjs";
 import { navigationTarget } from "./navigation.mjs";
+import { acknowledgedForTrip, reminderForTrip, type PlanReminder } from "../dispatcher/ackTracking.mjs";
 
 function stopLabel(stop: DeliveryStop) {
   return stop.outletName || stop.outletId || stop.orderRef || `Stop ${stop.stopSequence}`;
@@ -324,7 +325,7 @@ export function DriverTripsPage() {
     if (!detail?.run?.planId || !detail.currentPlanVersion) return;
     if (detail.currentPlanVersion !== detail.run.planVersion) { setError(t("This route uses a superseded plan. Ask dispatch to refresh the trip instructions before starting.")); return; }
     try {
-      await apiJSON(`/planning/plans/${detail.run.planId}/acknowledgements`,token,{method:"POST",body:JSON.stringify({version:detail.currentPlanVersion})});
+      await apiJSON(`/planning/plans/${detail.run.planId}/acknowledgements`,token,{method:"POST",body:JSON.stringify({version:detail.currentPlanVersion,tripId:detail.tripId})});
       setError(""); await openTrip(detail.tripId);
     } catch(e) { setError(e instanceof ApiError ? `${e.status}: ${t(e.message)}` : t("Update failed. Please try again.")); }
   }
@@ -609,10 +610,23 @@ export function DriverTripsPage() {
     ctx.stroke();
   }
 
+  // The dispatcher's persisted "please acknowledge" reminder for this trip, read from planning.
+  const [planReminder, setPlanReminder] = useState<PlanReminder | undefined>();
+  const reminderPlanId = detail?.run?.planId;
+  const reminderTripId = detail?.tripId;
+  useEffect(() => {
+    if (!token || !reminderPlanId || !reminderTripId || !navigator.onLine) { setPlanReminder(undefined); return; }
+    let active = true;
+    apiJSON<{ items: PlanReminder[] }>(`/planning/plans/${reminderPlanId}/reminders?tripId=${encodeURIComponent(reminderTripId)}`, token)
+      .then((body) => { if (active) setPlanReminder(reminderForTrip(body.items, reminderTripId, "DRIVER")); })
+      .catch(() => { if (active) setPlanReminder(undefined); });
+    return () => { active = false; };
+  }, [token, reminderPlanId, reminderTripId, detail?.currentPlanVersion]);
+
   const inProgress = detail?.status === "in_progress" || detail?.run?.status === "in_progress";
   const completed = detail?.status === "completed" || detail?.run?.status === "completed";
   const nextStop = detail?.stops.filter((s) => s.status !== "completed").sort((a, b) => a.stopSequence - b.stopSequence)[0];
-  const driverAcknowledged = !!profile?.userId && !!detail?.planAcknowledgements?.some((a) => a.actorId===profile.userId && a.actorRole==="DRIVER") && detail?.currentPlanVersion===detail?.run?.planVersion;
+  const driverAcknowledged = !!detail && acknowledgedForTrip(detail.planAcknowledgements, { actorId: profile?.userId, role: "DRIVER", tripId: detail.tripId }) && detail.currentPlanVersion===detail.run?.planVersion;
 
   if (ownerState === "loading") return <p className="card" role="status">{t("Checking this device's driver account…")}</p>;
   if (ownerState === "blocked") return <section className="card" role="alert"><h2>{t("Driver data is locked to another account")}</h2><p>{t("This device's saved driver data belongs to another account. Sign in with the original driver account to recover it.")}</p></section>;
@@ -688,11 +702,29 @@ export function DriverTripsPage() {
           <h3>
             {detail.run?.planRef} · {detail.run?.vehicleId}
           </h3>
-          {!completed && <>
-            <p className="muted">{t("Plan version")} {detail.currentPlanVersion || detail.run?.planVersion || t("unavailable")} · {driverAcknowledged ? t("Acknowledged") : t("Acknowledge before starting this route")}</p>
-            {detail.currentPlanVersion !== detail.run?.planVersion ? <p className="status-bad">{t("This prepared route is stale. Dispatch must refresh its trip instructions.")}</p> : !driverAcknowledged && <button type="button" className="tap" onClick={acknowledgePlan}>{t("Acknowledge current plan")}</button>}
-          </>}
-          {conflictsForStop(conflictNotices, detail.tripId, undefined).length > 0 && <StopSyncStatus status={{ state: "none", waiting: 0, failedItems: [] }} notices={conflictsForStop(conflictNotices, detail.tripId, undefined)} onRetry={() => undefined} onDismiss={(operationId) => void dismissNotice(operationId)} />}
+
+          {!completed && (
+            <>
+              {!driverAcknowledged && (
+                <div className="card plan-update-card status-bad" role="alert" style={{ margin: "0.75rem 0", padding: "0.85rem 1rem", border: "1px solid #d9534f" }}>
+                  <strong>⚠️ {t("Plan changed")}</strong>
+                  <p>{t("Plan changed · Review updated route and instructions before departure")}</p>
+                  {planReminder && <p role="status">{t("Dispatch reminded you to acknowledge this plan at")} {new Date(planReminder.remindedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>}
+                  {detail.currentPlanVersion === detail.run?.planVersion && (
+                    <button type="button" className="tap primary" onClick={acknowledgePlan}>
+                      {t("Acknowledge current plan")}
+                    </button>
+                  )}
+                </div>
+              )}
+              <p className="muted">{t("Plan version")} {detail.currentPlanVersion || detail.run?.planVersion || t("unavailable")} · {driverAcknowledged ? t("Acknowledged") : t("Acknowledge before starting this route")}</p>
+              {detail.currentPlanVersion !== detail.run?.planVersion && (
+                <p className="status-bad">{t("This prepared route is stale. Dispatch must refresh its trip instructions.")}</p>
+              )}
+            </>
+          )}
+{conflictsForStop(conflictNotices, detail.tripId, undefined).length > 0 && <StopSyncStatus status={{ state: "none", waiting: 0, failedItems: [] }} notices={conflictsForStop(conflictNotices, detail.tripId, undefined)} onRetry={() => undefined} onDismiss={(operationId) => void dismissNotice(operationId)} />}
+
           <p>
             {depotLabel(detail.run?.depot)} · {t(detail.status || "")}
           </p>

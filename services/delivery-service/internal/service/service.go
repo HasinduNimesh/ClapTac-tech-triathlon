@@ -280,15 +280,7 @@ func (s Service) Start(ctx context.Context, profile *authorization.Profile, trip
 	if err != nil || latest.PlanVersion != run.PlanVersion {
 		return nil, fmt.Errorf("conflict: plan version changed; reload and acknowledge current instructions")
 	}
-	acknowledged := false
-	if profile != nil {
-		for _, ack := range latest.PlanAcknowledgements {
-			if ack.ActorID == profile.UserID && ack.ActorRole == authorization.RoleDriver {
-				acknowledged = true
-			}
-		}
-	}
-	if !acknowledged {
+	if !driverAcknowledged(latest.PlanAcknowledgements, profile, tripID) {
 		return nil, fmt.Errorf("conflict: driver must acknowledge the current plan version before starting")
 	}
 	checkout, err := s.Repo.Checkout(ctx, run.ID)
@@ -878,6 +870,21 @@ func (s Service) mutableRun(ctx context.Context, profile *authorization.Profile,
 		return run, err
 	}
 	return run, nil
+}
+
+// driverAcknowledged reports whether this driver acknowledged the current plan
+// version for this trip. Another trip's receipt does not count; a legacy
+// plan-level receipt (no trip recorded) still does so in-flight work continues.
+func driverAcknowledged(acks []domain.PlanAcknowledgement, profile *authorization.Profile, tripID string) bool {
+	if profile == nil {
+		return false
+	}
+	for _, ack := range acks {
+		if ack.ActorID == profile.UserID && ack.ActorRole == authorization.RoleDriver && ack.CoversTrip(tripID) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s Service) guardVehicle(profile *authorization.Profile, vehicleID string) error {

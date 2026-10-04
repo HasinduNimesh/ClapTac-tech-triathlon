@@ -49,6 +49,7 @@ export type DeliveryRun = {
   planId?: string;
   planVersion?: number;
   acknowledgedVersion?: number;
+  startedAt?: string;
   completedAt?: string;
 };
 
@@ -91,7 +92,7 @@ export type DeliveryTripDetail = {
   loadList?: CheckoutLoadItem[];
   checkout?: TruckCheckout | null;
   currentPlanVersion?: number;
-  planAcknowledgements?: {actorId:string;actorRole:string;acknowledgedAt:string}[];
+  planAcknowledgements?: {actorId:string;actorRole:string;tripId?:string;vehicleId?:string;acknowledgedAt:string}[];
 };
 
 export type ArrivalPrediction = {

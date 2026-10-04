@@ -1,0 +1,13 @@
+export type Audience = "DRIVER" | "LOADER";
+export type PlanAck = { actorId: string; actorRole: string; tripId?: string; vehicleId?: string; acknowledgedAt: string };
+export type PlanReminder = { tripId: string; audience: string; version?: number; remindedAt: string; remindedBy?: string };
+export type TrackerCell = { audience: Audience; state: "acknowledged" | "overdue" | "pending"; ack?: PlanAck; acknowledgedAt?: string; remindedAt?: string };
+export type TrackerRow<T extends { id: string }> = { trip: T; driver: TrackerCell; loader: TrackerCell };
+export const ACK_AUDIENCES: Audience[];
+export function ackForTrip(acks: PlanAck[] | undefined, tripId: string | undefined, role: string): PlanAck | undefined;
+export function planLevelAcks(acks: PlanAck[] | undefined): PlanAck[];
+export function reminderForTrip(reminders: PlanReminder[] | undefined, tripId: string | undefined, audience: string): PlanReminder | undefined;
+export function isOverdue(publishedAt: string | undefined, now: number, thresholdMinutes: number): boolean;
+export function trackerRows<T extends { id: string }>(input: { trips: T[]; acks: PlanAck[] | undefined; reminders: PlanReminder[] | undefined; publishedAt: string | undefined; now: number; thresholdMinutes: number }): TrackerRow<T>[];
+export function unacknowledgedTargets<T extends { id: string }>(rows: TrackerRow<T>[]): { tripId: string; audience: Audience; state: string }[];
+export function acknowledgedForTrip(acks: PlanAck[] | undefined, input: { actorId?: string; role: string; tripId: string }): boolean;

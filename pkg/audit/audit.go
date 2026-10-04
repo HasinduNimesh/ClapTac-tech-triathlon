@@ -9,16 +9,20 @@ import (
 )
 
 const (
-	ActionOrderCreated                 = "order.created"
-	ActionOrderDeferred                = "ORDER_DEFERRED"
-	ActionAllocationChanged            = "allocation.changed"
-	ActionPlanCreated                  = "PLAN_CREATED"
-	ActionPlanGenerated                = "PLAN_GENERATED"
-	ActionOrderAllocated               = "ORDER_ALLOCATED"
-	ActionOrderReallocated             = "ORDER_REALLOCATED"
-	ActionAllocationRemoved            = "ALLOCATION_REMOVED"
-	ActionPlanConfirmed                = "PLAN_CONFIRMED"
-	ActionBreakdownRecoveryConfirmed   = "BREAKDOWN_RECOVERY_CONFIRMED"
+	ActionOrderCreated      = "order.created"
+	ActionOrderDeferred     = "ORDER_DEFERRED"
+	ActionAllocationChanged = "allocation.changed"
+	ActionPlanCreated       = "PLAN_CREATED"
+	ActionPlanGenerated     = "PLAN_GENERATED"
+	ActionOrderAllocated    = "ORDER_ALLOCATED"
+	ActionOrderReallocated  = "ORDER_REALLOCATED"
+	ActionAllocationRemoved = "ALLOCATION_REMOVED"
+	ActionPlanConfirmed     = "PLAN_CONFIRMED"
+
+	ActionPlanAckReminderSent = "PLAN_ACK_REMINDER_SENT"
+
+	ActionBreakdownRecoveryConfirmed = "BREAKDOWN_RECOVERY_CONFIRMED"
+
 	ActionDisruptionRiskCreated        = "DISRUPTION_RISK_CREATED"
 	ActionDisruptionRiskOverridden     = "DISRUPTION_RISK_OVERRIDDEN"
 	ActionVehicleReassigned            = "vehicle.reassigned"
@@ -35,8 +39,8 @@ const (
 	ActionLoadingDockAlertRaised       = "LOADING_DOCK_ALERT_RAISED"
 	ActionLoadingDockAlertResolved     = "LOADING_DOCK_ALERT_RESOLVED"
 	ActionDeliveryRunPrepared          = "DELIVERY_RUN_PREPARED"
-	ActionDeliveryCheckoutBlocked         = "DELIVERY_CHECKOUT_BLOCKED"
-	ActionDeliveryCheckoutConfirmed       = "DELIVERY_CHECKOUT_CONFIRMED"
+	ActionDeliveryCheckoutBlocked      = "DELIVERY_CHECKOUT_BLOCKED"
+	ActionDeliveryCheckoutConfirmed    = "DELIVERY_CHECKOUT_CONFIRMED"
 	ActionDeliveryRunStarted           = "DELIVERY_RUN_STARTED"
 	ActionDeliveryStopArrived          = "DELIVERY_STOP_ARRIVED"
 	ActionDeliveryOutcomeRecorded      = "DELIVERY_OUTCOME_RECORDED"

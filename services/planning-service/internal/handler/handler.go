@@ -31,7 +31,9 @@ type Planner interface {
 	InternalTrips(ctx context.Context, date, depot string) ([]domain.InternalTrip, error)
 	InternalTrip(ctx context.Context, tripID string) (domain.InternalTrip, error)
 	InternalOrder(ctx context.Context, orderID string) (domain.OrderTracking, error)
-	Acknowledge(ctx context.Context, profile *authorization.Profile, planID string, version int) error
+	Acknowledge(ctx context.Context, profile *authorization.Profile, planID string, version int, tripID string) error
+	Remind(ctx context.Context, profile *authorization.Profile, planID, tripID, audience string) (domain.ReminderResult, error)
+	Reminders(ctx context.Context, profile *authorization.Profile, planID, tripID string) ([]domain.PlanReminder, error)
 	Revise(ctx context.Context, profile *authorization.Profile, planID string) error
 	BreakdownProposals(ctx context.Context, planID, vehicleID string) (map[string]any, error)
 	ConfirmBreakdown(ctx context.Context, profile *authorization.Profile, planID, sourceVehicle, targetVehicle string, tripNo int) (map[string]any, error)
@@ -67,6 +69,8 @@ func (h Handler) Routes(r chi.Router) {
 		r.With(authorization.RequireWith(h.Authn, h.Profiles, authorization.PermPlanView)).Get("/plans/{id}/breakdowns/proposals", h.breakdownProposals)
 		r.With(authorization.RequireWith(h.Authn, h.Profiles, authorization.PermPlanUpdate)).Post("/plans/{id}/breakdowns/reassign", h.confirmBreakdown)
 		r.With(authorization.RequireWith(h.Authn, h.Profiles, authorization.PermPlanAcknowledge)).Post("/plans/{id}/acknowledgements", h.acknowledge)
+		r.With(authorization.RequireWith(h.Authn, h.Profiles, authorization.PermPlanUpdate)).Post("/plans/{id}/reminders", h.remind)
+		r.With(authorization.RequireWith(h.Authn, h.Profiles, authorization.PermPlanAcknowledge)).Get("/plans/{id}/reminders", h.reminders)
 		r.With(authorization.RequireWith(h.Authn, h.Profiles, authorization.PermPlanView)).Get("/disruption-risks", h.listDisruptionRisks)
 		r.With(authorization.RequireWith(h.Authn, h.Profiles, authorization.PermPlanUpdate)).Post("/disruption-risks", h.createDisruptionRisk)
 		r.With(authorization.RequireWith(h.Authn, h.Profiles, authorization.PermPlanUpdate)).Post("/disruption-risks/{riskId}/override", h.overrideDisruptionRisk)
@@ -166,16 +170,41 @@ func (h Handler) revise(w http.ResponseWriter, r *http.Request) {
 
 func (h Handler) acknowledge(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Version int `json:"version"`
+		Version int    `json:"version"`
+		TripID  string `json:"tripId"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Version < 1 {
 		apierrors.BadRequest(w, "valid version is required")
 		return
 	}
-	if err := h.Service.Acknowledge(r.Context(), h.profile(r), chi.URLParam(r, "id"), body.Version); writeErr(w, err) {
+	if err := h.Service.Acknowledge(r.Context(), h.profile(r), chi.URLParam(r, "id"), body.Version, body.TripID); writeErr(w, err) {
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{"status": "acknowledged", "version": body.Version})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"status": "acknowledged", "version": body.Version, "tripId": body.TripID})
+}
+
+func (h Handler) remind(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		TripID   string `json:"tripId"`
+		Audience string `json:"audience"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		apierrors.BadRequest(w, "tripId and audience are required")
+		return
+	}
+	result, err := h.Service.Remind(r.Context(), h.profile(r), chi.URLParam(r, "id"), body.TripID, body.Audience)
+	if writeErr(w, err) {
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result)
+}
+
+func (h Handler) reminders(w http.ResponseWriter, r *http.Request) {
+	items, err := h.Service.Reminders(r.Context(), h.profile(r), chi.URLParam(r, "id"), r.URL.Query().Get("tripId"))
+	if writeErr(w, err) {
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
 func (h Handler) profile(r *http.Request) *authorization.Profile {
@@ -369,6 +398,8 @@ func writeErr(w http.ResponseWriter, err error) bool {
 		apierrors.WriteCode(w, http.StatusBadGateway, "Bad Gateway", msg, "workshop_pending")
 	case strings.HasPrefix(msg, "stale_version"):
 		apierrors.Conflict(w, "plan version is stale; reload and acknowledge the current version")
+	case strings.HasPrefix(msg, "forbidden: "):
+		apierrors.Forbidden(w, strings.TrimPrefix(msg, "forbidden: "))
 	case strings.HasPrefix(msg, "forbidden"):
 		apierrors.Forbidden(w, "acknowledgement requires an authenticated field role")
 	default:

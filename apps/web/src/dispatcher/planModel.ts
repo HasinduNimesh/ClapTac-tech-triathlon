@@ -12,7 +12,7 @@ export function normalizePlan(detail: PlanDetail): PlanDetail {
     unallocated: detail.unallocated || [],
     vehicles: detail.vehicles || [],
     orders: detail.orders || [],
-    publication: detail.publication ? { ...detail.publication, acknowledgements: detail.publication.acknowledgements || [] } : detail.publication,
+    publication: detail.publication ? { ...detail.publication, acknowledgements: detail.publication.acknowledgements || [], reminders: detail.publication.reminders || [] } : detail.publication,
   };
 }
 

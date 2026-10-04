@@ -190,6 +190,28 @@ test("shared text, status, guidance, and action colors meet WCAG AA contrast aga
   );
 });
 
+test("W8 silent-trip and chilled-long markers on the dispatcher Live operations page meet WCAG AA contrast", async () => {
+  const dispatcherCss = await readFile(new URL("../src/dispatcher/dispatcher.css", import.meta.url), "utf8");
+  const token = (name) => {
+    const match = dispatcherCss.match(new RegExp(`${name}:\\s*(#[0-9a-fA-F]{6})`));
+    assert.ok(match, `missing dispatcher token ${name}`);
+    return color(`color: ${match[1]};`, "color");
+  };
+  const white = color("color: #ffffff;", "color");
+  const mapLabelGrey = color("color: #4b5568;", "color"); // labelColor for silent trips in LiveOperationsPage.tsx
+  const pairs = [
+    ["silent badge text on its chip", token("--dp-silent"), token("--dp-silent-chip")],
+    ["silent row text and sub-lines on the grey row", token("--dp-silent"), token("--dp-silent-bg")],
+    ["main row text on the grey row", token("--dp-ink"), token("--dp-silent-bg")],
+    ["amber last-update time on the grey row", token("--dp-amber"), token("--dp-silent-bg")],
+    ["chilled-long amber marker", token("--dp-amber"), token("--dp-amber-bg")],
+    ["map label 'No update since HH:MM' on its white label", mapLabelGrey, white],
+  ];
+  for (const [label, foreground, background] of pairs) {
+    assert.ok(contrast(foreground, background) >= 4.5, `${label} contrast is below 4.5:1`);
+  }
+});
+
 test("keyboard focus indicator remains clearly visible against the page surface", () => {
   const focusColor = color(rule(":focus-visible"), "outline");
   const pageBackground = color(rule(":root"), "background");
