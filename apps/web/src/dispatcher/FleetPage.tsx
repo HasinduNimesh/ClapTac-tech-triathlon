@@ -77,7 +77,7 @@ export function FleetPage() {
             <label className="dp-field">{t("Cooling")}<select value={cooling} onChange={(e) => setCooling(e.target.value)}><option value="">{t("All capabilities")}</option><option value="reefer">{t("Refrigerated")}</option><option value="ambient">{t("Ambient")}</option></select></label>
           </div>
         </Panel>
-        <Note title={t("Allocation checks apply to every vehicle")}>{t("Match depot, cooling, weight, volume and delivery windows. Check weekly fuel and the maximum of two trips per vehicle.")}</Note>
+        <Note title={t("Allocation checks apply to every vehicle")}>{t("Match depot, cooling, weight, volume and delivery windows. Check weekly fuel and the maximum trips per vehicle set in Master data.")}</Note>
         {vehicles.error && <p className="dp-note dp-note--red" role="alert">{vehicles.error}</p>}
         <div className="dp-row dp-row--between"><h2 className="dp-panel-title">{t("Vehicle inventory")}</h2><span className="muted" style={{ fontSize: "0.8125rem" }}>{t("Week")}: {ledger.data ? `${dayLabel(ledger.data.weekStart)} – ${dayLabel(ledger.data.weekEnd)}` : dayLabel(date)}</span></div>
         {vehicles.loading && <p role="status">{t("Loading fleet…")}</p>}
