@@ -28,7 +28,7 @@ async function drainSerial(token: string, ownerId: string): Promise<LoaderSyncSt
         } else if (item.type === "CUSTODY_RECORD") {
           await apiJSON(`/orders/${encodeURIComponent(item.orderId || "")}/custody`, token, { method:"POST", headers, body:JSON.stringify({...item.payload,idempotencyKey:item.operationId}) });
         } else if (item.type === "READY") {
-          await apiJSON(`/loading/trips/${encodeURIComponent(item.tripId)}/ready`, token, { method: "POST", headers });
+          await apiJSON(`/loading/trips/${encodeURIComponent(item.tripId)}/ready`, token, { method: "POST", headers, body: JSON.stringify({ chilledTemperatureC: item.payload?.chilledTemperatureC, sealNumber: item.payload?.sealNumber }) });
         }
         return { applied: true };
       } catch (error) {

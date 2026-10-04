@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 
+import '../auth/auth_failure.dart';
 import '../auth/auth_gateway.dart';
 import 'operations.dart';
 import 'sqlite_sync_queue.dart';
@@ -167,6 +168,9 @@ class DeliverySyncWorker {
         onProgress?.call(SyncProgress.needsAttention, '$status: $detail');
         return;
       }
+    } on AuthFailure {
+      // Refreshing the access token needed a connection that is not there; the queue is untouched.
+      onProgress?.call(SyncProgress.offline, null);
     } on SocketException {
       onProgress?.call(SyncProgress.offline, null);
     } on TimeoutException {

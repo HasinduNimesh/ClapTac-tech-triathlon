@@ -5,14 +5,19 @@ import 'app/demo_flags.dart';
 import 'app/driver_flow.dart';
 import 'app/driver_session.dart';
 import 'auth/auth_config.dart';
+import 'connectivity/connectivity_monitor.dart';
 import 'auth/auth_gateway.dart';
 import 'auth/auth_store.dart';
 import 'auth/oidc_client.dart';
 import 'auth/profile_api.dart';
+import 'auth/revocation_queue.dart';
+import 'auth/token_revoker.dart';
+import 'messages/messages.dart';
 import 'offline/local_database.dart';
 import 'proof/proof_capturer.dart';
 import 'proof/proof_store.dart';
 import 'sync/sync.dart';
+import 'trips/route_store.dart';
 import 'sync/sqlite_sync_queue.dart';
 import 'sync/sync_worker.dart';
 import 'trips/trip_source.dart';
@@ -20,20 +25,23 @@ import 'trips/trip_start.dart';
 import 'trips/trips_api.dart';
 import 'theme/app_theme.dart';
 
-({AuthGateway? auth, TripSource? trips, TripStarter? starter, SyncQueue queue, DeliverySyncWorker? worker}) _buildServices() {
+({AuthGateway? auth, TripSource? trips, TripStarter? starter, MessageSource? messages, SyncQueue queue, DeliverySyncWorker? worker}) _buildServices() {
   final config = AuthConfig.fromEnvironment();
-  if (!config.isConfigured) return (auth: null, trips: null, starter: null, queue: InMemorySyncQueue(), worker: null);
+  if (!config.isConfigured) return (auth: null, trips: null, starter: null, messages: null, queue: InMemorySyncQueue(), worker: null);
   final auth = OidcAuthGateway(
     config: config,
     client: AppAuthOidcClient(config),
     profiles: ProfileApi(client: http.Client(), baseUrl: config.apiBaseUrl),
     store: SecureAuthStore(),
+    revoker: HttpTokenRevoker(client: http.Client(), config: config),
+    pendingRevocations: SecureRevocationQueue(),
   );
   final queue = SqliteSyncQueue();
   return (
     auth: auth,
     trips: ApiTripSource(api: TripsApi(client: http.Client(), baseUrl: config.apiBaseUrl), auth: auth),
     starter: ApiTripStarter(client: http.Client(), baseUrl: config.apiBaseUrl, auth: auth),
+    messages: ApiMessageSource(api: MessagesApi(client: http.Client(), baseUrl: config.apiBaseUrl), auth: auth),
     queue: queue,
     worker: DeliverySyncWorker(queue: queue, auth: auth, client: http.Client(), baseUrl: config.apiBaseUrl),
   );
@@ -47,11 +55,16 @@ void main() {
     auth: services.auth,
     trips: services.trips,
     starter: services.starter,
+    messageSource: services.messages,
+    // Only a real sign-in has a route worth keeping; demo builds always show the sample route.
+    routeStore: services.auth == null ? null : FileRouteStore(),
     database: InMemoryLocalDatabase(),
     queue: services.queue,
     worker: services.worker,
     // Real photos and signatures only with a real sign-in; demo builds say capture is unavailable.
     capturer: services.auth == null ? null : DeviceProofCapturer(store: FileProofStore()),
+    // Only a real sign-in needs the network; demo builds stay online.
+    connectivity: services.auth == null ? null : PlatformConnectivityMonitor(),
     // Demo switches are forced off in release builds (see DemoFlags).
     demoAuth: demo.auth,
     demoRoute: demo.route,
@@ -70,8 +83,11 @@ class WaypointDriverApp extends StatefulWidget {
     this.auth,
     this.trips,
     this.starter,
+    this.messageSource,
+    this.routeStore,
     this.worker,
     this.capturer,
+    this.connectivity,
   });
 
   final LocalDatabase database;
@@ -82,8 +98,11 @@ class WaypointDriverApp extends StatefulWidget {
   final AuthGateway? auth;
   final TripSource? trips;
   final TripStarter? starter;
+  final MessageSource? messageSource;
+  final RouteStore? routeStore;
   final DeliverySyncWorker? worker;
   final ProofCapturer? capturer;
+  final ConnectivityMonitor? connectivity;
 
   @override
   State<WaypointDriverApp> createState() => _WaypointDriverAppState();
@@ -99,7 +118,10 @@ class _WaypointDriverAppState extends State<WaypointDriverApp> {
     auth: widget.auth,
     trips: widget.trips,
     starter: widget.starter,
+    messageSource: widget.messageSource,
+    routeStore: widget.routeStore,
     worker: widget.worker,
+    connectivity: widget.connectivity,
   );
 
   @override

@@ -184,3 +184,49 @@ func hmacSHA256(key []byte, data string) []byte {
 	_, _ = m.Write([]byte(data))
 	return m.Sum(nil)
 }
+
+// Reader is a Store that can also read objects back. Open returns the object as
+// a stream the caller must close, so a large object is never held in memory just
+// to be copied on to an HTTP response.
+type Reader interface {
+	Store
+	Open(ctx context.Context, key string) (io.ReadCloser, error)
+}
+
+func (m *Memory) Open(_ context.Context, key string) (io.ReadCloser, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	b, ok := m.Objects[key]
+	if !ok {
+		return nil, fmt.Errorf("object not found")
+	}
+	return io.NopCloser(bytes.NewReader(append([]byte(nil), b...))), nil
+}
+
+func (s S3) Open(ctx context.Context, key string) (io.ReadCloser, error) {
+	if s.Endpoint == "" || s.Bucket == "" {
+		return nil, fmt.Errorf("object store not configured")
+	}
+	base, err := url.Parse(s.Endpoint)
+	if err != nil {
+		return nil, err
+	}
+	escaped := pathEscape(s.Bucket) + "/" + pathEscape(key)
+	u := *base
+	u.Path = strings.TrimSuffix(u.Path, "/") + "/" + escaped
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	sign(req, []byte{}, s.AccessKey, s.SecretKey, s.region(), u.Host, "/"+escaped)
+	resp, err := s.http().Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode >= 300 {
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<10))
+		return nil, fmt.Errorf("s3 GET %s: %d %s", key, resp.StatusCode, strings.TrimSpace(string(b)))
+	}
+	return resp.Body, nil
+}

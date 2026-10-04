@@ -5,7 +5,8 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 
-const rootPath = fileURLToPath(new URL("../src/", import.meta.url));
+const sourceRoot = new URL("../src/", import.meta.url);
+const rootPath = fileURLToPath(sourceRoot);
 const files = [];
 function visit(directory) {
   for (const name of readdirSync(directory)) {
