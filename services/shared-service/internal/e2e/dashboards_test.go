@@ -43,6 +43,7 @@ func TestSavedDashboardsAreOwnerScopedVersionedAndAudited(t *testing.T) {
 	CREATE TABLE shared.store_manager_profiles(user_id text, outlet_id text);
 	CREATE TABLE shared.loader_profiles(user_id text, depot text);
 	CREATE TABLE shared.driver_profiles(user_id text, vehicle_id text);
+	CREATE TABLE shared.dispatcher_profiles(user_id text, depot text);
 	INSERT INTO shared.users(id,identity_subject,role) VALUES ('u-store','store-test','STORE_MANAGER'),('u-store-b','store-b-test','STORE_MANAGER'),('u-driver','driver-test','DRIVER');
 	INSERT INTO shared.store_manager_profiles(user_id,outlet_id) VALUES('u-store','OUT001'),('u-store-b','OUT002')`); err != nil {
 		t.Fatal(err)

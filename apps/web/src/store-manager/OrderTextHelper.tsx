@@ -1,13 +1,14 @@
 import { useState } from "react";
-import { ApiError } from "../api/client";
 import { draftOrder, OrderDraftResponse, OrderQuestion } from "../api/assistants";
 import { useLocale } from "../i18n";
 import { DraftLine, FormFill, formFills, lineFromProduct } from "./orderDraft.mjs";
 import { formatDay } from "./orderStage.mjs";
+import { HelperUnavailableNote } from "./HelperUnavailableNote";
+import { isHelperUnavailable } from "./helperAvailability.mjs";
 
 const MAX_TEXT = 2000;
 
-type Props = { token: string; onFill: (fill: FormFill, neededBy: string | null) => void };
+type Props = { token: string; onFill: (fill: FormFill, neededBy: string | null) => void; onUnavailable?: () => void };
 
 function QuestionRow({ question, onAnswer, onSkip }: { question: OrderQuestion; onAnswer: (line: DraftLine) => void; onSkip: () => void }) {
   const { t } = useLocale();
@@ -44,11 +45,12 @@ function QuestionRow({ question, onAnswer, onSkip }: { question: OrderQuestion; 
   );
 }
 
-export function OrderTextHelper({ token, onFill }: Props) {
+export function OrderTextHelper({ token, onFill, onUnavailable }: Props) {
   const { t } = useLocale();
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [unavailable, setUnavailable] = useState(false);
   const [result, setResult] = useState<OrderDraftResponse | null>(null);
   const [lines, setLines] = useState<DraftLine[]>([]);
   const [questions, setQuestions] = useState<OrderQuestion[]>([]);
@@ -66,9 +68,13 @@ export function OrderTextHelper({ token, onFill }: Props) {
       setIncludePrevious(true);
     } catch (err) {
       setResult(null);
-      setError(err instanceof ApiError && err.status === 503
-        ? t("This is not available right now. Fill in the form below.")
-        : t("We could not read that order. Check your connection or fill in the form below."));
+      if (isHelperUnavailable(err)) {
+        // The helper is switched off: say so once, calmly. The order form is untouched and still works.
+        setUnavailable(true);
+        onUnavailable?.();
+      } else {
+        setError(t("We could not read that order. Check your connection or fill in the form below."));
+      }
     } finally {
       setBusy(false);
     }
@@ -81,6 +87,7 @@ export function OrderTextHelper({ token, onFill }: Props) {
     <section className="sm-form-card sm-helper-card" aria-labelledby="order-text-heading">
       <h2 id="order-text-heading" className="sm-form-card-title">{t("Paste or type your order")}</h2>
       <p className="sm-form-card-sub muted">{t("Write it the way you would tell a colleague, for example “same as last Tuesday” or “rice 10 bags, oil 24 bottles”. We fill in the form for you to check. Nothing is sent until you press Submit Order.")}</p>
+      {unavailable ? <HelperUnavailableNote /> : <>
       <div className="sm-field">
         <label htmlFor="order-text">{t("Your order in your own words")}</label>
         <textarea id="order-text" rows={3} maxLength={MAX_TEXT} value={text} onChange={(e) => setText(e.target.value)} />
@@ -92,6 +99,7 @@ export function OrderTextHelper({ token, onFill }: Props) {
         {result && <button type="button" className="sm-helper-link" onClick={() => { setResult(null); setLines([]); setQuestions([]); setText(""); }}>{t("Clear")}</button>}
       </div>
       {error && <p className="status-bad sm-form-error" role="alert">{error}</p>}
+      </>}
 
       {result && (
         <div className="sm-helper-result" aria-live="polite">

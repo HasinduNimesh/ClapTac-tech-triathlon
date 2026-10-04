@@ -619,13 +619,15 @@ td {
   background-size: cover;
   background-position: center right;
   border-radius: 0 0 16px 16px;
-  overflow: hidden;
+  /* No overflow clipping here: the Dashboard menu in .sm-hero-actions must overlay the page. The
+     rounded corners are kept because the background and the ::before wash both follow the radius. */
 }
 
 .sm-hero::before {
   content: "";
   position: absolute;
   inset: 0;
+  border-radius: inherit;
   background: radial-gradient(ellipse at 30% 60%, rgba(59,138,255,1) 0%, rgba(30,105,217,1) 40%, rgba(0,72,178,1) 100%);
   opacity: 0.92;
 }
@@ -654,7 +656,8 @@ td {
 
 .sm-hero-actions {
   position: relative;
-  z-index: 1;
+  /* Above .sm-stat-row (z-index 2), which is pulled up over the hero, so an open menu is not covered. */
+  z-index: 3;
   display: flex;
   align-items: center;
   gap: 12px;

@@ -1331,3 +1331,11 @@ Object.assign(labels.ta, {
   "Save name": "பெயரைச் சேமி",
   "Saving…": "சேமிக்கிறது…",
 });
+Object.assign(labels.si, {
+  "The helper isn't available right now — you can fill this in by hand.": "සහායකය දැන් නොලැබේ — ඔබට මෙය අතින්ම පිරවිය හැකිය.",
+  "Pick the cards by hand": "කාඩ්පත් අතින් තෝරන්න",
+});
+Object.assign(labels.ta, {
+  "The helper isn't available right now — you can fill this in by hand.": "உதவியாளர் இப்போது கிடைக்கவில்லை — இதை நீங்களே கைமுறையாக நிரப்பலாம்.",
+  "Pick the cards by hand": "அட்டைகளை கைமுறையாகத் தேர்ந்தெடுக்கவும்",
+});
