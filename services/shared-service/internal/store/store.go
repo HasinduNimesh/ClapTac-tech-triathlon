@@ -201,15 +201,28 @@ type EnqueueResult struct {
 	ID     int64  `json:"id,omitempty"`
 }
 
+// EnqueueNotification records the notice for the outlet and decides, separately, whether it may also be sent
+// by SMS. The in-app message is always stored: an outlet with no preference row, with consent withdrawn or with
+// this alert switched off still reads what will arrive on its Notifications page. Only the outlet's SMS consent
+// and alert choices decide the status: PENDING (eligible for the SMS worker) or IN_APP_ONLY (never claimed).
+//
+// Merge note: branch #35 made this return "suppressed" with no row when there is no preference row; that quick
+// fix is superseded by this behaviour (the status for such an outlet is "in_app_only", with a row).
 func (s Store) EnqueueNotification(ctx context.Context, e NotificationEvent) (EnqueueResult, error) {
-	var phone, locale string
-	var enabled bool
-	err := s.Pool.QueryRow(ctx, `SELECT phone_e164,locale,consent_enabled AND CASE $2 WHEN 'DEFERRAL' THEN deferrals_enabled WHEN 'LOAD_SHORTFALL' THEN deferrals_enabled WHEN 'MAJOR_DELAY' THEN major_delays_enabled ELSE false END FROM shared.outlet_notification_preferences WHERE outlet_id=$1`, e.OutletID, e.Type).Scan(&phone, &locale, &enabled)
-	if err != nil {
+	phone, locale, smsEligible := "", "en", false
+	err := s.Pool.QueryRow(ctx, `SELECT phone_e164,locale,consent_enabled AND CASE $2 WHEN 'DEFERRAL' THEN deferrals_enabled WHEN 'LOAD_SHORTFALL' THEN deferrals_enabled WHEN 'MAJOR_DELAY' THEN major_delays_enabled ELSE false END FROM shared.outlet_notification_preferences WHERE outlet_id=$1`, e.OutletID, e.Type).Scan(&phone, &locale, &smsEligible)
+	if err == pgx.ErrNoRows {
+		// No SMS contact on file: the in-app notice is still stored, in English, with no phone number.
+		var known bool
+		if err = s.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM shared.outlets WHERE id=$1)`, e.OutletID).Scan(&known); err != nil {
+			return EnqueueResult{}, err
+		}
+		if !known {
+			return EnqueueResult{}, fmt.Errorf("outlet not found")
+		}
+		phone, locale, smsEligible = "", "en", false
+	} else if err != nil {
 		return EnqueueResult{}, err
-	}
-	if !enabled {
-		return EnqueueResult{Status: "suppressed"}, nil
 	}
 	var body string
 	reason := notificationReason(locale, e.Reason)
@@ -239,8 +252,13 @@ func (s Store) EnqueueNotification(ctx context.Context, e NotificationEvent) (En
 			body = fmt.Sprintf("Waypoint: order %s is expected to arrive %d minutes later than planned.", e.OrderRef, e.DelayMinutes)
 		}
 	}
+	status, errorCode, result := "PENDING", "", "enqueued"
+	if !smsEligible {
+		// The SMS number is not kept on a row that will never be sent.
+		status, errorCode, result, phone = "IN_APP_ONLY", "CONSENT_OR_ALERT_DISABLED", "in_app_only", ""
+	}
 	var id int64
-	err = s.Pool.QueryRow(ctx, `INSERT INTO shared.notification_outbox(event_key,outlet_id,event_type,phone_e164,body) VALUES($1,$2,$3,$4,$5) ON CONFLICT(event_key) DO NOTHING RETURNING id`, e.EventKey, e.OutletID, e.Type, phone, body).Scan(&id)
+	err = s.Pool.QueryRow(ctx, `INSERT INTO shared.notification_outbox(event_key,outlet_id,event_type,phone_e164,body,status,error_code) VALUES($1,$2,$3,$4,$5,$6,NULLIF($7,'')) ON CONFLICT(event_key) DO NOTHING RETURNING id`, e.EventKey, e.OutletID, e.Type, phone, body, status, errorCode).Scan(&id)
 	if err == pgx.ErrNoRows {
 		err = s.Pool.QueryRow(ctx, `SELECT id FROM shared.notification_outbox WHERE event_key=$1`, e.EventKey).Scan(&id)
 		return EnqueueResult{Status: "duplicate", ID: id}, err
@@ -248,7 +266,7 @@ func (s Store) EnqueueNotification(ctx context.Context, e NotificationEvent) (En
 	if err != nil {
 		return EnqueueResult{}, err
 	}
-	return EnqueueResult{Status: "enqueued", ID: id}, nil
+	return EnqueueResult{Status: result, ID: id}, nil
 }
 
 func notificationReason(locale, code string) string {
@@ -310,7 +328,7 @@ func (s Store) ClaimNotification(ctx context.Context) (*PendingNotification, err
 	defer tx.Rollback(ctx)
 	var n PendingNotification
 	var consent, enabled bool
-	err = tx.QueryRow(ctx, `SELECT n.id,COALESCE(p.phone_e164,n.phone_e164),n.body,n.event_type,COALESCE(p.consent_enabled,false),COALESCE(CASE n.event_type WHEN 'DEFERRAL' THEN p.deferrals_enabled WHEN 'MAJOR_DELAY' THEN p.major_delays_enabled END,false)
+	err = tx.QueryRow(ctx, `SELECT n.id,COALESCE(p.phone_e164,n.phone_e164),n.body,n.event_type,COALESCE(p.consent_enabled,false),COALESCE(CASE n.event_type WHEN 'DEFERRAL' THEN p.deferrals_enabled WHEN 'LOAD_SHORTFALL' THEN p.deferrals_enabled WHEN 'MAJOR_DELAY' THEN p.major_delays_enabled END,false)
 	FROM shared.notification_outbox n LEFT JOIN shared.outlet_notification_preferences p USING(outlet_id)
 	WHERE n.status='PENDING' ORDER BY n.created_at,n.id LIMIT 1 FOR UPDATE OF n SKIP LOCKED`).Scan(&n.ID, &n.Phone, &n.Body, &n.EventType, &consent, &enabled)
 	if err == pgx.ErrNoRows {
@@ -320,7 +338,7 @@ func (s Store) ClaimNotification(ctx context.Context) (*PendingNotification, err
 		return nil, err
 	}
 	if !consent || !enabled {
-		if _, err = tx.Exec(ctx, `UPDATE shared.notification_outbox SET status='SUPPRESSED',phone_e164='',body='',error_code='CONSENT_OR_ALERT_DISABLED',updated_at=now(),payload_expires_at=now()+interval '7 days' WHERE id=$1`, n.ID); err != nil {
+		if _, err = tx.Exec(ctx, `UPDATE shared.notification_outbox SET status='IN_APP_ONLY',phone_e164='',error_code='CONSENT_OR_ALERT_DISABLED',updated_at=now(),payload_expires_at=now()+interval '7 days' WHERE id=$1`, n.ID); err != nil {
 			return nil, err
 		}
 		if err = tx.Commit(ctx); err != nil {
@@ -351,7 +369,7 @@ func (s Store) RecoverSendingNotifications(ctx context.Context) error {
 }
 
 func (s Store) PurgeExpiredNotificationPayloads(ctx context.Context) error {
-	_, err := s.Pool.Exec(ctx, `UPDATE shared.notification_outbox SET phone_e164='',body='' WHERE status IN ('DELIVERED','FAILED','UNKNOWN','SUPPRESSED') AND payload_expires_at<now() AND (phone_e164<>'' OR body<>'')`)
+	_, err := s.Pool.Exec(ctx, `UPDATE shared.notification_outbox SET phone_e164='',body='' WHERE status IN ('DELIVERED','FAILED','UNKNOWN','SUPPRESSED','IN_APP_ONLY') AND payload_expires_at<now() AND (phone_e164<>'' OR body<>'')`)
 	return err
 }
 
@@ -400,8 +418,8 @@ type OutletNotification struct {
 	CreatedAt time.Time `json:"createdAt"`
 }
 
-// OutletNotifications returns the newest messages queued for an outlet. Rows whose text has been
-// purged or was never kept (suppressed by the outlet's opt-out) have nothing to show and are left out.
+// OutletNotifications returns the newest messages stored for an outlet, whether they are waiting for SMS or
+// kept in-app only (IN_APP_ONLY, never sent). Rows whose text has been purged have nothing to show and are left out.
 func (s Store) OutletNotifications(ctx context.Context, outletID string, limit int) ([]OutletNotification, error) {
 	var known bool
 	if err := s.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM shared.outlets WHERE id=$1)`, outletID).Scan(&known); err != nil {

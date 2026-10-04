@@ -206,7 +206,7 @@ export function StoreManagerNotificationsPage() {
           <div className="sm-panel-header">
             <h2 id="store-messages-heading" className="sm-panel-title">{t("Messages sent to your store")}</h2>
           </div>
-          <p className="sm-messages-note muted">{t("Text messages the system queued for your store appear here, newest first.")}</p>
+          <p className="sm-messages-note muted">{t("Notices the system recorded for your store appear here, newest first. Some are also sent as text messages.")}</p>
 
           {messages.loading && <p className="sm-empty muted" role="status">{t("Loading messages…")}</p>}
           {messages.failed && !messages.loading && (
@@ -215,7 +215,7 @@ export function StoreManagerNotificationsPage() {
               <button type="button" className="tap" onClick={() => void messages.reload()}>{t("Retry")}</button>
             </div>
           )}
-          {!messages.loading && !messages.failed && messages.items.length === 0 && <p className="sm-empty muted">{t("No messages have been sent to your store yet.")}</p>}
+          {!messages.loading && !messages.failed && messages.items.length === 0 && <p className="sm-empty muted">{t("No notices have been recorded for your store yet.")}</p>}
 
           {messages.items.map((message) => (
             <div key={message.id} className="sm-notification-item">

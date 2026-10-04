@@ -124,19 +124,16 @@ func (h Handler) enqueueNotification(w http.ResponseWriter, r *http.Request) {
 	}
 	result, err := h.Store.EnqueueNotification(r.Context(), e)
 	if err != nil {
-		if strings.Contains(err.Error(), "no rows") {
-			apierrors.NotFound(w, "outlet notification preferences not found")
+		if strings.Contains(err.Error(), "not found") {
+			apierrors.NotFound(w, "outlet not found")
 		} else {
 			apierrors.Internal(w, "notification enqueue failed")
 		}
 		return
 	}
 	telemetry.NotificationEvents.WithLabelValues(e.Type, result.Status).Inc()
-	status := http.StatusAccepted
-	if result.Status == "suppressed" {
-		status = http.StatusOK
-	}
-	httpx.WriteJSON(w, status, map[string]any{"notification": result})
+	// Stored either way: "enqueued" (also eligible for SMS), "in_app_only" or "duplicate".
+	httpx.WriteJSON(w, http.StatusAccepted, map[string]any{"notification": result})
 }
 
 var notificationPhone = regexp.MustCompile(`^\+[1-9][0-9]{7,14}$`)

@@ -72,11 +72,15 @@ paths:
       operationId: listOutletNotifications
       security: [{ bearerAuth: [] }]
       description: >
-        The messages (SMS notices) the system queued for one outlet, newest first, at most 50. A store
+        The notices the system stored for one outlet, newest first, at most 50. Every notice is stored
+        in-app for the outlet, independently of its SMS consent, alert choices or whether it has any
+        notification preferences at all; those only decide whether a notice is also sent by SMS. A store
         manager (order:view-own) may read only their assigned outlet; order:view-all (dispatchers) may
-        read any outlet. Rows whose text was suppressed or purged are omitted, and the phone number is
-        never returned. status is the outbox state: PENDING/SENDING/QUEUED (waiting to be sent),
-        SENT, DELIVERED, FAILED/UNKNOWN (not sent). Without an SMS provider configured (local
+        read any outlet. Rows whose text was purged are omitted, and the phone number is never returned.
+        status is the outbox state: PENDING/SENDING/QUEUED (waiting to be sent by SMS), SENT, DELIVERED,
+        FAILED/UNKNOWN (SMS not sent), IN_APP_ONLY (stored for the Notifications page only; never sent
+        by SMS because consent or this alert is off, or no SMS contact is on file). SUPPRESSED is a
+        legacy value, whose text is no longer kept. Without an SMS provider configured (local
         environments) messages stay PENDING or become FAILED but the text is still returned.
       parameters:
         - { name: id, in: path, required: true, schema: { type: string } }
@@ -99,7 +103,7 @@ paths:
                         id: { type: integer, format: int64 }
                         eventType: { type: string, enum: [DEFERRAL, MAJOR_DELAY, ARRIVAL_CHANGE, DELIVERY_REJECTED, LOAD_SHORTFALL] }
                         body: { type: string }
-                        status: { type: string, enum: [PENDING, SENDING, QUEUED, SENT, DELIVERED, FAILED, UNKNOWN, SUPPRESSED] }
+                        status: { type: string, enum: [PENDING, SENDING, QUEUED, SENT, DELIVERED, FAILED, UNKNOWN, SUPPRESSED, IN_APP_ONLY] }
                         createdAt: { type: string, format: date-time }
         "401": { description: Unauthenticated }
         "403": { description: Not allowed to read this outlet }
