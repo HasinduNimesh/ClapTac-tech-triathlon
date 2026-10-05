@@ -36,6 +36,7 @@ func (h Handler) Routes(r chi.Router) {
 		r.Put("/profiles/me/display-name", h.authed(h.updateMyDisplayName))
 		r.With(authorization.RequireAnyWith(h.Authn, h.Store, authorization.PermOutletsReadInternal, authorization.PermOrderViewAll, authorization.PermOrderViewOwn, authorization.PermFleetView)).Get("/outlets", h.listOutlets)
 		r.With(authorization.RequireAnyWith(h.Authn, h.Store, authorization.PermOutletsReadInternal, authorization.PermOrderViewAll, authorization.PermOrderViewOwn, authorization.PermFleetView)).Get("/outlets/{id}", h.outlet)
+		r.With(authorization.RequireAnyWith(h.Authn, h.Store, authorization.PermOutletsReadInternal, authorization.PermOrderViewAll, authorization.PermOrderViewOwn)).Get("/products", h.products)
 		r.With(authorization.RequireWith(h.Authn, h.Store, authorization.PermMasterDataUpdate)).Put("/outlets/{id}", h.updateOutlet)
 		r.With(authorization.RequireWith(h.Authn, h.Store, authorization.PermOrderViewOwn)).Post("/outlets/{id}/access-instructions/confirm", h.confirmOutletAccessInstructions)
 		r.With(authorization.RequireWith(h.Authn, h.Store, authorization.PermMasterDataUpdate)).Get("/outlets/{id}/notification-preferences", h.notificationPreferences)
