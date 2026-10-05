@@ -91,6 +91,10 @@ class AuthService extends ChangeNotifier {
   // Why the last person was signed out by the app (inactivity). Per-tab storage, so the message
   // survives the round trip to the identity server's end-session page and back.
   static const _reasonKey = 'waypoint.loader.signout.reason';
+  // Set by the Waypoint web app, in this same tab, just before it hands a signed-in loader over to this app.
+  // Per-tab storage means a person opening the loader app fresh on a shared tablet never has it.
+  static const _handoffKey = 'waypoint.loader.handoff';
+  static const _handoffWindow = Duration(minutes: 2);
   // How long before expiry a token is renewed.
   static const _renewBefore = Duration(seconds: 60);
 
@@ -120,6 +124,11 @@ class AuthService extends ChangeNotifier {
         await _completeSignIn(url);
       } else {
         await _restore();
+        // Arriving straight from the web app's own sign-in: go on to the identity server without
+        // making the person press Sign in or type their password a second time.
+        if (status == AuthStatus.signedOut && error == null && _takeHandoff()) {
+          await signIn(afterWebSignIn: true);
+        }
       }
     } on SignInException catch (e) {
       _fail(e);
@@ -151,9 +160,21 @@ class AuthService extends ChangeNotifier {
 
   // ------------------------------------------------------------------ sign-in
 
+  /// True once, when the web app has just signed this person in and handed the tab over.
+  /// The marker is always removed, and only a recent one counts.
+  bool _takeHandoff() {
+    final raw = browser.sessionGet(_handoffKey);
+    browser.sessionRemove(_handoffKey);
+    final at = int.tryParse(raw ?? '');
+    if (at == null) return false;
+    final age = _now().millisecondsSinceEpoch - at;
+    return age >= -5000 && age <= _handoffWindow.inMilliseconds;
+  }
+
   /// Sends the browser to the identity server. `prompt=login` makes the next person on a
   /// shared tablet enter their own credentials instead of inheriting the previous session.
-  Future<void> signIn() async {
+  /// It is left off only right after the web app signed this same person in, in this tab.
+  Future<void> signIn({bool afterWebSignIn = false}) async {
     if (!config.configured) return _fail(SignInException(SignInError.notConfigured));
     error = null;
     try {
@@ -175,7 +196,7 @@ class AuthService extends ChangeNotifier {
         'nonce': nonce,
         'code_challenge': challengeFor(verifier),
         'code_challenge_method': 'S256',
-        'prompt': 'login',
+        if (!afterWebSignIn) 'prompt': 'login',
       });
       browser.navigate(target.toString());
     } on SignInException catch (e) {
