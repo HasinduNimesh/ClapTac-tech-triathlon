@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -411,6 +412,15 @@ func (s Store) PurgeExpiredNotificationPayloads(ctx context.Context) error {
 	return err
 }
 
+// gatewayMessageID is what the integration service stores for a text sent through our own cellular gateway:
+// "cg:" and the gateway's request id.
+var gatewayMessageID = regexp.MustCompile(`^cg:[A-Za-z0-9_-]{4,72}$`)
+
+// validProviderMessageID accepts a Twilio message SID (34 characters, "SM...") or a cellular gateway id ("cg:...").
+func validProviderMessageID(id string) bool {
+	return (len(id) == 34 && strings.HasPrefix(id, "SM")) || gatewayMessageID.MatchString(id)
+}
+
 func (s Store) UpdateNotificationStatus(ctx context.Context, messageSID, providerStatus, errorCode string) error {
 	var status string
 	switch strings.ToLower(providerStatus) {
@@ -425,7 +435,7 @@ func (s Store) UpdateNotificationStatus(ctx context.Context, messageSID, provide
 	default:
 		return fmt.Errorf("unsupported provider status")
 	}
-	if len(messageSID) != 34 || !strings.HasPrefix(messageSID, "SM") || len(errorCode) > 40 {
+	if !validProviderMessageID(messageSID) || len(errorCode) > 40 {
 		return fmt.Errorf("invalid provider status fields")
 	}
 	command, err := s.Pool.Exec(ctx, `UPDATE shared.notification_outbox SET status=$2,error_code=NULLIF($3,''),updated_at=now(),payload_expires_at=now()+interval '7 days' WHERE provider_message_id=$1 AND ((status='QUEUED' AND $2 IN ('QUEUED','SENT','DELIVERED','FAILED')) OR (status='SENT' AND $2 IN ('SENT','DELIVERED','FAILED')))`, messageSID, status, errorCode)

@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha1"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -132,5 +134,79 @@ func TestTwilioStatusCallbackRequiresValidSignatureAndUpdatesSharedStatus(t *tes
 	}
 	if sink.got.MessageSID != form.Get("MessageSid") || sink.got.Status != "delivered" {
 		t.Fatalf("wrong callback forwarded: %+v", sink.got)
+	}
+}
+
+func gatewaySignature(secret, body string) string {
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = io.WriteString(mac, body)
+	return "sha256=" + hex.EncodeToString(mac.Sum(nil))
+}
+
+func postGatewayEvent(h Handler, body, signature string) *httptest.ResponseRecorder {
+	router := chi.NewRouter()
+	h.Routes(router)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/integrations/notifications/gateway", strings.NewReader(body))
+	req.Header.Set("X-CG-Signature", signature)
+	res := httptest.NewRecorder()
+	router.ServeHTTP(res, req)
+	return res
+}
+
+func TestGatewayWebhookVerifiesSignatureAndForwardsOutboundStatus(t *testing.T) {
+	const secret = "whsec_test"
+	const sent = `{"id":"d1","type":"SMS_SENT","data":{"request_id":"req_abcd1234"}}`
+	sink := &fixedStatusSink{}
+	h := Handler{GatewayWebhookSecret: secret, StatusSink: sink}
+
+	if res := postGatewayEvent(h, sent, gatewaySignature("other", sent)); res.Code != http.StatusForbidden {
+		t.Fatalf("bad signature: %d", res.Code)
+	}
+	if sink.got.MessageSID != "" {
+		t.Fatal("an unsigned event reached the status sink")
+	}
+	if res := postGatewayEvent(h, sent, gatewaySignature(secret, sent)); res.Code != http.StatusNoContent {
+		t.Fatalf("valid event: %d %s", res.Code, res.Body.String())
+	}
+	if sink.got.MessageSID != "cg:req_abcd1234" || sink.got.Status != "sent" {
+		t.Fatalf("forwarded %+v", sink.got)
+	}
+
+	const failed = `{"id":"d2","type":"SMS_FAILED","data":{"request_id":"req_abcd1234"}}`
+	if res := postGatewayEvent(h, failed, gatewaySignature(secret, failed)); res.Code != http.StatusNoContent {
+		t.Fatalf("failed event: %d", res.Code)
+	}
+	if sink.got.Status != "failed" || sink.got.ErrorCode != "GATEWAY_SMS_FAILED" {
+		t.Fatalf("forwarded %+v", sink.got)
+	}
+}
+
+func TestGatewayWebhookAcknowledgesUnrelatedEventsAndRetriesStorageFailures(t *testing.T) {
+	const secret = "whsec_test"
+	sink := &fixedStatusSink{}
+	h := Handler{GatewayWebhookSecret: secret, StatusSink: sink}
+
+	const inbound = `{"id":"d3","type":"SMS_RECEIVED","data":{"from":"+94771112222"}}`
+	if res := postGatewayEvent(h, inbound, gatewaySignature(secret, inbound)); res.Code != http.StatusNoContent || sink.got.MessageSID != "" {
+		t.Fatalf("an inbound SMS must be acknowledged and ignored: %d %+v", res.Code, sink.got)
+	}
+	const garbage = "not json"
+	if res := postGatewayEvent(h, garbage, gatewaySignature(secret, garbage)); res.Code != http.StatusBadRequest {
+		t.Fatalf("garbage: %d", res.Code)
+	}
+	const sent = `{"id":"d1","type":"SMS_SENT","data":{"request_id":"req_abcd1234"}}`
+	h.StatusSink = &fixedStatusSink{err: io.ErrUnexpectedEOF}
+	if res := postGatewayEvent(h, sent, gatewaySignature(secret, sent)); res.Code != http.StatusInternalServerError {
+		t.Fatalf("a storage failure must answer 500 so the gateway retries: %d", res.Code)
+	}
+}
+
+func TestGatewayWebhookIsOffUntilConfigured(t *testing.T) {
+	const sent = `{"id":"d1","type":"SMS_SENT","data":{"request_id":"req_abcd1234"}}`
+	if res := postGatewayEvent(Handler{StatusSink: &fixedStatusSink{}}, sent, gatewaySignature("", sent)); res.Code != http.StatusNotImplemented {
+		t.Fatalf("no secret: %d", res.Code)
+	}
+	if res := postGatewayEvent(Handler{GatewayWebhookSecret: "s"}, sent, gatewaySignature("s", sent)); res.Code != http.StatusNotImplemented {
+		t.Fatalf("no sink: %d", res.Code)
 	}
 }
