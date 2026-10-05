@@ -85,6 +85,60 @@ Future<(AuthService, MemoryBrowser, FakeServer, Uri)> signedInto({String? return
 }
 
 void main() {
+  group('handing over from the web app', () {
+    const handoffKey = 'waypoint.loader.handoff';
+    final clock = DateTime.utc(2026, 10, 5, 9);
+
+    Future<(AuthService, MemoryBrowser)> startWith(Map<String, String> storage) async {
+      final browser = browserAt('https://app.example.test/loader-app/');
+      browser.storage.addAll(storage);
+      final auth = serviceFor(FakeServer(), browser, now: () => clock);
+      await auth.start();
+      return (auth, browser);
+    }
+
+    test('a fresh hand-off goes straight to the identity server without prompt=login, once', () async {
+      final (auth, browser) = await startWith({handoffKey: '${clock.millisecondsSinceEpoch - 3000}'});
+      final url = Uri.parse(browser.navigations.single);
+      expect('${url.scheme}://${url.host}${url.path}', '$issuer/oauth2/authorize');
+      expect(url.queryParameters.containsKey('prompt'), isFalse, reason: 'the web app just signed this same person in, in this tab');
+      expect(url.queryParameters['client_id'], 'waypoint-loader');
+      expect(browser.storage.containsKey(handoffKey), isFalse, reason: 'single use');
+      expect(auth.status, AuthStatus.signedOut);
+    });
+
+    test('an old hand-off is ignored, so the person sees the Sign in screen and a forced login', () async {
+      final (auth, browser) = await startWith({handoffKey: '${clock.millisecondsSinceEpoch - const Duration(minutes: 10).inMilliseconds}'});
+      expect(browser.navigations, isEmpty);
+      expect(browser.storage.containsKey(handoffKey), isFalse);
+      expect(auth.status, AuthStatus.signedOut);
+      await auth.signIn();
+      expect(Uri.parse(browser.navigations.single).queryParameters['prompt'], 'login');
+    });
+
+    test('a marker from the future or with junk in it is ignored', () async {
+      for (final value in ['${clock.millisecondsSinceEpoch + 600000}', 'yes', '']) {
+        final (_, browser) = await startWith({handoffKey: value});
+        expect(browser.navigations, isEmpty, reason: 'value "$value"');
+      }
+    });
+
+    test('opening the loader app with no hand-off never signs in by itself', () async {
+      final (auth, browser) = await startWith({});
+      expect(browser.navigations, isEmpty);
+      expect(auth.status, AuthStatus.signedOut);
+    });
+
+    test('a signed-out message such as inactivity is shown instead of starting another sign-in', () async {
+      final (auth, browser) = await startWith({
+        handoffKey: '${clock.millisecondsSinceEpoch - 1000}',
+        'waypoint.loader.signout.reason': 'inactivity',
+      });
+      expect(browser.navigations, isEmpty);
+      expect(auth.error, isNotNull);
+    });
+  });
+
   group('starting a sign-in', () {
     test('goes to the identity server with a PKCE challenge, state, the callback under /loader-app/ and the registered client', () async {
       final server = FakeServer();
