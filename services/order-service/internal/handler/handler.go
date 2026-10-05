@@ -45,6 +45,7 @@ func (h Handler) Routes(r chi.Router) {
 		r.With(authorization.RequireWith(h.Authn, h.Profiles, authorization.PermOrderViewAll)).Get("/export", h.exportJSON)
 		r.With(authorization.RequireWith(h.Authn, h.Profiles, authorization.PermOrderViewAll)).Post("/import", h.importJSON)
 		r.Post("/internal/delivery-followups", h.deliveryFollowup)
+		r.With(authorization.RequireWith(h.Authn, h.Profiles, authorization.PermOrderCreate)).Get("/suggestion", h.suggestion)
 		r.With(authorization.RequireWith(h.Authn, h.Profiles, authorization.PermOrderCreate)).Post("/", h.create)
 		r.With(authorization.RequireAnyWith(h.Authn, h.Profiles, authorization.PermOrderViewOwn, authorization.PermOrderViewAll, authorization.PermOrdersReadInternal)).Get("/", h.list)
 		r.With(authorization.RequireAnyWith(h.Authn, h.Profiles, authorization.PermOrderViewOwn, authorization.PermOrderViewAll, authorization.PermOrdersReadInternal)).Get("/{id}", h.get)
@@ -348,6 +349,16 @@ func (h Handler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"order": order})
+}
+
+func (h Handler) suggestion(w http.ResponseWriter, r *http.Request) {
+	profile, _ := authorization.ProfileFrom(r.Context())
+	q := r.URL.Query()
+	out, err := h.Service.Suggestion(profile, r.Header.Get("Authorization"), q.Get("date"), q.Get("temperature"))
+	if writeServiceError(w, err) {
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"suggestion": out})
 }
 
 func (h Handler) list(w http.ResponseWriter, r *http.Request) {

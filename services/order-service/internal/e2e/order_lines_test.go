@@ -76,6 +76,20 @@ func TestOrderLinesArePersistedWithTheOrderAndReadBack(t *testing.T) {
 		}
 	}
 
+	recent, err := repo.RecentLines("OUT034", "chilled", "2026-10-01")
+	if err != nil || len(recent) != 1 || recent[0].Packs["FR-MILK-1L"] != 3 || recent[0].Packs["FR-CURD-500G"] != 2 || recent[0].DeliveryDate != "2026-10-07" {
+		t.Fatalf("history groups one order's lines together: %+v %v", recent, err)
+	}
+	if none, _ := repo.RecentLines("OUT034", "ambient", "2026-10-01"); len(none) != 0 {
+		t.Fatalf("an order without lines, or another goods type, is not history: %+v", none)
+	}
+	if none, _ := repo.RecentLines("OUT034", "chilled", "2026-10-08"); len(none) != 0 {
+		t.Fatalf("orders before the cutoff date are not history: %+v", none)
+	}
+	if none, _ := repo.RecentLines("OUT999", "chilled", "2026-10-01"); len(none) != 0 {
+		t.Fatalf("another outlet's orders are not history: %+v", none)
+	}
+
 	// A failing line must not leave a half-saved order behind.
 	before, _ := repo.List(domain.ListFilter{})
 	_, err = repo.Create(domain.Order{OutletID: "OUT034", Brand: "Fresh", RequestedDeliveryDate: "2026-10-07", OrderUnits: 1, OrderWeightKg: 1, OrderVolumeM3: 1, TemperatureRequirement: domain.TempAmbient, CreatedBy: "u", Lines: []domain.OrderLine{

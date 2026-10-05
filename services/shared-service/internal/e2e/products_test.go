@@ -60,7 +60,7 @@ func TestProductLookupIsScopedToTheCallersRange(t *testing.T) {
 	('FR-RICE-5KG','SKU-2','1000000000002','Fresh','FR-DAIRY','rice','Samba rice 5 kg','5 kg','bag',1,5.100,0.0090,'ambient'),
 	('FR-OLD-1KG','SKU-3','1000000000003','Fresh','FR-DAIRY','old','Old line','1 kg','bag',1,1.000,0.0010,'ambient');
 	UPDATE shared.products SET status='discontinued' WHERE id='FR-OLD-1KG';
-	INSERT INTO shared.outlet_products(outlet_id,product_id) VALUES ('OUT001','FR-MILK-1L'),('OUT002','FR-RICE-5KG')`); err != nil {
+	INSERT INTO shared.outlet_products(outlet_id,product_id,avg_daily_sales_each) VALUES ('OUT001','FR-MILK-1L',36),('OUT002','FR-RICE-5KG',4)`); err != nil {
 		t.Fatal(err)
 	}
 	router := chi.NewRouter()
@@ -77,13 +77,13 @@ func TestProductLookupIsScopedToTheCallersRange(t *testing.T) {
 		return res.Code, body.Items
 	}
 
-	if code, items := call("store-test", "/api/v1/shared/products"); code != 200 || len(items) != 1 || items[0].ID != "FR-MILK-1L" || items[0].PackWeightKg != 12.6 || items[0].Pack != "crate" {
+	if code, items := call("store-test", "/api/v1/shared/products"); code != 200 || len(items) != 1 || items[0].ID != "FR-MILK-1L" || items[0].PackWeightKg != 12.6 || items[0].Pack != "crate" || items[0].AvgDailySalesEach != 36 {
 		t.Fatalf("a store manager sees only their outlet's range: %d %+v", code, items)
 	}
 	if code, items := call("store-test", "/api/v1/shared/products?outlet_id=OUT002"); code != 200 || len(items) != 1 || items[0].ID != "FR-MILK-1L" {
 		t.Fatalf("a store manager cannot ask for another outlet's range: %d %+v", code, items)
 	}
-	if code, items := call("disp-test", "/api/v1/shared/products?brand=Fresh"); code != 200 || len(items) != 2 {
+	if code, items := call("disp-test", "/api/v1/shared/products?brand=Fresh"); code != 200 || len(items) != 2 || items[0].AvgDailySalesEach != 0 {
 		t.Fatalf("staff see every active product; discontinued ones are hidden: %d %+v", code, items)
 	}
 	if code, items := call("disp-test", "/api/v1/shared/products?ids=FR-RICE-5KG,FR-MILK-1L,FR-RICE-5KG,FR-OLD-1KG"); code != 200 || len(items) != 2 {

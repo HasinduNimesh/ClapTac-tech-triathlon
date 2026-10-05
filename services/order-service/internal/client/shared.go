@@ -93,6 +93,32 @@ func (s Shared) Outlet(id, bearer string) (domain.Outlet, error) {
 	return out.Outlet, nil
 }
 
+// Range reads the caller's own outlet range with its daily sales (shared-service scopes it to the token's outlet).
+func (s Shared) Range(bearer string) ([]domain.Product, error) {
+	req, err := http.NewRequest(http.MethodGet, s.BaseURL+"/api/v1/shared/products", nil)
+	if err != nil {
+		return nil, err
+	}
+	if bearer != "" {
+		req.Header.Set("Authorization", bearer)
+	}
+	resp, err := s.http().Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("products status %d", resp.StatusCode)
+	}
+	var out struct {
+		Items []domain.Product `json:"items"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out.Items, nil
+}
+
 // Products reads catalog products by id, with the caller's own token so shared-service applies its access rules.
 func (s Shared) Products(ids []string, bearer string) ([]domain.Product, error) {
 	req, err := http.NewRequest(http.MethodGet, s.BaseURL+"/api/v1/shared/products?ids="+url.QueryEscape(strings.Join(ids, ",")), nil)
