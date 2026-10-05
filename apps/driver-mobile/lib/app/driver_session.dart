@@ -839,7 +839,10 @@ class DriverSession extends ChangeNotifier {
     tripStartState = TripStartState.starting;
     tripStartMessage = null;
     notifyListeners();
-    final result = await source.start(trip, operationId: _operationId('start:${base.tripId}'));
+    // Only a driver who confirmed the whole load sends a checkout. One who reported something missing sends none,
+    // so the server refuses the start instead of being told a load was complete when it was not.
+    final confirmed = loadCheck == LoadCheck.confirmed ? [for (final stop in base.stops) if (stop.orderId.isNotEmpty) stop.orderId] : null;
+    final result = await source.start(trip, operationId: _operationId('start:${base.tripId}'), confirmedOrderIds: confirmed);
     // Started for a driver who has since signed out: it says nothing about whoever is signed in now, and
     // the state on screen is theirs, so it is left alone.
     if (epoch != _identityEpoch) return;
