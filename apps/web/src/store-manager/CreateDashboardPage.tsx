@@ -4,6 +4,7 @@ import { useAuth } from "../auth/AuthContext";
 import { useLocale } from "../i18n";
 import { DashboardGrid } from "./DashboardCards";
 import { useHelpersAvailable } from "../api/assistants";
+import { TEMPLATES, moveCard } from "./dashboardRequest.mjs";
 import { AssistantTurn, CARD_CATALOGUE, CardId, Dashboard, applyRequest, askAssistant, newDashboardId, saveToServer, useDashboards } from "./dashboards";
 import { HelperUnavailableNote } from "./HelperUnavailableNote";
 import { StoreManagerHero } from "./StoreManagerHero";
@@ -56,6 +57,12 @@ export function CreateDashboardPage() {
   // matcher and the cards can be ticked by hand, so a dashboard can always be built and saved.
   const helperOff = helpers !== null && (!helpers.dashboard || helperFailed);
   const toggleCard = (id: CardId) => setDraft({ ...draft, cards: draft.cards.includes(id) ? draft.cards.filter((c) => c !== id) : [...draft.cards, id], updatedAt: new Date().toISOString() });
+  const touch = (next: Partial<Dashboard>) => setDraft((d) => ({ ...d, ...next, updatedAt: new Date().toISOString() }));
+  const applyTemplate = (tpl: (typeof TEMPLATES)[number]) => {
+    touch({ name: t(tpl.name), cards: tpl.cards as CardId[], filter: tpl.filter as Dashboard["filter"] });
+    setTurns((all) => [...all, { from: "assistant", text: `${t("Started from")} "${t(tpl.name)}". ${t("Ask for a change, or save it when it looks right.")}` }]);
+  };
+  const cardTitle = (id: CardId) => t(CARD_CATALOGUE.find((c) => c.id === id)?.title || id);
   function send(e: FormEvent) { e.preventDefault(); void ask(message); }
   async function save() {
     if (!draft.cards.length || busy) return;
@@ -82,6 +89,12 @@ export function CreateDashboardPage() {
             <div className="sm-chat-log" ref={log} aria-live="polite">
               {turns.map((turn, i) => <p key={i} className={`sm-bubble sm-bubble--${turn.from}`}>{turn.text}</p>)}
               {turns.length === 1 && <div className="dp-chips">{SUGGESTIONS.map((s) => <button key={s} type="button" className="dp-chip" onClick={() => void ask(s)}>{t(s)}</button>)}</div>}
+              {turns.length === 1 && !existing && (
+                <div>
+                  <p className="dp-section-label" style={{ margin: "12px 0 6px" }}>{t("Start from a template")}</p>
+                  <div className="dp-chips">{TEMPLATES.map((tpl) => <button key={tpl.name} type="button" className="dp-chip" onClick={() => applyTemplate(tpl)}>{t(tpl.name)}</button>)}</div>
+                </div>
+              )}
             </div>
             {helperOff && (
               <div className="sm-helper-off">
@@ -110,6 +123,18 @@ export function CreateDashboardPage() {
               <span className="dp-tag dp-tag--green">{t("Draft")} · {draft.cards.length} {t("cards")}</span>
             </div>
             <div className="dp-panel-body">
+              {draft.cards.length > 0 && (
+                <ul className="sm-card-order" aria-label={t("Cards in this dashboard")}>
+                  {draft.cards.map((id, i) => (
+                    <li key={id}>
+                      <span>{cardTitle(id)}</span>
+                      <button type="button" className="dp-btn dp-btn--sm dp-btn--secondary" disabled={i === 0} aria-label={`${t("Move up")}: ${cardTitle(id)}`} onClick={() => touch({ cards: moveCard(draft.cards, id, -1) as CardId[] })}>↑</button>
+                      <button type="button" className="dp-btn dp-btn--sm dp-btn--secondary" disabled={i === draft.cards.length - 1} aria-label={`${t("Move down")}: ${cardTitle(id)}`} onClick={() => touch({ cards: moveCard(draft.cards, id, 1) as CardId[] })}>↓</button>
+                      <button type="button" className="dp-btn dp-btn--sm dp-btn--secondary" aria-label={`${t("Remove")}: ${cardTitle(id)}`} onClick={() => touch({ cards: draft.cards.filter((c) => c !== id) })}>✕</button>
+                    </li>
+                  ))}
+                </ul>
+              )}
               {draft.cards.length === 0 ? <p className="dp-note">{t("Your dashboard appears here as you describe it. Try one of the suggestions.")}</p> : loading ? <p className="muted" role="status">{t("Loading your orders…")}</p> : <DashboardGrid dashboard={draft} rows={rows} />}
               {error && <p className="status-bad" role="alert">{error}</p>}
               <div className="dp-row" style={{ justifyContent: "flex-end", marginTop: 20 }}>
