@@ -4,6 +4,7 @@ import { apiFetch, Order } from "../api/client";
 import { todayInSriLanka } from "../api/date.mjs";
 import { DEPOT_LABELS, sameDepot } from "../api/loading";
 import { PlanDetail } from "../api/planning";
+import { OrderItems } from "../components/OrderItems";
 import { useLocale } from "../i18n";
 import { formatCutoff } from "../store-manager/cutoff.mjs";
 import { useOrderCutoff } from "../store-manager/useOrderCutoff";
@@ -227,6 +228,7 @@ export function OrderQueuePage() {
             <div><dt>{t("Weight")}</dt><dd>{kg(selected.orderWeightKg)}</dd></div>
             <div><dt>{t("Volume")}</dt><dd>{m3(selected.orderVolumeM3)}</dd></div>
           </dl>
+          <OrderItems lines={selected.lines} units={selected.orderUnits} />
           <h3 className="dp-h3">{t("Confirmation & cutoff")}</h3>
           <p style={{ margin: 0, fontSize: "0.875rem" }}>{selected.createdAt ? `${t("Placed")} ${dateTime(selected.createdAt)} · ${createdHour !== undefined && createdHour < 16 ? t("Before the 4:00 PM cutoff") : t("After the 4:00 PM cutoff · moves to the next run")}` : t("Placement time unavailable")}</p>
           <h3 className="dp-h3">{t("Latest deferral")}</h3>
