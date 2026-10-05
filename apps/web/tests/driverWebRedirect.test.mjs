@@ -29,3 +29,12 @@ test("the home page and the driver page share one APK lookup", () => {
   assert.match(read("routes/HomePage.tsx"), /useDriverApk\(\)/);
   assert.match(read("routes/useDriverApk.ts"), /\/downloads\/waypoint-driver\.json/);
 });
+
+// The download card shows the version, the size and the checksum, not a build date.
+test("neither download card shows a build date", () => {
+  for (const file of ["driver/DriverAppPage.tsx", "routes/HomePage.tsx"]) {
+    const src = read(file);
+    assert.doesNotMatch(src, /builtOn/, `${file} must not display the build date`);
+    assert.doesNotMatch(src, /t\("Updated"\)/, `${file} must not label a build date`);
+  }
+});

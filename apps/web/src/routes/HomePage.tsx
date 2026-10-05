@@ -168,7 +168,6 @@ export function HomePage() {
                     <p className="lp-app-meta">
                       <span>{t("Version")} <b>{apk.version}</b></span>
                       <span><b>{apk.sizeLabel}</b></span>
-                      {apk.builtOn && <span>{t("Updated")} <b>{apk.builtOn}</b></span>}
                       <span>{t("Android 8.0 or newer")}</span>
                     </p>
                     <ol className="lp-app-steps">

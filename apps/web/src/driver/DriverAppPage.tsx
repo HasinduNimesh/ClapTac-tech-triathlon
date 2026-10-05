@@ -19,7 +19,7 @@ export function DriverAppPage() {
           <a className="tap primary" href="/downloads/waypoint-driver.apk" download>{t("Download the Android app")}</a>
           <p className="muted">
             {t("Version")} <b>{apk.version}</b> · <b>{apk.sizeLabel}</b>
-            {apk.builtOn ? <> · {t("Updated")} <b>{apk.builtOn}</b></> : null} · {t("Android 8.0 or newer")}
+            · {t("Android 8.0 or newer")}
           </p>
           <h2>{t("How to install")}</h2>
           <ol>
