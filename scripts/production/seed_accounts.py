@@ -141,6 +141,10 @@ def main():
 
     CREDENTIALS_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    backup = CREDENTIALS_DIR / f"users-backup-{stamp}.tar"
+    run(["sudo", "tar", "-cf", str(backup), "-C", str(USERS_DIR.parent), "users"])
+    run(["sudo", "chown", f"{os.getuid()}:{os.getgid()}", str(backup)])
+    backup.chmod(0o600)
     list_path = CREDENTIALS_DIR / f"accounts-{stamp}.txt"
     created_files, rows, lines = [], [], []
     try:
@@ -181,14 +185,33 @@ def main():
     with os.fdopen(fd, "w") as out:
         out.write("ROLE           USERNAME                                   PASSWORD\n" + "\n".join(lines) + "\n")
 
+    def restart_thunderid():
+        run(["sudo", "docker", "restart", "waypoint-thunderid-prod"])
+        status = "unknown"
+        for _ in range(40):
+            status = run(["sudo", "docker", "inspect", "waypoint-thunderid-prod", "--format",
+                          "{{.State.Health.Status}}"]).strip()
+            if status == "healthy":
+                break
+            time.sleep(3)
+        return status
+
     print("Restarting ThunderID so the new accounts can sign in (about a minute)...")
-    run(["sudo", "docker", "restart", "waypoint-thunderid-prod"])
-    for _ in range(40):
-        health = run(["sudo", "docker", "inspect", "waypoint-thunderid-prod", "--format",
-                      "{{.State.Health.Status}}"]).strip()
-        if health == "healthy":
-            break
-        time.sleep(3)
+    health = restart_thunderid()
+    if health != "healthy":
+        print(f"ThunderID is {health}. Rolling back the new accounts so existing sign-ins keep working...")
+        for path in created_files:
+            subprocess.run(["sudo", "rm", "-f", "--", str(path)])
+        ids = ", ".join(f"'{r[0]}'" for r in rows)
+        undo = "BEGIN;\n"
+        for table, column in (("shared.dispatcher_profiles", None), ("shared.store_manager_profiles", None),
+                              ("shared.loader_profiles", None), ("shared.driver_profiles", None)):
+            undo += f"DELETE FROM {table} WHERE user_id IN ({ids});\n"
+        undo += f"DELETE FROM shared.users WHERE id IN ({ids});\nCOMMIT;\n"
+        psql(undo)
+        list_path.unlink(missing_ok=True)
+        print(f"After rollback ThunderID is {restart_thunderid()}. Nothing was kept. Backup: {backup}")
+        sys.exit(1)
     print(f"ThunderID is {health}.\n")
     print(open(list_path).read())
     print(f"Saved to {list_path} (only you can read it). Put these in a password manager, then delete the file.")
