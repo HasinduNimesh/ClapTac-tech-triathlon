@@ -27,6 +27,7 @@ class WaypointLoaderApp extends StatefulWidget {
     super.key,
     required this.auth,
     this.inactivityTimeout = loaderInactivityTimeout,
+    this.inactivityWarning = loaderInactivityWarning,
     this.now,
     this.apiClientFor,
     this.navigatorKey,
@@ -34,6 +35,7 @@ class WaypointLoaderApp extends StatefulWidget {
 
   final AuthService auth;
   final Duration inactivityTimeout;
+  final Duration inactivityWarning;
 
   /// A clock for tests; defaults to the real one.
   final DateTime Function()? now;
@@ -108,6 +110,7 @@ class _WaypointLoaderAppState extends State<WaypointLoaderApp> {
         builder: (context, _) => InactivityGuard(
           active: auth.status == AuthStatus.signedIn,
           timeout: widget.inactivityTimeout,
+          warnBefore: widget.inactivityWarning,
           now: widget.now,
           onExpired: _signOutForInactivity,
           child: child ?? const SizedBox.shrink(),
