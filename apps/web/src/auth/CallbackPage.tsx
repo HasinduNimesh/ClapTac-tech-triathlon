@@ -4,6 +4,7 @@ import { userManager } from "./userManager";
 import { useAuth } from "./AuthContext";
 import { useLocale } from "../i18n";
 import { LOADER_APP_PATH } from "../loader/LoaderAppRedirect";
+import { markLoaderHandoff } from "../loader/handoff.mjs";
 
 export function CallbackPage() {
   const navigate = useNavigate();
@@ -24,7 +25,9 @@ export function CallbackPage() {
         } else if (role === "DISPATCHER") {
           navigate("/dispatcher/orders", { replace: true });
         } else if (role === "LOADER") {
-          // Loaders work in the separate loader app, not in this one.
+          // Loaders work in the separate loader app, not in this one. The marker lets it carry on signing in
+          // instead of asking for a second sign-in.
+          markLoaderHandoff();
           window.location.replace(LOADER_APP_PATH);
         } else if (role === "DRIVER") {
           navigate("/driver", { replace: true });

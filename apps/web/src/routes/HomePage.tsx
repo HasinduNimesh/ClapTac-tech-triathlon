@@ -5,6 +5,7 @@ import { useLocale } from "../i18n";
 import { describeApk, type ApkInfo } from "./apkInfo.mjs";
 import { startLoginRedirect } from "./startLoginRedirect.mjs";
 import { workspaceFor } from "./workspaceLink.mjs";
+import { markLoaderHandoff } from "../loader/handoff.mjs";
 import "./landing.css";
 import logo from "../assets/login/logo.png";
 import hero from "../assets/login/hero.png";
@@ -51,7 +52,7 @@ export function HomePage() {
 
   const primary = signedIn
     ? (workspace.external
-      ? <a className="lp-btn lp-btn--primary" href={workspace.href}>{t("Open my workspace")}</a>
+      ? <a className="lp-btn lp-btn--primary" href={workspace.href} onClick={() => markLoaderHandoff()}>{t("Open my workspace")}</a>
       : <Link className="lp-btn lp-btn--primary" to={workspace.href}>{t("Open my workspace")}</Link>)
     : <button type="button" className="lp-btn lp-btn--primary" disabled={starting} onClick={onSignIn}>{starting ? t("Connecting to identity provider…") : t("Sign in")}</button>;
 
