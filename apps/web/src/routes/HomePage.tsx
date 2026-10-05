@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { roleOf, useAuth } from "../auth/AuthContext";
 import { useLocale } from "../i18n";
-import { describeApk, type ApkInfo } from "./apkInfo.mjs";
+import { useDriverApk } from "./useDriverApk";
 import { startLoginRedirect } from "./startLoginRedirect.mjs";
 import { workspaceFor } from "./workspaceLink.mjs";
 import { markLoaderHandoff } from "../loader/handoff.mjs";
@@ -22,21 +22,12 @@ export function HomePage() {
   const { t, locale, setLocale } = useLocale();
   const { login, user, profile } = useAuth();
   const [status, setStatus] = useState<Status>("checking");
-  const [apk, setApk] = useState<ApkInfo | null | undefined>(undefined);
+  const apk = useDriverApk();
   const [starting, setStarting] = useState(false);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     fetch("/health/live").then((r) => setStatus(r.ok ? "live" : "down")).catch(() => setStatus("down"));
-  }, []);
-
-  useEffect(() => {
-    let active = true;
-    fetch("/downloads/waypoint-driver.json", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((meta) => { if (active) setApk(describeApk(meta)); })
-      .catch(() => { if (active) setApk(null); });
-    return () => { active = false; };
   }, []);
 
   const onSignIn = () =>
