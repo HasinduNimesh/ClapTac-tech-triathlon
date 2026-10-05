@@ -1582,5 +1582,29 @@ Object.assign(labels.ta, {
 });
 
 // Feature-audit gap work (PL-10, LD-6, LO-6, LO-2 grouping, ST-3, XR-3, receipt temperature).
+Object.assign(labels.si, {
+  "Receipts and shortages": "ලැබීම් සහ හිඟකම්",
+  "Delivery performance": "බෙදාහැරීමේ කාර්ය සාධනය",
+  "Chilled watch": "සිසිල් භාණ්ඩ නිරීක්ෂණය",
+  "Weekly overview": "සතිපතා දළ විශ්ලේෂණය",
+  "Move up": "ඉහළට",
+  "Move down": "පහළට",
+  "Start from a template": "අච්චුවකින් ආරම්භ කරන්න",
+  "Cards in this dashboard": "මෙම උපකරණ පුවරුවේ කාඩ්පත්",
+  "Started from": "ආරම්භ කළේ",
+  "Ask for a change, or save it when it looks right.": "වෙනසක් ඉල්ලන්න, නැතහොත් නිවැරදි නම් සුරකින්න.",
+});
+Object.assign(labels.ta, {
+  "Receipts and shortages": "பெறுதல்களும் பற்றாக்குறைகளும்",
+  "Delivery performance": "விநியோக செயல்திறன்",
+  "Chilled watch": "குளிர்ப்பொருள் கண்காணிப்பு",
+  "Weekly overview": "வாராந்திர மேலோட்டம்",
+  "Move up": "மேலே நகர்த்து",
+  "Move down": "கீழே நகர்த்து",
+  "Start from a template": "வார்ப்புருவிலிருந்து தொடங்கு",
+  "Cards in this dashboard": "இந்தப் பலகையின் அட்டைகள்",
+  "Started from": "தொடங்கியது",
+  "Ask for a change, or save it when it looks right.": "மாற்றம் கேளுங்கள், அல்லது சரியாக இருந்தால் சேமியுங்கள்.",
+});
 Object.assign(labels.si, auditGapLabels.si);
 Object.assign(labels.ta, auditGapLabels.ta);
