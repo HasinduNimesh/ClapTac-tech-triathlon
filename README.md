@@ -161,7 +161,7 @@ The following initial credentials were supplied by Team ClapTac for testing and 
 | Username | Role | Initial testing password |
 | --- | --- | --- |
 | `dispatcher@claptac.dev` | Dispatcher | `41a7931d95b729d4e5deb2cfba335547eba72755c944983c1348805e9597b455` |
-| `loader@claptac.dev` | Loader | `2321957f8a44bc551650df5349e11ef84357bfb2822695a9882a44f703baf7bac` |
+| `loader@claptac.dev` | Loader | `2321957f8a4bc551650df5349e11ef84357bfb2822695a9882a44f703baf7bac` |
 | `damindu@claptac.dev` | Driver | `9cd7571458cd096c297f27664991f68ff604a6ca2cdcb940ba52073939e3c993` |
 | `saman@claptac.dev` | Store Manager | `4f9cebf74f3705fb161d22e97c9464ac81fd13e425b3d8ba80c768df305fc29a` |
 
