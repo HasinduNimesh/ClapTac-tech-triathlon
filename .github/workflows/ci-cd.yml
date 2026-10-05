@@ -3,7 +3,7 @@ name: CI and production deployment
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, bug-fixes]
   workflow_dispatch:
 
 permissions:
@@ -179,7 +179,7 @@ jobs:
     name: Publish ${{ matrix.service }}
     needs: [changes, go, web, mobile, loader, docker]
     # A push only runs the checks its paths need, so skipped checks are fine; a failed one is not.
-    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/bug-fixes') && github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -267,7 +267,7 @@ jobs:
 
   deploy:
     name: Deploy to Azure VM
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/bug-fixes')
     needs: [changes, go, web, mobile, loader, docker, images]
     runs-on: ubuntu-latest
     environment: production
@@ -298,11 +298,13 @@ jobs:
           audience='${{ vars.PROD_OIDC_AUDIENCE || 'https://waypoint.claptac.dev/api/v1' }}'
           ssh -i "$key_file" -o BatchMode=yes -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile="$hosts_file" \
-            "$AZURE_SSH_USER@$AZURE_SSH_HOST" bash -s -- "$GITHUB_SHA" "$registry_prefix" "$audience" <<'REMOTE' | tee "$deploy_log"
+            "$AZURE_SSH_USER@$AZURE_SSH_HOST" bash -s -- "$GITHUB_SHA" "$registry_prefix" "$audience" "$GITHUB_REF_NAME" <<'REMOTE' | tee "$deploy_log"
           set -euo pipefail
           revision="$1"
           prefix="$2"
           audience="$3"
+          target="$4"
+          case "$target" in main|bug-fixes) ;; *) echo "Refusing to deploy from branch '$target'." >&2; exit 1;; esac
           services="order-service planning-service fleet-service loading-service delivery-service shared-service integration-service agent-orchestrator agent-assistants web loader-web"
           # Every compose call sees the image tag being deployed without editing .env first.
           # The remote shell reads this script from stdin. Compose must not consume
@@ -311,12 +313,12 @@ jobs:
           cd "$HOME/ClapTac-tech-triathlon"
           test -f .env
           branch="$(git rev-parse --abbrev-ref HEAD)"
-          if [ "$branch" != main ]; then
-            echo "The VM checkout is on '$branch', not main. Do the one-time checkout move in docs/ci-cd.md first." >&2
+          if [ "$branch" != "$target" ]; then
+            echo "The VM checkout is on '$branch', not '$target'. Move it first (docs/ci-cd.md, One-time checkout move)." >&2
             exit 1
           fi
-          git fetch origin main
-          test "$(git rev-parse origin/main)" = "$revision"
+          git fetch origin "$target"
+          test "$(git rev-parse "origin/$target")" = "$revision"
           # A fast-forward preserves the VM's existing branch and refuses divergent history.
           # Git also refuses if an update would overwrite the local Compose port edit.
           git merge --ff-only "$revision"
