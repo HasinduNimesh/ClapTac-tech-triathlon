@@ -18,7 +18,12 @@ type Postgres struct {
 
 func (p Postgres) Create(order domain.Order) (domain.Order, error) {
 	ctx := context.Background()
-	row := p.Pool.QueryRow(ctx, `
+	tx, err := p.Pool.Begin(ctx)
+	if err != nil {
+		return domain.Order{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	row := tx.QueryRow(ctx, `
 		INSERT INTO orders (
 			order_ref, outlet_id, brand, requested_delivery_date,
 			order_units, order_weight_kg, order_volume_m3,
@@ -33,7 +38,54 @@ func (p Postgres) Create(order domain.Order) (domain.Order, error) {
 	`, order.OutletID, order.Brand, order.RequestedDeliveryDate, order.OrderUnits,
 		order.OrderWeightKg, order.OrderVolumeM3, order.TemperatureRequirement,
 		domain.StatusConfirmed, order.CreatedBy, order.SourceSystem, order.ExternalOrderID)
-	return scanOrder(row)
+	created, err := scanOrder(row)
+	if err != nil {
+		return domain.Order{}, err
+	}
+	for _, l := range order.Lines {
+		if _, err = tx.Exec(ctx, `
+			INSERT INTO orders.order_lines (order_id, line_no, product_id, product_name, pack_name, units_per_pack, pack_qty, weight_kg, volume_m3, source)
+			VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+			created.ID, l.LineNo, l.ProductID, l.ProductName, l.Pack, l.UnitsPerPack, l.PackQty, l.WeightKg, l.VolumeM3, l.Source); err != nil {
+			return domain.Order{}, err
+		}
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return domain.Order{}, err
+	}
+	created.Lines = order.Lines
+	return created, nil
+}
+
+// attachLines loads the item lines for the given orders in one query. Orders without lines are left as they are.
+func (p Postgres) attachLines(orders []domain.Order) error {
+	if len(orders) == 0 {
+		return nil
+	}
+	ids := make([]string, len(orders))
+	index := make(map[string]int, len(orders))
+	for i, o := range orders {
+		ids[i] = o.ID
+		index[o.ID] = i
+	}
+	rows, err := p.Pool.Query(context.Background(), `
+		SELECT order_id::text, line_no, product_id, product_name, pack_name, units_per_pack, pack_qty, weight_kg::float8, volume_m3::float8, source
+		FROM orders.order_lines WHERE order_id = ANY($1::uuid[]) ORDER BY order_id, line_no`, ids)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var orderID string
+		var l domain.OrderLine
+		if err := rows.Scan(&orderID, &l.LineNo, &l.ProductID, &l.ProductName, &l.Pack, &l.UnitsPerPack, &l.PackQty, &l.WeightKg, &l.VolumeM3, &l.Source); err != nil {
+			return err
+		}
+		if i, ok := index[orderID]; ok {
+			orders[i].Lines = append(orders[i].Lines, l)
+		}
+	}
+	return rows.Err()
 }
 
 func (p Postgres) Get(id string) (domain.Order, error) {
@@ -44,7 +96,15 @@ func (p Postgres) Get(id string) (domain.Order, error) {
 		FROM orders
 		WHERE id::text = $1 OR order_ref = $1
 	`, id)
-	return scanOrder(row)
+	o, err := scanOrder(row)
+	if err != nil {
+		return o, err
+	}
+	one := []domain.Order{o}
+	if err := p.attachLines(one); err != nil {
+		return domain.Order{}, err
+	}
+	return one[0], nil
 }
 
 func (p Postgres) GetImported(source, externalID string) (domain.Order, error) {
@@ -97,10 +157,17 @@ func (p Postgres) List(filter domain.ListFilter) ([]domain.Order, error) {
 		}
 		out = append(out, o)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	if out == nil {
 		out = []domain.Order{}
 	}
-	return out, rows.Err()
+	rows.Close()
+	if err := p.attachLines(out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (p Postgres) ImportOrders(source string, orders []domain.Order) ([]domain.ImportResult, error) {

@@ -31,6 +31,8 @@ type Service struct {
 	Now      func() time.Time
 	Planning domain.PlanningReader
 	Delivery domain.DeliveryReader
+	// Products prices an order's item lines from the catalog. Optional: without it, orders with lines are refused.
+	Products domain.ProductReader
 }
 
 var validReceiptIssueTypes = map[string]bool{"MISSING": true, "DAMAGED": true, "QUANTITY_MISMATCH": true, "OTHER": true}
@@ -443,13 +445,24 @@ func (s Service) Create(profile *authorization.Profile, bearer string, req domai
 	if len(profile.OutletIDs) == 0 {
 		return domain.Order{}, fmt.Errorf("%w: store manager profile missing", ErrNotFound)
 	}
-	if err := validateCreate(req); err != nil {
-		return domain.Order{}, err
+	if len(req.Lines) == 0 {
+		if err := validateCreate(req); err != nil {
+			return domain.Order{}, err
+		}
 	}
 	outletID := profile.OutletIDs[0]
 	outlet, err := s.Outlets.Outlet(outletID, bearer)
 	if err != nil {
 		return domain.Order{}, fmt.Errorf("%w: outlet", ErrNotFound)
+	}
+	var lines []domain.OrderLine
+	if len(req.Lines) > 0 {
+		if lines, err = s.priceLines(bearer, outlet.Brand, &req); err != nil {
+			return domain.Order{}, err
+		}
+		if err := validateCreate(req); err != nil {
+			return domain.Order{}, err
+		}
 	}
 	requested, err := time.Parse("2006-01-02", req.RequestedDeliveryDate)
 	if err != nil {
@@ -495,6 +508,7 @@ func (s Service) Create(profile *authorization.Profile, bearer string, req domai
 		TemperatureRequirement: req.TemperatureRequirement,
 		Status:                 domain.StatusConfirmed,
 		CreatedBy:              profile.UserID,
+		Lines:                  lines,
 	}
 	created, err := s.Repo.Create(order)
 	if err != nil {
@@ -507,6 +521,7 @@ func (s Service) Create(profile *authorization.Profile, bearer string, req domai
 			"orderId":  created.ID, "orderUnits": created.OrderUnits, "orderWeightKg": created.OrderWeightKg, "orderVolumeM3": created.OrderVolumeM3, "temperatureRequirement": created.TemperatureRequirement,
 			"outletId": created.OutletID,
 			"status":   created.Status,
+			"lines":    len(created.Lines),
 		})
 	}
 	return created, nil

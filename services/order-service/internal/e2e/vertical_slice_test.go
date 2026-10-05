@@ -87,6 +87,7 @@ func TestVerticalSlicePostgres(t *testing.T) {
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0027_delivery_service_time_eval_index.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0032_tech_custody_ledger.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0076_receipt_temperature.sql"))
+	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0051_orders_order_lines.sql"))
 
 	sharedPool, err := db.Open(ctx, dsn, "shared")
 	if err != nil {

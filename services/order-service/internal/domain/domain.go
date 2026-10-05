@@ -25,6 +25,47 @@ type Order struct {
 	CreatedAt              time.Time   `json:"createdAt"`
 	SourceSystem           string      `json:"sourceSystem,omitempty"`
 	ExternalOrderID        string      `json:"externalOrderId,omitempty"`
+	// Lines are the items on the order. Orders placed before item lines existed, and imported orders, have none
+	// and only carry totals. When there are lines the totals are the sum of the lines.
+	Lines []OrderLine `json:"lines,omitempty"`
+}
+
+// OrderLine is one product on an order. Names and pack sizes are copied from the catalog when the order is placed
+// so history stays readable after the catalog changes. Quantity is in packs (box, crate, case), which is also what
+// loaders and drivers count.
+type OrderLine struct {
+	LineNo       int     `json:"lineNo"`
+	ProductID    string  `json:"productId"`
+	ProductName  string  `json:"productName"`
+	Pack         string  `json:"pack"`
+	UnitsPerPack int     `json:"unitsPerPack"`
+	PackQty      int     `json:"packQty"`
+	WeightKg     float64 `json:"weightKg"`
+	VolumeM3     float64 `json:"volumeM3"`
+	Source       string  `json:"source"`
+}
+
+// LineRequest is what a client sends for one line: only the product and how many packs. Names, weights and volumes
+// always come from the catalog, never from the client.
+type LineRequest struct {
+	ProductID string `json:"productId"`
+	PackQty   int    `json:"packQty"`
+}
+
+// Product is a catalog product as read from shared-service.
+type Product struct {
+	ID           string  `json:"id"`
+	Brand        string  `json:"brand"`
+	Name         string  `json:"name"`
+	Pack         string  `json:"pack"`
+	UnitsPerPack int     `json:"unitsPerPack"`
+	PackWeightKg float64 `json:"packWeightKg"`
+	PackVolumeM3 float64 `json:"packVolumeM3"`
+	Temperature  string  `json:"temperature"`
+}
+
+type ProductReader interface {
+	Products(ids []string, bearer string) ([]Product, error)
 }
 
 type ImportResult struct {
@@ -38,6 +79,10 @@ type CreateRequest struct {
 	OrderWeightKg          float64     `json:"orderWeightKg"`
 	OrderVolumeM3          float64     `json:"orderVolumeM3"`
 	TemperatureRequirement Temperature `json:"temperatureRequirement"`
+	// Lines, when present, replace the totals above: units, weight and volume are computed from the catalog.
+	Lines []LineRequest `json:"lines,omitempty"`
+	// LinesSource says how the lines were produced: form (default), text_helper or habit_helper.
+	LinesSource string `json:"linesSource,omitempty"`
 }
 
 type ListFilter struct {
