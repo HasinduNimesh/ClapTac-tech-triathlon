@@ -21,6 +21,7 @@ import '../trips/trip_start.dart';
 import '../widgets/driver_shell.dart';
 import '../widgets/note_banner.dart';
 import 'driver_prefs.dart';
+import 'stop_result_text.dart';
 
 String _two(int value) => value.toString().padLeft(2, '0');
 
@@ -1000,6 +1001,7 @@ class DriverSession extends ChangeNotifier {
     var partial = 0;
     var failed = 0;
     final base = _baseTrip!;
+    final stillOnPhone = pendingUploads > 0;
     for (final stop in base.stops) {
       final draft = _results[stop.stopId];
       if (draft == null) continue;
@@ -1015,7 +1017,7 @@ class DriverSession extends ChangeNotifier {
             name: stop.name,
             window: stop.window,
             status: 'Partial delivery',
-            detail: short == null || short <= 0 ? 'Saved on this phone, not sent yet' : '$short units short - saved on this phone, not sent yet',
+            detail: stopFollowUpText(short: short, stillOnPhone: stillOnPhone),
           ));
         case DeliveryOutcome.failed:
         case DeliveryOutcome.refused:
@@ -1024,7 +1026,7 @@ class DriverSession extends ChangeNotifier {
             name: stop.name,
             window: stop.window,
             status: draft.outcome == DeliveryOutcome.failed ? 'Failed delivery' : 'Refused',
-            detail: draft.notes.isEmpty ? 'Saved on this phone, not sent yet' : '${draft.notes} - saved on this phone, not sent yet',
+            detail: stopFollowUpText(note: draft.notes, stillOnPhone: stillOnPhone),
           ));
       }
     }
