@@ -151,12 +151,14 @@ def main():
         with tempfile.TemporaryDirectory(dir=CREDENTIALS_DIR) as staging:
             for name, role, scope, email in todo:
                 identity = uuid.uuid4().hex
-                user_id, subject = f"USR{identity[:12].upper()}", f"waypoint-user-{identity}"
+                user_id, attr_sub = f"USR{identity[:12].upper()}", f"waypoint-user-{identity}"
+                # Tokens carry the ThunderID user id as their subject, so that is what the app looks up.
+                subject = f"waypoint-person-{identity}"
                 password = secrets.token_urlsafe(14)
                 first, _, family = name.partition(" ")
                 doc = {"resource_type": "user", "id": f"waypoint-person-{identity}", "type": "Person",
                        "ouId": OU_ID,
-                       "attributes": {"username": email, "email": email, "sub": subject, "name": name,
+                       "attributes": {"username": email, "email": email, "sub": attr_sub, "name": name,
                                       "given_name": first, "family_name": family},
                        "credentials": {"password": password}}
                 src = Path(staging) / f"{user_id}.yaml"
