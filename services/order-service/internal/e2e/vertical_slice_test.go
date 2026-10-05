@@ -120,7 +120,12 @@ func TestVerticalSlicePostgres(t *testing.T) {
 	sharedClient := orderclient.Shared{BaseURL: sharedSrv.URL}
 	deliveryReader := &receiptDeliveryReader{items: map[string]domain.DeliveryTracking{}}
 	orderRepo := orderstore.Postgres{Pool: orderPool}
-	techOrder, err := orderRepo.Create(domain.Order{OutletID: "OUT034", Brand: "Tech", RequestedDeliveryDate: "2026-09-29", OrderUnits: 1, OrderWeightKg: 1, OrderVolumeM3: .1, TemperatureRequirement: "ambient", CreatedBy: "USR002"})
+	// Dates are relative to this week (Colombo, Monday start) so the forecast history window, which moves every
+	// Monday, never swallows them: thisWeekTue is in the current week, nextWeekMon is always in the future.
+	testWeek := colomboWeekStart(time.Now())
+	thisWeekTue := testWeek.AddDate(0, 0, 1).Format("2006-01-02")
+	nextWeekMon := testWeek.AddDate(0, 0, 7).Format("2006-01-02")
+	techOrder, err := orderRepo.Create(domain.Order{OutletID: "OUT034", Brand: "Tech", RequestedDeliveryDate: thisWeekTue, OrderUnits: 1, OrderWeightKg: 1, OrderVolumeM3: .1, TemperatureRequirement: "ambient", CreatedBy: "USR002"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +172,7 @@ func TestVerticalSlicePostgres(t *testing.T) {
 	t.Cleanup(orderSrv.Close)
 
 	body, _ := json.Marshal(domain.CreateRequest{
-		RequestedDeliveryDate:  "2026-09-29",
+		RequestedDeliveryDate:  thisWeekTue,
 		OrderUnits:             20,
 		OrderWeightKg:          185.5,
 		OrderVolumeM3:          2.4,
@@ -254,7 +259,7 @@ func TestVerticalSlicePostgres(t *testing.T) {
 		t.Fatalf("store-manager-b get %d", getRes.StatusCode)
 	}
 	importURL := orderSrv.URL + "/api/v1/orders/import.csv?version=1&sourceSystem=erp_a"
-	csvBody := "version,external_order_id,outlet_id,brand,requested_delivery_date,order_units,order_weight_kg,order_volume_m3,temperature_requirement\n1,ERP-100,OUT034,Fresh,2026-10-05,10,20,1,ambient\n"
+	csvBody := "version,external_order_id,outlet_id,brand,requested_delivery_date,order_units,order_weight_kg,order_volume_m3,temperature_requirement\n1,ERP-100,OUT034,Fresh," + nextWeekMon + ",10,20,1,ambient\n"
 	importReq, _ := http.NewRequest(http.MethodPost, importURL, strings.NewReader(csvBody))
 	importReq.Header.Set("Authorization", "Bearer usr-dispatcher")
 	importReq.Header.Set("Content-Type", "text/csv")
@@ -295,9 +300,9 @@ func TestVerticalSlicePostgres(t *testing.T) {
 	// A conflicting later row must roll back an earlier new row in the same
 	// import batch; otherwise callers cannot safely retry the whole file.
 	rollbackCSV := strings.Replace(csvBody,
-		"1,ERP-100,OUT034,Fresh,2026-10-05,10,20,1,ambient\n",
-		"1,ERP-ROLLBACK-1,OUT034,Fresh,2026-10-05,5,10,0.5,ambient\n"+
-			"1,ERP-100,OUT034,Fresh,2026-10-05,11,20,1,ambient\n", 1)
+		"1,ERP-100,OUT034,Fresh,"+nextWeekMon+",10,20,1,ambient\n",
+		"1,ERP-ROLLBACK-1,OUT034,Fresh,"+nextWeekMon+",5,10,0.5,ambient\n"+
+			"1,ERP-100,OUT034,Fresh,"+nextWeekMon+",11,20,1,ambient\n", 1)
 	rollbackReq, _ := http.NewRequest(http.MethodPost, importURL, strings.NewReader(rollbackCSV))
 	rollbackReq.Header.Set("Authorization", "Bearer usr-dispatcher")
 	rollbackReq.Header.Set("Content-Type", "text/csv")
@@ -315,9 +320,9 @@ func TestVerticalSlicePostgres(t *testing.T) {
 		t.Fatalf("CSV batch partially committed before conflict: %s", rollbackExport)
 	}
 	duplicateCSV := strings.Replace(csvBody,
-		"1,ERP-100,OUT034,Fresh,2026-10-05,10,20,1,ambient\n",
-		"1,ERP-DUPLICATE-IN-FILE,OUT034,Fresh,2026-10-05,5,10,0.5,ambient\n"+
-			"1,ERP-DUPLICATE-IN-FILE,OUT034,Fresh,2026-10-05,5,10,0.5,ambient\n", 1)
+		"1,ERP-100,OUT034,Fresh,"+nextWeekMon+",10,20,1,ambient\n",
+		"1,ERP-DUPLICATE-IN-FILE,OUT034,Fresh,"+nextWeekMon+",5,10,0.5,ambient\n"+
+			"1,ERP-DUPLICATE-IN-FILE,OUT034,Fresh,"+nextWeekMon+",5,10,0.5,ambient\n", 1)
 	duplicateReq, _ := http.NewRequest(http.MethodPost, importURL, strings.NewReader(duplicateCSV))
 	duplicateReq.Header.Set("Authorization", "Bearer usr-dispatcher")
 	duplicateReq.Header.Set("Content-Type", "text/csv")
@@ -330,7 +335,7 @@ func TestVerticalSlicePostgres(t *testing.T) {
 	if duplicateRes.StatusCode != http.StatusBadRequest {
 		t.Fatalf("CSV duplicate in-file key %d %s", duplicateRes.StatusCode, duplicateBody)
 	}
-	apiReplay := []byte(`{"version":1,"sourceSystem":"erp_a","orders":[{"externalOrderId":"ERP-100","outletId":"OUT034","brand":"Fresh","requestedDeliveryDate":"2026-10-05","orderUnits":10,"orderWeightKg":20,"orderVolumeM3":1,"temperatureRequirement":"ambient"}]}`)
+	apiReplay := []byte(`{"version":1,"sourceSystem":"erp_a","orders":[{"externalOrderId":"ERP-100","outletId":"OUT034","brand":"Fresh","requestedDeliveryDate":"` + nextWeekMon + `","orderUnits":10,"orderWeightKg":20,"orderVolumeM3":1,"temperatureRequirement":"ambient"}]}`)
 	apiResult := doJSON(t, orderSrv.URL+"/api/v1/orders/import", "usr-dispatcher", apiReplay)
 	if !bytes.Contains(apiResult, []byte(`"duplicates":1`)) {
 		t.Fatalf("API import replay %s", apiResult)
@@ -549,4 +554,15 @@ func repoRoot(t *testing.T) string {
 	}
 	t.Fatal("go.mod not found")
 	return ""
+}
+
+// colomboWeekStart is Monday 00:00 of the week containing t, in Asia/Colombo.
+func colomboWeekStart(t time.Time) time.Time {
+	colombo, err := time.LoadLocation("Asia/Colombo")
+	if err != nil {
+		panic(err)
+	}
+	local := t.In(colombo)
+	day := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, colombo)
+	return day.AddDate(0, 0, -int((int(local.Weekday())+6)%7))
 }
