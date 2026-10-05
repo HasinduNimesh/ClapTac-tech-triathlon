@@ -48,6 +48,8 @@ class StopInfo {
     required this.goods,
     this.orderRef = '',
     this.orderId = '',
+    this.outcomeCode = '',
+    this.deliveredUnits,
     this.district = '',
     this.latitude,
     this.longitude,
@@ -73,6 +75,11 @@ class StopInfo {
 
   /// The server's id of the order this stop delivers. The truck checkout confirms the load by these ids.
   final String orderId;
+
+  /// What the server has recorded for a stop that is already done: its outcome code (DELIVERED, PARTIAL,
+  /// FAILED, REFUSED) and the units handed over. Empty and null while the stop is still to do.
+  final String outcomeCode;
+  final int? deliveredUnits;
   final String district;
 
   /// Where the outlet is, when the server knows. [locationApproximate] means only the district centre
@@ -97,6 +104,8 @@ class StopInfo {
         goods: _text(json, 'goods'),
         orderRef: _text(json, 'orderRef'),
         orderId: _text(json, 'orderId'),
+        outcomeCode: _text(json, 'outcomeCode'),
+        deliveredUnits: _wholeOrNull(json, 'deliveredUnits'),
         district: _text(json, 'district'),
         latitude: _decimalOrNull(json, 'latitude'),
         longitude: _decimalOrNull(json, 'longitude'),
@@ -117,6 +126,8 @@ class StopInfo {
         'goods': goods,
         'orderRef': orderRef,
         'orderId': orderId,
+        if (outcomeCode.isNotEmpty) 'outcomeCode': outcomeCode,
+        if (deliveredUnits != null) 'deliveredUnits': deliveredUnits,
         'district': district,
         if (latitude != null) 'latitude': latitude,
         if (longitude != null) 'longitude': longitude,

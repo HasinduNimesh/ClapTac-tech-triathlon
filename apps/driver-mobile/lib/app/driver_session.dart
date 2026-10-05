@@ -994,6 +994,14 @@ class DriverSession extends ChangeNotifier {
     notifyListeners();
   }
 
+  static DeliveryOutcome? _serverOutcome(String code) => switch (code.toUpperCase()) {
+        'DELIVERED' => DeliveryOutcome.delivered,
+        'PARTIAL' => DeliveryOutcome.partial,
+        'FAILED' => DeliveryOutcome.failed,
+        'REFUSED' => DeliveryOutcome.refused,
+        _ => null,
+      };
+
   EndOfDaySummary get summary {
     final completed = <StopResult>[];
     final unresolved = <StopResult>[];
@@ -1001,18 +1009,24 @@ class DriverSession extends ChangeNotifier {
     var partial = 0;
     var failed = 0;
     final base = _baseTrip!;
-    final stillOnPhone = pendingUploads > 0;
+    final queuedUpdates = pendingUploads > 0;
     for (final stop in base.stops) {
       final draft = _results[stop.stopId];
-      if (draft == null) continue;
-      switch (draft.outcome) {
+      // A result still waiting on this phone wins; otherwise a stop the server has finished reports what the
+      // server recorded, so the summary is right after a restart too.
+      final outcome = draft?.outcome ?? _serverOutcome(stop.outcomeCode);
+      if (outcome == null) continue;
+      final quantity = draft != null ? draft.quantity : stop.deliveredUnits;
+      final notes = draft?.notes ?? '';
+      final stillOnPhone = draft != null && queuedUpdates;
+      switch (outcome) {
         case DeliveryOutcome.delivered:
           delivered++;
           completed.add(StopResult(name: stop.name, window: stop.window, status: 'Delivered'));
         case DeliveryOutcome.partial:
           partial++;
           final expected = stop.units;
-          final short = draft.quantity == null || expected == null ? null : expected - draft.quantity!;
+          final short = quantity == null || expected == null ? null : expected - quantity;
           unresolved.add(StopResult(
             name: stop.name,
             window: stop.window,
@@ -1025,8 +1039,8 @@ class DriverSession extends ChangeNotifier {
           unresolved.add(StopResult(
             name: stop.name,
             window: stop.window,
-            status: draft.outcome == DeliveryOutcome.failed ? 'Failed delivery' : 'Refused',
-            detail: stopFollowUpText(note: draft.notes, stillOnPhone: stillOnPhone),
+            status: outcome == DeliveryOutcome.failed ? 'Failed delivery' : 'Refused',
+            detail: stopFollowUpText(note: notes, stillOnPhone: stillOnPhone),
           ));
       }
     }
