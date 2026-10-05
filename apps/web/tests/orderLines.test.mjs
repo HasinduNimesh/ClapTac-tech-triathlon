@@ -56,3 +56,23 @@ test("only the chosen goods type can be added, and maxed-out products drop out",
   const full = addProduct([], rice, MAX_PACKS);
   assert.deepEqual(pickable([rice], "ambient", full), []);
 });
+
+import { suggestionLines, reasonSentence } from "../src/store-manager/orderLines.mjs";
+
+test("a suggestion becomes form lines for products the manager can pick, and skips others", () => {
+  const { lines, reasons } = suggestionLines([milk, curd], { lines: [
+    { productId: "FR-MILK-1L", packs: 6, basis: "history", perDay: 6, upliftPercent: 0 },
+    { productId: "FR-GONE", packs: 2, basis: "sales", perDay: 2, upliftPercent: 0 },
+    { productId: "FR-CURD-500G", packs: 2, basis: "sales", perDay: 2, upliftPercent: 0 },
+  ] });
+  assert.deepEqual(lines.map((l) => [l.productId, l.quantity]), [["FR-MILK-1L", 6], ["FR-CURD-500G", 2]]);
+  assert.deepEqual(Object.keys(reasons), ["FR-MILK-1L", "FR-CURD-500G"]);
+  assert.deepEqual(suggestionLines([milk], undefined).lines, []);
+});
+
+test("the reason sentence names the basis, the cover days and the season", () => {
+  const t = (k) => k;
+  assert.equal(reasonSentence({ basis: "history", perDay: 6, upliftPercent: 0 }, 1, t), "About 6.0 boxes a day from your last orders");
+  assert.equal(reasonSentence({ basis: "sales", perDay: 12.4, upliftPercent: 0 }, 4, t), "About 12 boxes a day from the store's usual sales, for 4 days");
+  assert.equal(reasonSentence({ basis: "history", perDay: 3, upliftPercent: 30, season: "avurudu" }, 1, t), "About 3.0 boxes a day from your last orders, 30% more for Sinhala and Tamil New Year");
+});

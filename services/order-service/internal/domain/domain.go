@@ -1,6 +1,10 @@
 package domain
 
-import "time"
+import (
+	"time"
+
+	"github.com/HasinduNimesh/ClapTac-tech-triathlon/services/order-service/internal/suggest"
+)
 
 type Temperature string
 
@@ -62,10 +66,29 @@ type Product struct {
 	PackWeightKg float64 `json:"packWeightKg"`
 	PackVolumeM3 float64 `json:"packVolumeM3"`
 	Temperature  string  `json:"temperature"`
+	Season       string  `json:"season,omitempty"`
+	// AvgDailySalesEach is the outlet's usual daily sales in single items; only set on an outlet's own range.
+	AvgDailySalesEach float64 `json:"avgDailySalesEach,omitempty"`
 }
 
 type ProductReader interface {
 	Products(ids []string, bearer string) ([]Product, error)
+	// Range is the calling store manager's own outlet range, with its usual daily sales.
+	Range(bearer string) ([]Product, error)
+}
+
+// Suggestion is a proposed set of item lines for one delivery date. It is advice: nothing is ordered until the
+// manager submits the order.
+type Suggestion struct {
+	DeliveryDate string `json:"deliveryDate"`
+	suggest.Result
+}
+
+// HistoricLines is one past order's items, for suggesting the next order.
+type HistoricLines struct {
+	OrderID      string
+	DeliveryDate string
+	Packs        map[string]int
 }
 
 type ImportResult struct {
@@ -165,6 +188,8 @@ type Repository interface {
 	Forecast(now time.Time) (Forecast, error)
 	ImportOrders(source string, orders []Order) ([]ImportResult, error)
 	GetImported(source, externalID string) (Order, error)
+	// RecentLines returns the item lines of an outlet's orders of one goods type delivered on or after since.
+	RecentLines(outletID, temperature, since string) ([]HistoricLines, error)
 }
 
 type ReceiptIssueRequest struct {

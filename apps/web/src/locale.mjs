@@ -1646,5 +1646,39 @@ Object.assign(labels.ta, {
   "I only know the totals": "எனக்கு மொத்தங்கள் மட்டுமே தெரியும்",
   "Choose items from the product list": "பொருள் பட்டியலிலிருந்து பொருட்களைத் தேர்ந்தெடுக்கவும்",
 });
+Object.assign(labels.si, {
+  "There is nothing to suggest yet for this goods type. Add the items yourself.": "මෙම භාණ්ඩ වර්ගය සඳහා තවම යෝජනා කිරීමට කිසිවක් නැත. අයිතම ඔබම එක් කරන්න.",
+  "The suggestion is not available right now. Add the items yourself.": "යෝජනාව දැන් ලබාගත නොහැක. අයිතම ඔබම එක් කරන්න.",
+  "Working out a suggestion…": "යෝජනාවක් සකසමින්…",
+  "Suggest an order": "ඇණවුමක් යෝජනා කරන්න",
+  "Suggested from your past orders and the delivery calendar. Check every quantity before you send.": "ඔබගේ පෙර ඇණවුම් සහ බෙදාහැරීමේ දින දර්ශනය අනුව යෝජනා කළා. යැවීමට පෙර සෑම ප්‍රමාණයක්ම පරීක්ෂා කරන්න.",
+  "Planned for delivery on": "බෙදාහැරීමට සැලසුම් කළ දිනය",
+  "This delivery has to last {days} days, because the depot does not deliver on the days after it.": "මෙම බෙදාහැරීම දින {days}ක් පවතින්නට සිදුවේ, මන්ද ඉන් පසු දිනවල ගබඩාව බෙදාහරින්නේ නැත.",
+  "There are not enough earlier orders with items yet, so quantities come from the store's usual daily sales.": "අයිතම සහිත පෙර ඇණවුම් තවමත් ප්‍රමාණවත් නැති නිසා, ප්‍රමාණ ගෙන ඇත්තේ අලෙවිසැලේ සාමාන්‍ය දෛනික විකුණුම් අනුවය.",
+  "for {days} days": "දින {days} සඳහා",
+  "{percent}% more for {season}": "{season} නිසා {percent}% වැඩියෙන්",
+  "About {rate} boxes a day from your last orders": "ඔබගේ අවසාන ඇණවුම් අනුව දිනකට පෙට්ටි {rate} ක් පමණ",
+  "About {rate} boxes a day from the store's usual sales": "අලෙවිසැලේ සාමාන්‍ය විකුණුම් අනුව දිනකට පෙට්ටි {rate} ක් පමණ",
+  "the season": "මෙම කාලය",
+  "Sinhala and Tamil New Year": "සිංහල හා දෙමළ අලුත් අවුරුද්ද",
+  "Christmas season": "නත්තල් කාලය",
+});
+Object.assign(labels.ta, {
+  "There is nothing to suggest yet for this goods type. Add the items yourself.": "இந்த வகைப் பொருட்களுக்கு இன்னும் பரிந்துரைக்க எதுவும் இல்லை. பொருட்களை நீங்களே சேர்க்கவும்.",
+  "The suggestion is not available right now. Add the items yourself.": "பரிந்துரை இப்போது கிடைக்கவில்லை. பொருட்களை நீங்களே சேர்க்கவும்.",
+  "Working out a suggestion…": "பரிந்துரையைத் தயாரிக்கிறது…",
+  "Suggest an order": "ஆர்டரைப் பரிந்துரை",
+  "Suggested from your past orders and the delivery calendar. Check every quantity before you send.": "உங்கள் முந்தைய ஆர்டர்கள் மற்றும் விநியோக நாட்காட்டியின் அடிப்படையில் பரிந்துரைக்கப்பட்டது. அனுப்பும் முன் ஒவ்வொரு அளவையும் சரிபார்க்கவும்.",
+  "Planned for delivery on": "விநியோகத்திற்குத் திட்டமிடப்பட்ட தேதி",
+  "This delivery has to last {days} days, because the depot does not deliver on the days after it.": "இந்த விநியோகம் {days} நாட்களுக்குப் போதுமானதாக இருக்க வேண்டும், ஏனெனில் அதற்குப் பிறகு கிடங்கு விநியோகிக்காது.",
+  "There are not enough earlier orders with items yet, so quantities come from the store's usual daily sales.": "பொருள் விவரங்களுடன் கூடிய முந்தைய ஆர்டர்கள் இன்னும் போதுமானதாக இல்லை, எனவே அளவுகள் கடையின் வழக்கமான தினசரி விற்பனையிலிருந்து எடுக்கப்பட்டன.",
+  "for {days} days": "{days} நாட்களுக்கு",
+  "{percent}% more for {season}": "{season} காரணமாக {percent}% கூடுதல்",
+  "About {rate} boxes a day from your last orders": "உங்கள் கடைசி ஆர்டர்களின்படி நாளொன்றுக்கு சுமார் {rate} பெட்டிகள்",
+  "About {rate} boxes a day from the store's usual sales": "கடையின் வழக்கமான விற்பனையின்படி நாளொன்றுக்கு சுமார் {rate} பெட்டிகள்",
+  "the season": "இந்தப் பருவம்",
+  "Sinhala and Tamil New Year": "சிங்கள மற்றும் தமிழ் புத்தாண்டு",
+  "Christmas season": "கிறிஸ்துமஸ் காலம்",
+});
 Object.assign(labels.si, auditGapLabels.si);
 Object.assign(labels.ta, auditGapLabels.ta);

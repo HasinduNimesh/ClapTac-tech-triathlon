@@ -13,7 +13,8 @@ import { OrderHelperLauncher } from "./OrderHelperLauncher";
 import { OrderItems } from "../components/OrderItems";
 import "../components/orderItems.css";
 import type { CatalogProduct, DraftLine, FormFill } from "./orderDraft.mjs";
-import { addProduct, linesSource, pickable, removeLine, requestLines, setPacks, totals } from "./orderLines.mjs";
+import { addProduct, linesSource, pickable, reasonSentence, removeLine, requestLines, setPacks, suggestionLines, totals } from "./orderLines.mjs";
+import type { SuggestedLine, Suggestion } from "./orderLines.mjs";
 
 function failureMessage(error: unknown, fallback: string) {
   if (error instanceof ApiError) {
@@ -46,6 +47,9 @@ export function NewOrderPage() {
   const [products, setProducts] = useState<CatalogProduct[] | null>(null);
   const [pickId, setPickId] = useState("");
   const [pickQty, setPickQty] = useState("1");
+  // Items that came from "Suggest an order", with why each quantity was chosen.
+  const [suggested, setSuggested] = useState<{ reasons: Record<string, SuggestedLine>; coverDays: number; deliveryDate: string; limitedHistory: boolean } | null>(null);
+  const [suggesting, setSuggesting] = useState(false);
   const [created, setCreated] = useState<Order | null>(null);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -91,6 +95,7 @@ export function NewOrderPage() {
     setWeight("");
     setVolume("");
     setLines([]);
+    setSuggested(null);
     setTotalsOnly(false);
     setError("");
     setFilledFrom("");
@@ -100,6 +105,26 @@ export function NewOrderPage() {
   const usingItems = !totalsOnly;
   const options: CatalogProduct[] = products ? pickable(products, temp, lines) : [];
   const productsDown = products !== null && products.length === 0;
+  async function suggestOrder() {
+    if (suggesting || !user?.access_token || !products) return;
+    setSuggesting(true);
+    setError("");
+    try {
+      const body = await apiJSON<{ suggestion: Suggestion }>(`/orders/suggestion?date=${encodeURIComponent(date)}&temperature=${temp}`, user.access_token);
+      const result = suggestionLines(products, body.suggestion);
+      if (result.lines.length === 0) {
+        setSuggested(null);
+        setError(t("There is nothing to suggest yet for this goods type. Add the items yourself."));
+      } else {
+        setLines(result.lines);
+        setSuggested({ reasons: result.reasons, coverDays: body.suggestion.coverDays, deliveryDate: body.suggestion.deliveryDate, limitedHistory: body.suggestion.limitedHistory });
+      }
+    } catch {
+      setError(t("The suggestion is not available right now. Add the items yourself."));
+    } finally {
+      setSuggesting(false);
+    }
+  }
   function addItem() {
     const product = options.find((p) => p.id === pickId);
     if (!product) { setError(t("Choose a product to add.")); return; }
@@ -136,7 +161,7 @@ export function NewOrderPage() {
         method: "POST",
         // With items the server works out units, weight and volume itself from the catalog.
         body: JSON.stringify(usingItems
-          ? { requestedDeliveryDate: date, temperatureRequirement: temp, lines: requestLines(lines), linesSource: linesSource(lines) }
+          ? { requestedDeliveryDate: date, temperatureRequirement: temp, lines: requestLines(lines), linesSource: suggested ? "habit_helper" : linesSource(lines) }
           : { requestedDeliveryDate: date, orderUnits, orderWeightKg, orderVolumeM3, temperatureRequirement: temp }),
       });
       setCreated(body.order);
@@ -250,7 +275,10 @@ export function NewOrderPage() {
                       <input id="item-qty" type="number" inputMode="numeric" min="1" max="999" step="1" value={pickQty} onChange={(e) => setPickQty(e.target.value)} />
                     </div>
                   </div>
-                  <button type="button" className="sm-btn-secondary" onClick={addItem} disabled={!pickId}>{t("Add item")}</button>
+                  <div className="dp-row" style={{ gap: 8, flexWrap: "wrap" }}>
+                    <button type="button" className="sm-btn-secondary" onClick={addItem} disabled={!pickId}>{t("Add item")}</button>
+                    <button type="button" className="sm-btn-secondary" onClick={() => void suggestOrder()} disabled={suggesting || products === null || productsDown}>{suggesting ? t("Working out a suggestion…") : t("Suggest an order")}</button>
+                  </div>
                   {lines.length === 0 ? <p className="muted" style={{ margin: "12px 0 0" }}>{t("No items added yet.")}</p> : (
                     <div className="order-items-wrap">
                       <table className="order-items">
@@ -271,8 +299,17 @@ export function NewOrderPage() {
                       </table>
                     </div>
                   )}
+                  {suggested && lines.length > 0 && (
+                    <div className="sm-info-banner" role="status">
+                      <strong>{t("Suggested from your past orders and the delivery calendar. Check every quantity before you send.")}</strong>
+                      <p style={{ margin: "4px 0" }}>{t("Planned for delivery on")} {formatDay(suggested.deliveryDate)}.{suggested.coverDays > 1 ? ` ${t("This delivery has to last {days} days, because the depot does not deliver on the days after it.").replace("{days}", String(suggested.coverDays))}` : ""}{suggested.limitedHistory ? ` ${t("There are not enough earlier orders with items yet, so quantities come from the store's usual daily sales.")}` : ""}</p>
+                      <ul style={{ margin: 0, paddingLeft: 18 }}>
+                        {lines.filter((l) => suggested.reasons[l.productId]).map((l) => <li key={l.productId}>{l.name}: {reasonSentence(suggested.reasons[l.productId], suggested.coverDays, t)}</li>)}
+                      </ul>
+                    </div>
+                  )}
                   <p className="sm-field-hint muted">
-                    <button type="button" className="linklike" onClick={() => { setTotalsOnly(true); setLines([]); }}>{t("I only know the totals")}</button>
+                    <button type="button" className="linklike" onClick={() => { setTotalsOnly(true); setLines([]); setSuggested(null); }}>{t("I only know the totals")}</button>
                   </p>
                 </>
               ) : (

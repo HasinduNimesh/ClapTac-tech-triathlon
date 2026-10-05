@@ -60,3 +60,27 @@ export function linesSource(lines) {
 export function pickable(products, temperature, lines) {
   return products.filter((p) => p.temperature === temperature && !(lines.find((l) => l.productId === p.id)?.quantity >= MAX_PACKS));
 }
+
+/** Turns the server's suggestion into form lines, using the products the manager can already pick from. */
+export function suggestionLines(products, suggestion) {
+  let lines = [];
+  const reasons = {};
+  for (const s of suggestion?.lines || []) {
+    const product = products.find((p) => p.id === s.productId);
+    if (!product) continue;
+    lines = addProduct(lines, product, s.packs);
+    reasons[s.productId] = s;
+  }
+  return { lines, reasons };
+}
+
+const SEASONS = { avurudu: "Sinhala and Tamil New Year", christmas: "Christmas season" };
+
+/** One plain sentence saying why a quantity was suggested, in the user's language via the translate function. */
+export function reasonSentence(line, coverDays, t) {
+  const rate = line.perDay >= 10 ? String(Math.round(line.perDay)) : line.perDay.toFixed(1);
+  let text = t(line.basis === "history" ? "About {rate} boxes a day from your last orders" : "About {rate} boxes a day from the store's usual sales").replace("{rate}", rate);
+  if (coverDays > 1) text += `, ${t("for {days} days").replace("{days}", String(coverDays))}`;
+  if (line.upliftPercent > 0) text += `, ${t("{percent}% more for {season}").replace("{percent}", String(line.upliftPercent)).replace("{season}", t(SEASONS[line.season] || "the season"))}`;
+  return text;
+}

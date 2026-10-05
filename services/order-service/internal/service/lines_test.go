@@ -17,6 +17,8 @@ type testProducts struct {
 	asked []string
 }
 
+func (p *testProducts) Range(string) ([]domain.Product, error) { return p.items, p.err }
+
 func (p *testProducts) Products(ids []string, _ string) ([]domain.Product, error) {
 	p.asked = ids
 	return p.items, p.err

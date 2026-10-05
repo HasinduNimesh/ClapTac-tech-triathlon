@@ -57,6 +57,33 @@ func (p Postgres) Create(order domain.Order) (domain.Order, error) {
 	return created, nil
 }
 
+// RecentLines returns the item lines of an outlet's orders of one goods type delivered on or after since,
+// grouped per order.
+func (p Postgres) RecentLines(outletID, temperature, since string) ([]domain.HistoricLines, error) {
+	rows, err := p.Pool.Query(context.Background(), `
+		SELECT o.id::text, o.requested_delivery_date::text, l.product_id, l.pack_qty
+		FROM orders o JOIN orders.order_lines l ON l.order_id = o.id
+		WHERE o.outlet_id = $1 AND o.temperature_requirement = $2 AND o.requested_delivery_date >= $3::date
+		ORDER BY o.requested_delivery_date, o.id, l.line_no`, outletID, temperature, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []domain.HistoricLines{}
+	for rows.Next() {
+		var id, date, product string
+		var packs int
+		if err := rows.Scan(&id, &date, &product, &packs); err != nil {
+			return nil, err
+		}
+		if n := len(out); n == 0 || out[n-1].OrderID != id {
+			out = append(out, domain.HistoricLines{OrderID: id, DeliveryDate: date, Packs: map[string]int{}})
+		}
+		out[len(out)-1].Packs[product] += packs
+	}
+	return out, rows.Err()
+}
+
 // attachLines loads the item lines for the given orders in one query. Orders without lines are left as they are.
 func (p Postgres) attachLines(orders []domain.Order) error {
 	if len(orders) == 0 {
