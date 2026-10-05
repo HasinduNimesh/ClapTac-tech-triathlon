@@ -85,7 +85,7 @@ class _Starter implements TripStarter {
   final holds = <int, Completer<void>>{};
   int calls = 0;
   @override
-  Future<TripStartResult> start(TripInfo trip, {required String operationId}) async {
+  Future<TripStartResult> start(TripInfo trip, {required String operationId, List<String>? confirmedOrderIds}) async {
     await holds[calls++]?.future;
     return const TripStartResult(TripStartStatus.started);
   }

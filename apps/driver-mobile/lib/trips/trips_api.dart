@@ -194,6 +194,7 @@ StopInfo _stopFromJson(Map<String, Object?> json) {
     contactNote: site,
     goods: text('temperatureRequirement').isEmpty ? 'Goods' : text('temperatureRequirement'),
     orderRef: text('orderRef'),
+    orderId: text('orderId'),
     district: text('district'),
     latitude: _coordinate(json['latitude']),
     longitude: _coordinate(json['longitude']),

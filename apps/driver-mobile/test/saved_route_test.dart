@@ -62,7 +62,7 @@ class _Source implements TripSource {
 
 class _Starter implements TripStarter {
   @override
-  Future<TripStartResult> start(TripInfo trip, {required String operationId}) async => const TripStartResult(TripStartStatus.started);
+  Future<TripStartResult> start(TripInfo trip, {required String operationId, List<String>? confirmedOrderIds}) async => const TripStartResult(TripStartStatus.started);
 }
 
 class _Monitor implements ConnectivityMonitor {

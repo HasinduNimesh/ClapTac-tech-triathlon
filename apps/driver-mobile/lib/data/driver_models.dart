@@ -47,6 +47,7 @@ class StopInfo {
     required this.contactNote,
     required this.goods,
     this.orderRef = '',
+    this.orderId = '',
     this.district = '',
     this.latitude,
     this.longitude,
@@ -69,6 +70,9 @@ class StopInfo {
   final String contactNote;
   final String goods;
   final String orderRef;
+
+  /// The server's id of the order this stop delivers. The truck checkout confirms the load by these ids.
+  final String orderId;
   final String district;
 
   /// Where the outlet is, when the server knows. [locationApproximate] means only the district centre
@@ -92,6 +96,7 @@ class StopInfo {
         contactNote: _text(json, 'contactNote'),
         goods: _text(json, 'goods'),
         orderRef: _text(json, 'orderRef'),
+        orderId: _text(json, 'orderId'),
         district: _text(json, 'district'),
         latitude: _decimalOrNull(json, 'latitude'),
         longitude: _decimalOrNull(json, 'longitude'),
@@ -111,6 +116,7 @@ class StopInfo {
         'contactNote': contactNote,
         'goods': goods,
         'orderRef': orderRef,
+        'orderId': orderId,
         'district': district,
         if (latitude != null) 'latitude': latitude,
         if (longitude != null) 'longitude': longitude,
