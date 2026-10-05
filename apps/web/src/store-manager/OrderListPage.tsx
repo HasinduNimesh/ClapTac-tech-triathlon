@@ -1,6 +1,7 @@
 import { Link, useSearchParams } from "react-router-dom";
 import { useLocale } from "../i18n";
 import { LiveLocationMap } from "../components/LiveLocationMap";
+import { OrderItems } from "../components/OrderItems";
 import { ESTIMATES_UNAVAILABLE_MESSAGE, validArrivalAt } from "../api/estimateAvailability.mjs";
 import { deferralExplanation } from "./deferralMessage.mjs";
 import {
@@ -98,6 +99,9 @@ export function OrderListPage() {
               </div>
               <span className={`sm-badge sm-badge--${statusTone(stage)}`}>{t(statusLabel(stage))}</span>
             </div>
+
+            <h3 className="sm-form-card-title" style={{ fontSize: "1rem", margin: "12px 0 0" }}>{t("Items")}</h3>
+            <OrderItems lines={order.lines} units={order.orderUnits} />
 
             {estimatesUnavailable && <p role="status">{ESTIMATES_UNAVAILABLE_MESSAGE}</p>}
             {eta && (

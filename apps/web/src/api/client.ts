@@ -28,6 +28,18 @@ export async function apiFetch(path: string, token: string, init?: RequestInit):
   });
 }
 
+export type OrderLine = {
+  lineNo: number;
+  productId: string;
+  productName: string;
+  pack: string;
+  unitsPerPack: number;
+  packQty: number;
+  weightKg: number;
+  volumeM3: number;
+  source: string;
+};
+
 export type Order = {
   id: string;
   orderRef: string;
@@ -39,4 +51,6 @@ export type Order = {
   orderVolumeM3: number;
   temperatureRequirement: string;
   status: string;
+  /** The items on the order. Older and imported orders only have totals, so this can be missing. */
+  lines?: OrderLine[];
 };

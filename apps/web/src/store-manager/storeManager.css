@@ -64,3 +64,4 @@
 .sm-card-order li { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px solid #dee3ed; border-radius: 8px; font-size: 0.875rem; color: #232d42; }
 .sm-card-order li span { flex: 1; min-width: 0; }
 .sm-card-order button { min-width: 36px; min-height: 36px; padding: 0 8px; }
+.linklike { background: none; border: 0; padding: 0; font: inherit; color: #3b4cc0; text-decoration: underline; cursor: pointer; min-height: 32px; }
