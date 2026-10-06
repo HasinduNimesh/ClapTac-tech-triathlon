@@ -26,6 +26,11 @@ func (p Postgres) SendTripMessage(ctx context.Context, tripID, stopID, body, act
 	defer func() { _ = tx.Rollback(ctx) }()
 	var runID string
 	if err = tx.QueryRow(ctx, `SELECT id::text FROM delivery.runs WHERE trip_id=$1`, tripID).Scan(&runID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// The run is created when the plan is prepared for the driver, so an unknown trip and a trip that has
+			// not reached the driver look the same here. Either way the dispatcher's request is not at fault.
+			return domain.TripMessage{}, fmt.Errorf("not found: this trip has no delivery run to send a message to yet")
+		}
 		return domain.TripMessage{}, err
 	}
 	var stop any
@@ -35,7 +40,7 @@ func (p Postgres) SendTripMessage(ctx context.Context, tripID, stopID, body, act
 			return domain.TripMessage{}, err
 		}
 		if !exists {
-			return domain.TripMessage{}, fmt.Errorf("stop does not belong to trip")
+			return domain.TripMessage{}, fmt.Errorf("invalid: stop does not belong to this trip")
 		}
 		stop = stopID
 	}

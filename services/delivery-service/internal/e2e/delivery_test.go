@@ -514,6 +514,12 @@ func TestDeliveryWorkflow(t *testing.T) {
 	if message.status != http.StatusCreated || !strings.Contains(message.body, "Use the south entrance") {
 		t.Fatalf("message send %d %s", message.status, message.body)
 	}
+	if missing := do(t, srv, http.MethodPost, "/api/v1/delivery/trips/trip-nowhere/messages", "usr-dispatcher", []byte(`{"body":"Anyone there?"}`), ""); missing.status != http.StatusNotFound {
+		t.Fatalf("a message to a trip with no run must be a 404, not a server error: %d %s", missing.status, missing.body)
+	}
+	if wrongStop := do(t, srv, http.MethodPost, "/api/v1/delivery/trips/trip-north/messages", "usr-dispatcher", []byte(`{"stopId":"00000000-0000-0000-0000-000000000000","body":"Wrong stop"}`), ""); wrongStop.status != http.StatusBadRequest {
+		t.Fatalf("a stop from another trip must be a 400: %d %s", wrongStop.status, wrongStop.body)
+	}
 	var sent struct {
 		Message deldomain.TripMessage `json:"message"`
 	}
