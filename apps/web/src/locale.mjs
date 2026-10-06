@@ -1680,5 +1680,15 @@ Object.assign(labels.ta, {
   "Sinhala and Tamil New Year": "சிங்கள மற்றும் தமிழ் புத்தாண்டு",
   "Christmas season": "கிறிஸ்துமஸ் காலம்",
 });
+Object.assign(labels.si, {
+  "damaged": "හානි වූ",
+  "affected": "බලපෑමට ලක් වූ",
+  "differs from the driver's record by": "රියදුරුගේ වාර්තාවට වඩා වෙනස් වන්නේ",
+});
+Object.assign(labels.ta, {
+  "damaged": "சேதமடைந்தவை",
+  "affected": "பாதிக்கப்பட்டவை",
+  "differs from the driver's record by": "ஓட்டுநர் பதிவிலிருந்து வேறுபடுவது",
+});
 Object.assign(labels.si, auditGapLabels.si);
 Object.assign(labels.ta, auditGapLabels.ta);
