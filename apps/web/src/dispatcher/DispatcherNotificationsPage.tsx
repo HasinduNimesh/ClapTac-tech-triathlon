@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { receiptIssueSummary } from "./receiptIssueSummary.mjs";
 import { Link } from "react-router-dom";
 import { apiFetch, apiJSON } from "../api/client";
 import { todayInSriLanka } from "../api/date.mjs";
@@ -117,7 +118,7 @@ export function DispatcherNotificationsPage() {
         {(conflicts.data?.items || []).map((c) => <Note key={c.id} tone={c.settledAt ? "green" : "amber"} title={`${c.vehicleId || c.runId}${c.stopId ? ` · ${t("Stop")} ${c.stopId.slice(0, 8)}` : ""} · ${t("Recorded on plan")} v${c.recordedPlanVersion} · ${t("current plan")} v${c.currentPlanVersion} · ${dateTime(c.createdAt)}`}>{c.detail || t("The driver's offline record clashed with a newer plan version. Both records are kept.")}{c.settledAt ? <> · {t("Settled by")} {c.settledBy}</> : <> <button type="button" className="dp-btn dp-btn--secondary" onClick={() => void settleConflict(c)}>{t("Settle")}</button></>}</Note>)}
         {(conflicts.data?.items || []).length === 0 && <p className="muted" style={{ margin: 0 }}>{t("No sync conflicts recorded.")}</p>}
         <p className="dp-section-label">{t("Store receipts")} ({receipts.data?.items?.length || 0})</p>
-        {(receipts.data?.items || []).length === 0 ? <p className="muted" style={{ margin: 0 }}>{t("No receipt issues reported.")}</p> : <dl className="dp-kv-rows">{receipts.data!.items.map((item, i) => <div key={`${item.orderRef}-${i}`}><dt>{item.outletId} · {item.orderRef} · {t(item.issue.issueType)}{item.issue.note ? ` · ${item.issue.note}` : ""}</dt><dd className="dp-cell-sub--amber">{item.receipt.receivedUnits} {t("of")} {item.receipt.expectedUnits} · {item.issue.affectedUnits} {t("short")}</dd></div>)}</dl>}
+        {(receipts.data?.items || []).length === 0 ? <p className="muted" style={{ margin: 0 }}>{t("No receipt issues reported.")}</p> : <dl className="dp-kv-rows">{receipts.data!.items.map((item, i) => <div key={`${item.orderRef}-${i}`}><dt>{item.outletId} · {item.orderRef} · {t(item.issue.issueType)}{item.issue.note ? ` · ${item.issue.note}` : ""}</dt><dd className="dp-cell-sub--amber">{receiptIssueSummary(item.issue.issueType, item.receipt.receivedUnits, item.receipt.expectedUnits, item.issue.affectedUnits, t)}</dd></div>)}</dl>}
         <Note>{t("Store shortages are compared with the loader's shortfall report and the driver's record. Both parties' records are retained if they disagree.")}</Note>
       </Drawer>
       {toast && <Toast onClose={() => setToast("")}>✓ {toast}</Toast>}
