@@ -88,7 +88,7 @@ void main() {
   });
 
   test('a server that refuses the sign-in is reported as not accepted', () async {
-    for (final oauthError in ['invalid_grant', 'access_denied', 'invalid_client', 'unauthorized_client', 'INVALID_GRANT']) {
+    for (final oauthError in ['invalid_grant', 'access_denied', 'invalid_client', 'unauthorized_client', 'INVALID_GRANT', 'invalid_request', 'invalid_scope', 'unsupported_grant_type', 'invalid_token', 'something_new']) {
       final appAuth = FakeAppAuth()..error = _serverError(oauthError);
       await expectLater(
         AppAuthOidcClient(_local, appAuth: appAuth).signIn(),
@@ -99,7 +99,7 @@ void main() {
   });
 
   test('other platform failures are reported as unreachable without exposing details', () async {
-    for (final error in [_serverError(null), _serverError('server_error'), PlatformException(code: 'boom', message: 'secret internals')]) {
+    for (final error in [_serverError(null), _serverError(''), _serverError('server_error'), _serverError('Temporarily_Unavailable'), PlatformException(code: 'boom', message: 'secret internals')]) {
       final appAuth = FakeAppAuth()..error = error;
       await expectLater(
         AppAuthOidcClient(_local, appAuth: appAuth).signIn(),
