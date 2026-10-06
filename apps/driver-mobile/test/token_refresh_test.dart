@@ -184,6 +184,13 @@ void main() {
       await expectLater(client.refresh(_tokens()), throwsA(isA<AuthFailure>().having((f) => f.kind, 'kind', AuthFailureKind.unauthorized)));
     });
 
+    test('any error the provider names ends the session, even one outside the usual codes', () async {
+      for (final oauthError in ['invalid_request', 'invalid_token', 'something_new']) {
+        appAuth.error = _serverError(oauthError);
+        await expectLater(client.refresh(_tokens()), throwsA(isA<AuthFailure>().having((f) => f.kind, 'kind', AuthFailureKind.unauthorized)), reason: oauthError);
+      }
+    });
+
     test('no connection is not a refusal', () async {
       appAuth.error = PlatformException(code: 'network', message: 'offline');
       await expectLater(client.refresh(_tokens()), throwsA(isA<AuthFailure>().having((f) => f.kind, 'kind', AuthFailureKind.unavailable)));
