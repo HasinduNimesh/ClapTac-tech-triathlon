@@ -36,3 +36,9 @@ export function livePoint(location, now) {
   const { latitude, longitude } = location;
   return Number.isFinite(latitude) && Number.isFinite(longitude) ? [latitude, longitude] : null;
 }
+
+/** Whole minutes since a report, never negative. */
+export function ageMinutes(timestamp, now) {
+  const at = new Date(timestamp).getTime();
+  return Number.isFinite(at) ? Math.max(0, Math.floor((now - at) / 60_000)) : 0;
+}

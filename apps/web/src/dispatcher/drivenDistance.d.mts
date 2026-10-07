@@ -4,3 +4,4 @@ export function estimatedLitres(distanceM: number, kmPerL: number | undefined): 
 export function formatKm(km: number): string;
 export function formatLitres(litres: number): string;
 export function livePoint(location: { latitude: number; longitude: number; timestamp: string } | null | undefined, now: number): [number, number] | null;
+export function ageMinutes(timestamp: string, now: number): number;
