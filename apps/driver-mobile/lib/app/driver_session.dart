@@ -1,3 +1,4 @@
+import '../location/location_reporter.dart';
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -60,6 +61,7 @@ class DriverSession extends ChangeNotifier {
     this.messagePollInterval = const Duration(seconds: 30),
     this.routeStore,
     this.prefs,
+    this.location,
   })  : _initialTrip = trip ?? ((demoRoute || (auth == null && demoAuth)) ? sampleTrip : null),
         _clock = clock ?? DateTime.now,
         _newId = newId ?? newOperationId {
@@ -255,13 +257,33 @@ class DriverSession extends ChangeNotifier {
   /// Acknowledges the plan and starts the run on the server. Null in demo and test sessions.
   final TripStarter? starter;
 
+  /// Shares the truck's position with dispatch while a trip is running. Null in demo and test sessions.
+  final LocationReporter? location;
+
   bool _disposed = false;
 
   /// Work that was still under way when the session was disposed (a retry waiting for Waypoint) finishes
   /// quietly instead of notifying listeners that are gone.
   @override
   void notifyListeners() {
-    if (!_disposed) super.notifyListeners();
+    if (_disposed) return;
+    _updateTracking();
+    super.notifyListeners();
+  }
+
+  /// Position sharing follows the trip, and nothing else: it runs while a signed-in driver has a started trip, for
+  /// that trip, and stops the moment the driver signs out or the trip is no longer the one on screen. Called on
+  /// every change, so no transition can be missed; it does nothing when the answer has not changed.
+  void _updateTracking() {
+    final reporter = location;
+    if (reporter == null) return;
+    final trip = hasRoute ? _baseTrip : null;
+    final wanted = signedIn && tripStartState == TripStartState.started && trip != null ? trip.tripId : null;
+    if (wanted == null) {
+      if (reporter.tripId != null) unawaited(reporter.stop());
+    } else if (reporter.tripId != wanted) {
+      unawaited(reporter.startFor(wanted));
+    }
   }
 
   @override
@@ -271,6 +293,7 @@ class DriverSession extends ChangeNotifier {
     unawaited(_connectivitySubscription?.cancel());
     _messageTimer?.cancel();
     worker?.onProgress = null;
+    unawaited(location?.stop());
     super.dispose();
   }
 

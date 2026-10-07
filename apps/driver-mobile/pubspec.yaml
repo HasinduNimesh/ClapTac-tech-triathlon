@@ -1,7 +1,7 @@
 name: waypoint_driver
 description: Waypoint driver app with offline-first route execution.
 publish_to: "none"
-version: 0.1.4+5
+version: 0.1.5+6
 
 environment:
   sdk: ">=3.4.0 <4.0.0"
@@ -19,6 +19,7 @@ dependencies:
   path_provider: ^2.1.6
   connectivity_plus: ^7.3.2
   url_launcher: ^6.3.1
+  geolocator: ^14.0.1
 
 dev_dependencies:
   flutter_test:

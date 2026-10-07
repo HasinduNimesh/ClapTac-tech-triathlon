@@ -15,6 +15,9 @@ import 'auth/oidc_client.dart';
 import 'auth/profile_api.dart';
 import 'auth/revocation_queue.dart';
 import 'auth/token_revoker.dart';
+import 'location/api_position_sink.dart';
+import 'location/device_position_source.dart';
+import 'location/location_reporter.dart';
 import 'messages/messages.dart';
 import 'offline/local_database.dart';
 import 'maps/map_launcher.dart';
@@ -29,9 +32,9 @@ import 'trips/trip_start.dart';
 import 'trips/trips_api.dart';
 import 'theme/app_theme.dart';
 
-({AuthGateway? auth, TripSource? trips, TripStarter? starter, MessageSource? messages, SyncQueue queue, DeliverySyncWorker? worker}) _buildServices() {
+({AuthGateway? auth, TripSource? trips, TripStarter? starter, MessageSource? messages, LocationReporter? location, SyncQueue queue, DeliverySyncWorker? worker}) _buildServices() {
   final config = AuthConfig.fromEnvironment();
-  if (!config.isConfigured) return (auth: null, trips: null, starter: null, messages: null, queue: InMemorySyncQueue(), worker: null);
+  if (!config.isConfigured) return (auth: null, trips: null, starter: null, messages: null, location: null, queue: InMemorySyncQueue(), worker: null);
   final auth = OidcAuthGateway(
     config: config,
     client: AppAuthOidcClient(config),
@@ -46,6 +49,7 @@ import 'theme/app_theme.dart';
     trips: ApiTripSource(api: TripsApi(client: http.Client(), baseUrl: config.apiBaseUrl), auth: auth),
     starter: ApiTripStarter(client: http.Client(), baseUrl: config.apiBaseUrl, auth: auth),
     messages: ApiMessageSource(api: MessagesApi(client: http.Client(), baseUrl: config.apiBaseUrl), auth: auth),
+    location: LocationReporter(source: const DevicePositionSource(), sink: ApiPositionSink(client: http.Client(), baseUrl: config.apiBaseUrl, auth: auth)),
     queue: queue,
     worker: DeliverySyncWorker(queue: queue, auth: auth, client: http.Client(), baseUrl: config.apiBaseUrl),
   );
@@ -62,6 +66,7 @@ void main() {
     auth: services.auth,
     trips: services.trips,
     starter: services.starter,
+    location: services.location,
     messageSource: services.messages,
     // Only a real sign-in has a route worth keeping; demo builds always show the sample route.
     routeStore: services.auth == null ? null : FileRouteStore(),
@@ -93,6 +98,7 @@ class WaypointDriverApp extends StatefulWidget {
     this.auth,
     this.trips,
     this.starter,
+    this.location,
     this.messageSource,
     this.routeStore,
     this.worker,
@@ -110,6 +116,7 @@ class WaypointDriverApp extends StatefulWidget {
   final AuthGateway? auth;
   final TripSource? trips;
   final TripStarter? starter;
+  final LocationReporter? location;
   final MessageSource? messageSource;
   final RouteStore? routeStore;
   final DeliverySyncWorker? worker;
@@ -132,6 +139,7 @@ class _WaypointDriverAppState extends State<WaypointDriverApp> {
     auth: widget.auth,
     trips: widget.trips,
     starter: widget.starter,
+    location: widget.location,
     messageSource: widget.messageSource,
     routeStore: widget.routeStore,
     worker: widget.worker,
