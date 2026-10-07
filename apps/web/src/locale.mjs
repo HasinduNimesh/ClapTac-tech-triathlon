@@ -1690,5 +1690,21 @@ Object.assign(labels.ta, {
   "affected": "பாதிக்கப்பட்டவை",
   "differs from the driver's record by": "ஓட்டுநர் பதிவிலிருந்து வேறுபடுவது",
 });
+Object.assign(labels.si, {
+  "live": "සජීවී",
+  "live position": "සජීවී ස්ථානය",
+  "Driven": "ධාවනය කළ දුර",
+  "about": "දළ වශයෙන්",
+  "of fuel at": "ඉන්ධන, මෙහි කාර්යක්ෂමතාව",
+  "From the driver's phone while the trip runs. Fuel is an estimate from the vehicle's rated efficiency, not a reading; actual litres are in the fuel ledger.": "ගමන පවතින විට රියදුරුගේ දුරකථනයෙන්. ඉන්ධන යනු වාහනයේ නියමිත කාර්යක්ෂමතාව අනුව කළ ඇස්තමේන්තුවකි, මිනුමක් නොවේ; සැබෑ ලීටර් ඉන්ධන ලේඛනයේ ඇත.",
+});
+Object.assign(labels.ta, {
+  "live": "நேரடி",
+  "live position": "நேரடி இடம்",
+  "Driven": "ஓட்டிய தூரம்",
+  "about": "சுமார்",
+  "of fuel at": "எரிபொருள், செயல்திறன்",
+  "From the driver's phone while the trip runs. Fuel is an estimate from the vehicle's rated efficiency, not a reading; actual litres are in the fuel ledger.": "பயணம் நடக்கும்போது ஓட்டுநரின் தொலைபேசியிலிருந்து. எரிபொருள் என்பது வாகனத்தின் மதிப்பிடப்பட்ட செயல்திறனின் அடிப்படையிலான மதிப்பீடு, அளவீடு அல்ல; உண்மையான லிட்டர்கள் எரிபொருள் பதிவேட்டில் உள்ளன.",
+});
 Object.assign(labels.si, auditGapLabels.si);
 Object.assign(labels.ta, auditGapLabels.ta);
