@@ -6,6 +6,7 @@ import { AuthProvider } from "./auth/AuthContext";
 import { CallbackPage } from "./auth/CallbackPage";
 import { RoleGate } from "./auth/RoleGate";
 import { Layout } from "./components/Layout";
+import { SessionBanner } from "./components/SessionBanner";
 import { HomePage } from "./routes/HomePage";
 import { LoginPage } from "./routes/LoginPage";
 import { NotFoundPage } from "./routes/NotFoundPage";
@@ -44,6 +45,7 @@ function AppRoutes() {
   const { t } = useLocale();
   return (
     <Suspense fallback={<p role="status">{t("Loading screen…")}</p>}>
+      <SessionBanner />
       <HabitHelper />
       <Routes>
         <Route path="/login" element={<LoginPage />} />

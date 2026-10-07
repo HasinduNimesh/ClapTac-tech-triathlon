@@ -304,6 +304,7 @@ services:
         VITE_OIDC_CLIENT_ID: ${VITE_OIDC_CLIENT_ID:-waypoint-web}
         VITE_OIDC_REDIRECT_URI: ${VITE_OIDC_REDIRECT_URI:-http://localhost/auth/callback}
         VITE_OIDC_AUDIENCE: ${VITE_OIDC_AUDIENCE:-waypoint-api}
+        VITE_OIDC_SCOPE: ${VITE_OIDC_SCOPE:-openid profile}
         VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api/v1}
     expose:
       - "80"
