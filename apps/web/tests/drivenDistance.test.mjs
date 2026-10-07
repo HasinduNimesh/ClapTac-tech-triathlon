@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { drivenKm, estimatedLitres, formatKm, formatLitres, isFresh, livePoint } from "../src/dispatcher/drivenDistance.mjs";
+import { ageMinutes, drivenKm, estimatedLitres, formatKm, formatLitres, isFresh, livePoint } from "../src/dispatcher/drivenDistance.mjs";
 
 const now = Date.UTC(2026, 9, 7, 9, 0, 0);
 const ago = (seconds) => new Date(now - seconds * 1000).toISOString();
@@ -40,4 +40,11 @@ test("formatting keeps one decimal for short distances", () => {
   assert.equal(formatKm(4.25), "4.3 km");
   assert.equal(formatKm(124.6), "125 km");
   assert.equal(formatLitres(2.634), "2.6 L");
+});
+
+test("the age of a report is whole minutes and never negative", () => {
+  assert.equal(ageMinutes(ago(20), now), 0);
+  assert.equal(ageMinutes(ago(125), now), 2);
+  assert.equal(ageMinutes(new Date(now + 60_000).toISOString(), now), 0);
+  assert.equal(ageMinutes("nope", now), 0);
 });

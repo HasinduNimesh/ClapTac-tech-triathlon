@@ -1718,5 +1718,11 @@ Object.assign(labels.ta, {
   "Sign in again": "மீண்டும் உள்நுழையவும்",
   "Stay signed in": "உள்நுழைந்தே இருக்கவும்",
 });
+Object.assign(labels.si, {
+  "just now": "දැන් ම",
+});
+Object.assign(labels.ta, {
+  "just now": "இப்போதுதான்",
+});
 Object.assign(labels.si, auditGapLabels.si);
 Object.assign(labels.ta, auditGapLabels.ta);

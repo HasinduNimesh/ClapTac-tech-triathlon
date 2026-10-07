@@ -38,7 +38,7 @@ function icon(m: MapMarker) {
  * OpenStreetMap map with Waypoint markers. Positions passed in may be
  * approximate; callers say so next to the map.
  */
-export function WaypointMap({ markers, lines, height = 520, label, fitKey }: { markers: MapMarker[]; lines: MapLine[]; height?: number; label: string; fitKey?: string }) {
+export function WaypointMap({ markers, lines, height = 520, label, fitKey, maxZoom = 13, follow = false }: { markers: MapMarker[]; lines: MapLine[]; height?: number; label: string; fitKey?: string; maxZoom?: number; follow?: boolean }) {
   const host = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
   const layer = useRef<L.LayerGroup | null>(null);
@@ -51,7 +51,9 @@ export function WaypointMap({ markers, lines, height = 520, label, fitKey }: { m
     // Only these tile images are allowed to send the site's origin (no path or query), as OSM's tile policy requires.
     L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 18, attribution: "© OpenStreetMap contributors", referrerPolicy: "strict-origin-when-cross-origin" }).addTo(map.current);
     layer.current = L.layerGroup().addTo(map.current);
-    return () => { map.current?.remove(); map.current = null; };
+    // A map opened inside a sliding panel is measured before the panel has its final size.
+    const settle = window.setTimeout(() => map.current?.invalidateSize(), 300);
+    return () => { window.clearTimeout(settle); map.current?.remove(); map.current = null; };
   }, []);
 
   useEffect(() => {
@@ -70,9 +72,12 @@ export function WaypointMap({ markers, lines, height = 520, label, fitKey }: { m
     const key = fitKey ?? String(markers.length);
     if (markers.length && fitted.current !== key) {
       fitted.current = key;
-      m.fitBounds(L.latLngBounds(markers.map((x) => x.at)).pad(0.2), { maxZoom: 13 });
+      m.fitBounds(L.latLngBounds(markers.map((x) => x.at)).pad(0.2), { maxZoom });
+    } else if (follow && markers.length && !m.getBounds().contains(markers[0].at)) {
+      // A moving truck that leaves the view is followed, without changing the zoom the person chose.
+      m.panTo(markers[0].at);
     }
-  }, [markers, lines, fitKey]);
+  }, [markers, lines, fitKey, maxZoom, follow]);
 
   return <div ref={host} role="region" aria-label={label} style={{ height, width: "100%", borderRadius: 8, overflow: "hidden", background: "#eef0ee" }} />;
 }
