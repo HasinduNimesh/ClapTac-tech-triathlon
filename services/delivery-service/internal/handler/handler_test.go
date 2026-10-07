@@ -111,6 +111,9 @@ func (s *stubDriver) OutletLastServed(context.Context) ([]domain.OutletLastServe
 func (s *stubDriver) OutletLastAttempted(context.Context, string) ([]domain.OutletLastAttempted, error) {
 	return []domain.OutletLastAttempted{}, nil
 }
+func (s *stubDriver) RunDistance(context.Context, *authorization.Profile, string) (*domain.RunDistance, error) {
+	return &domain.RunDistance{TripID: "trip-1", DistanceM: 1500}, s.getErr
+}
 func (s *stubDriver) SendTripMessage(_ context.Context, _ *authorization.Profile, tripID, stopID, body string) (domain.TripMessage, error) {
 	return domain.TripMessage{TripID: tripID, StopID: stopID, Body: body}, s.mutErr
 }

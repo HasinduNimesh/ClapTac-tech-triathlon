@@ -237,6 +237,7 @@ func TestDeliveryWorkflow(t *testing.T) {
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0038_delivery_proof_receiver_name.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0039_delivery_driver_incidents.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0074_delivery_live_locations.sql"))
+	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0077_delivery_run_distance.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0040_delivery_stop_expected_units.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0041_delivery_outcome_units.sql"))
 
@@ -381,6 +382,43 @@ func TestDeliveryWorkflow(t *testing.T) {
 	storeScoped := do(t, srv, http.MethodGet, "/api/v1/delivery/internal/orders/ord-1", "svc-order", nil, "")
 	if storeScoped.status != http.StatusOK || !strings.Contains(storeScoped.body, `"latitude":6.9271`) {
 		t.Fatalf("authorized order location %d %s", storeScoped.status, storeScoped.body)
+	}
+	// Distance is built from the reports: real movement adds up, standstill jitter, an impossible jump and an
+	// out-of-order report add nothing.
+	report := func(lat, lon float64, offset time.Duration) string {
+		body := []byte(fmt.Sprintf(`{"latitude":%f,"longitude":%f,"timestamp":%q}`, lat, lon, time.Now().UTC().Add(offset).Format(time.RFC3339Nano)))
+		res := do(t, srv, http.MethodPost, "/api/v1/delivery/trips/trip-north/location", "usr-driver", body, "")
+		if res.status != http.StatusOK {
+			t.Fatalf("location report %d %s", res.status, res.body)
+		}
+		return res.body
+	}
+	report(6.9371, 79.8612, 30*time.Second)         // 0.01 degrees north: about 1.11 km in 30 s
+	report(6.93711, 79.86121, 60*time.Second)       // about 1.5 m: jitter
+	report(7.5, 79.8612, 70*time.Second)            // 60 km in 10 s: a bad fix, position moves but no distance
+	late := report(6.9371, 79.8612, 20*time.Second) // older than the stored point: ignored
+	if !strings.Contains(late, `"latitude":7.5`) {
+		t.Fatalf("an older report must not move the point back: %s", late)
+	}
+	distance := do(t, srv, http.MethodGet, "/api/v1/delivery/trips/trip-north/distance", "usr-dispatcher", nil, "")
+	var driven struct {
+		Distance struct {
+			DistanceM float64 `json:"distanceM"`
+			Fixes     int     `json:"fixes"`
+			RunStatus string  `json:"runStatus"`
+		} `json:"distance"`
+	}
+	if err := json.Unmarshal([]byte(distance.body), &driven); err != nil || distance.status != http.StatusOK {
+		t.Fatalf("distance %d %s", distance.status, distance.body)
+	}
+	if driven.Distance.DistanceM < 1090 || driven.Distance.DistanceM > 1135 || driven.Distance.Fixes != 4 || driven.Distance.RunStatus != "in_progress" {
+		t.Fatalf("distance should be about 1112 m over 4 accepted fixes: %+v", driven.Distance)
+	}
+	if code := do(t, srv, http.MethodGet, "/api/v1/delivery/trips/trip-north/distance", "usr-store-manager", nil, "").status; code != http.StatusForbidden {
+		t.Fatalf("a store manager must not read vehicle distance: %d", code)
+	}
+	if code := do(t, srv, http.MethodGet, "/api/v1/delivery/trips/trip-north/distance", "usr-driver", nil, "").status; code != http.StatusForbidden {
+		t.Fatalf("the distance endpoint is for dispatchers: %d", code)
 	}
 	startReplay := do(t, srv, http.MethodPost, "/api/v1/delivery/trips/trip-north/start", "usr-driver", nil, "start-1")
 	if startReplay.status != http.StatusOK || !strings.Contains(startReplay.body, `"in_progress"`) {
