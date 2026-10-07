@@ -35,7 +35,7 @@ void main() {
   testWidgets('boots to sign-in', (tester) async {
     await _boot(tester);
     expect(find.text('Sign in'), findsWidgets);
-    expect(find.text('Drivers, Loaders and Store Manager'), findsOneWidget);
+    expect(find.text('For drivers'), findsOneWidget);
   });
 
   testWidgets('sign in opens the route and asks to check the load first', (tester) async {
@@ -177,7 +177,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Finish trip'));
     await tester.pumpAndSettle();
-    expect(find.text('Drivers, Loaders and Store Manager'), findsOneWidget);
+    expect(find.text('For drivers'), findsOneWidget);
   });
 
   testWidgets('a normal build refuses to sign in and explains why', (tester) async {
