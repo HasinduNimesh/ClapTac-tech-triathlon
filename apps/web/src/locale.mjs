@@ -1706,5 +1706,17 @@ Object.assign(labels.ta, {
   "of fuel at": "எரிபொருள், செயல்திறன்",
   "From the driver's phone while the trip runs. Fuel is an estimate from the vehicle's rated efficiency, not a reading; actual litres are in the fuel ledger.": "பயணம் நடக்கும்போது ஓட்டுநரின் தொலைபேசியிலிருந்து. எரிபொருள் என்பது வாகனத்தின் மதிப்பிடப்பட்ட செயல்திறனின் அடிப்படையிலான மதிப்பீடு, அளவீடு அல்ல; உண்மையான லிட்டர்கள் எரிபொருள் பதிவேட்டில் உள்ளன.",
 });
+Object.assign(labels.si, {
+  "Your session has ended. Sign in again to carry on. You will come back to this page, but anything you had not saved is lost.": "ඔබගේ සැසිය අවසන් වී ඇත. දිගටම කරගෙන යාමට නැවත පිවිසෙන්න. ඔබ මෙම පිටුවටම නැවත පැමිණෙන නමුත්, සුරකින්නේ නැති ඕනෑම දෙයක් අහිමි වේ.",
+  "Your session ends in {minutes} minutes. Finish and save what you are doing, or stay signed in.": "ඔබගේ සැසිය විනාඩි {minutes}කින් අවසන් වේ. ඔබ කරමින් සිටින දේ අවසන් කර සුරකින්න, නැතහොත් පිවිස සිටින්න.",
+  "Sign in again": "නැවත පිවිසෙන්න",
+  "Stay signed in": "පිවිස සිටින්න",
+});
+Object.assign(labels.ta, {
+  "Your session has ended. Sign in again to carry on. You will come back to this page, but anything you had not saved is lost.": "உங்கள் அமர்வு முடிந்துவிட்டது. தொடர மீண்டும் உள்நுழையவும். நீங்கள் இந்தப் பக்கத்திற்கே திரும்பி வருவீர்கள், ஆனால் சேமிக்காதவை இழக்கப்படும்.",
+  "Your session ends in {minutes} minutes. Finish and save what you are doing, or stay signed in.": "உங்கள் அமர்வு {minutes} நிமிடங்களில் முடிகிறது. நீங்கள் செய்வதை முடித்துச் சேமிக்கவும், அல்லது உள்நுழைந்தே இருக்கவும்.",
+  "Sign in again": "மீண்டும் உள்நுழையவும்",
+  "Stay signed in": "உள்நுழைந்தே இருக்கவும்",
+});
 Object.assign(labels.si, auditGapLabels.si);
 Object.assign(labels.ta, auditGapLabels.ta);
