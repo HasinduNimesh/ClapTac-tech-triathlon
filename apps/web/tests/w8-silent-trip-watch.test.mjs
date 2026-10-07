@@ -194,8 +194,9 @@ test("W8 done-when: a silent trip is grey with its last update in both the list 
     /row\.state === "silent" && row\.watch\?\.silentTime \? `\$\{t\("No update since"\)\} \$\{row\.watch\.silentTime\}`/,
     "Map marker label must read 'No update since HH:MM'",
   );
-  assert.match(liveOpsSrc, /label: `\$\{row\.summary\.vehicleId\} · \$\{silentText\(row\)\}`/, "Map marker uses that label");
-  assert.match(liveOpsSrc, /const truck = at\(last\) \|\| depotAt;/, "Marker sits at the last reported stop (last known place)");
+  assert.match(liveOpsSrc, /label: `\$\{row\.summary\.vehicleId\} · \$\{silentText\(row\)\}\$\{livePosition \?/, "Map marker uses that label (with a live suffix only when the phone is reporting)");
+  assert.match(liveOpsSrc, /const truck = livePosition \|\| at\(last\) \|\| depotAt;/, "Marker sits at a fresh live position, else the last reported stop (last known place)");
+  assert.match(liveOpsSrc, /livePoint\(live\[row\.summary\.tripId\], now\)/, "A live position only counts while it is recent, so a silent trip does not stay put on a stale point");
 });
 
 test("W8 styling: the pre-Figma W8 classes are gone and the page no longer uses them", () => {
