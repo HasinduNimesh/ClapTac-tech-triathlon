@@ -94,6 +94,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+          check-latest: true
           cache: true
       - run: go vet ./...
       - run: go test ./...
@@ -341,6 +342,28 @@ jobs:
           bad = [name for name, ok in checks.items() if not ok]
           if bad:
               raise SystemExit("Production Compose identity configuration is incomplete: " + ", ".join(bad))
+          # Refuse development defaults for credentials and database transport.
+          weak = []
+          for svc, spec in services.items():
+              env = spec.get("environment") or {}
+              if "sslmode=disable" in str(env.get("DATABASE_URL", "")):
+                  weak.append(svc + ": DATABASE_URL uses sslmode=disable")
+              if "waypoint:waypoint@" in str(env.get("DATABASE_URL", "")):
+                  weak.append(svc + ": DATABASE_URL uses the default database password")
+              if str(env.get("M2M_CLIENT_SECRET", "")).startswith("local-"):
+                  weak.append(svc + ": M2M_CLIENT_SECRET is the local default")
+              if env.get("POSTGRES_PASSWORD") == "waypoint":
+                  weak.append(svc + ": POSTGRES_PASSWORD is the default")
+              if env.get("GF_SECURITY_ADMIN_PASSWORD") == "admin":
+                  weak.append(svc + ": Grafana admin password is the default")
+              if env.get("OPENSEARCH_INITIAL_ADMIN_PASSWORD") == "WaypointDev_1":
+                  weak.append(svc + ": OpenSearch admin password is the default")
+          logins = {str(services[n].get("environment", {}).get("DATABASE_URL", "")).split("@")[0] for n in
+                    ("order-service", "planning-service", "fleet-service", "loading-service", "delivery-service", "shared-service") if n in services}
+          if len(logins) == 1:
+              print("NOTICE: every service uses the same database login. Per-service logins are available (database/roles.sh).", file=sys.stderr)
+          if weak:
+              raise SystemExit("Production Compose uses development credentials or transport:\n  " + "\n  ".join(weak))
           ' "$audience"
           # Refuse before changing anything if compose would have to start a service that is built from
           # source and has neither a published image nor one already on this VM. Such a service stopped a

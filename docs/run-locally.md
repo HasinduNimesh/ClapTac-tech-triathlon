@@ -78,5 +78,5 @@ make verify   # full Go + web suite; needs Docker for the PostgreSQL-backed test
 Without a local Go toolchain, run the Go checks in a container from the repo root:
 
 ```bash
-docker run --rm -v "$PWD":/src -w /src golang:1.22 sh -c "go build ./... && go vet ./... && go test ./pkg/... ./services/..."
+docker run --rm -v "$PWD":/src -w /src golang:1.26 sh -c "go build ./... && go vet ./... && go test ./pkg/... ./services/..."
 ```

@@ -59,7 +59,7 @@ English, Sinhala, and Tamil are available in the web interface. Maps use approxi
 | --- | --- |
 | Git | Clone the repository. |
 | Docker Engine/Desktop and Docker Compose v2 | Run the complete local application. Docker must be running. |
-| Go 1.22+ | Build, test, or develop backend services outside Docker. |
+| Go 1.26+ | Build, test, or develop backend services outside Docker. |
 | Node.js 20+ and npm | Build or test the React application outside Docker. |
 | Python 3 | Validate and convert seed data; run Python utility tests. |
 | Flutter | Only for the optional `apps/driver-mobile` project; not required for the supported web workspaces. |

@@ -1,7 +1,7 @@
 # Build from repository root:
 # docker build -f services/shared-service/Dockerfile --build-arg SERVICE=shared-service .
 ARG SERVICE=shared-service
-FROM golang:1.22-alpine AS build
+FROM golang:1.26-alpine AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
