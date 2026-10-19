@@ -217,7 +217,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build and push backend service
         if: matrix.service != 'web' && matrix.service != 'loader-web' && matrix.service != 'agent-assistants'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile
@@ -228,7 +228,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
       - name: Build and push web app
         if: matrix.service == 'web'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: apps/web
           # The web app bakes these public addresses in at build time, so the image is production-only.
@@ -245,7 +245,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=web
       - name: Build and push agent assistants
         if: matrix.service == 'agent-assistants'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: services/agent-assistants
           push: true
@@ -254,7 +254,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=agent-assistants
       - name: Build and push loader app
         if: matrix.service == 'loader-web'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: apps/loader-web
           # Also baked in at build time, so this image is production-only.
