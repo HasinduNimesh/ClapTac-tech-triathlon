@@ -8,7 +8,7 @@ require (
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/prometheus/client_golang v1.21.1
 	github.com/testcontainers/testcontainers-go v0.34.0
-	github.com/twilio/twilio-go v1.30.9
+	github.com/twilio/twilio-go v1.32.0
 	go.opentelemetry.io/otel v1.45.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.45.0
 	go.opentelemetry.io/otel/sdk v1.45.0
