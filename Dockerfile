@@ -8,7 +8,7 @@ COPY services ./services
 ARG SERVICE
 RUN CGO_ENABLED=0 GOOS=linux go build -o /out/server ./services/${SERVICE}/cmd/server
 
-FROM alpine:3.20
+FROM alpine:3.24
 RUN apk add --no-cache ca-certificates
 COPY --from=build /out/server /usr/local/bin/server
 EXPOSE 8080
