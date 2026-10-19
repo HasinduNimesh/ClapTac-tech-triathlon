@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { roleOf, useAuth } from "../auth/AuthContext";
 import { useLocale } from "../i18n";
@@ -8,13 +8,12 @@ import { workspaceFor } from "./workspaceLink.mjs";
 import { markLoaderHandoff } from "../loader/handoff.mjs";
 import "./landing.css";
 import logo from "../assets/login/logo.png";
-import hero from "../assets/login/hero.png";
 import iconStore from "../assets/login/icon-store.svg";
 import iconDispatcher from "../assets/login/icon-dispatcher.svg";
 import iconLoader from "../assets/login/icon-loader.svg";
 import iconDriver from "../assets/login/icon-driver.svg";
 import iconCheck from "../assets/store-manager/icon-check.svg";
-import iconTruck from "../assets/store-manager/icon-truck.svg";
+import { HeroScene } from "./HeroScene";
 
 type Status = "checking" | "live" | "down";
 
@@ -25,6 +24,19 @@ export function HomePage() {
   const apk = useDriverApk();
   const [starting, setStarting] = useState(false);
   const [failed, setFailed] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+
+  // Fade sections in as they scroll into view. Without JS or with reduced motion everything is simply shown.
+  useEffect(() => {
+    const el = root.current;
+    if (!el || !("IntersectionObserver" in window) || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    el.classList.add("lp-reveal-on");
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((e) => { if (e.isIntersecting) { e.target.classList.add("is-in"); io.unobserve(e.target); } });
+    }, { threshold: 0.12 });
+    el.querySelectorAll("[data-reveal]").forEach((n) => io.observe(n));
+    return () => io.disconnect();
+  }, []);
 
   useEffect(() => {
     fetch("/health/live").then((r) => setStatus(r.ok ? "live" : "down")).catch(() => setStatus("down"));
@@ -62,7 +74,7 @@ export function HomePage() {
   ];
 
   return (
-    <div className="lp">
+    <div className="lp" ref={root}>
       <a className="skip-link" href="#main-content">{t("Skip to main content")}</a>
 
       <header className="lp-nav">
@@ -90,7 +102,7 @@ export function HomePage() {
       <main id="main-content" tabIndex={-1} className="lp-main">
         <div className="lp-wrap">
           <section className="lp-hero" aria-labelledby="lp-title">
-            <div>
+            <div className="lp-hero-copy">
               <p className={`lp-pill lp-pill--${status}`} role="status">
                 <span className="lp-dot" aria-hidden="true" />
                 {status === "live" ? t("All systems live") : status === "down" ? t("Can't reach the service right now") : t("Checking the service…")}
@@ -108,56 +120,63 @@ export function HomePage() {
                 <li>{"English · සිංහල · தமிழ்"}</li>
               </ul>
             </div>
-            <div className="lp-art" style={{ backgroundImage: `url(${hero})` }} aria-hidden="true">
-              <span className="lp-float lp-float--a"><i />{t("Order placed")}</span>
-              <span className="lp-float lp-float--b"><i />{t("Plan locked")}</span>
-              <span className="lp-float lp-float--c"><i />{t("Delivered")}</span>
-            </div>
+            <HeroScene />
           </section>
 
           <section className="lp-section" id="how" aria-labelledby="lp-how">
-            <div className="lp-section-head">
+            <div className="lp-section-head" data-reveal>
               <p className="lp-eyebrow">{t("How it works")}</p>
               <h2 id="lp-how">{t("How an order travels")}</h2>
               <p>{t("Five steps, one shared record.")}</p>
             </div>
-            <div className="lp-steps-wrap">
-              <span className="lp-route" aria-hidden="true"><img className="lp-truck" src={iconTruck} alt="" /></span>
-            <ol className="lp-steps">
-              {steps.map((step, index) => (
-                <li className="lp-step" key={step.title}>
-                  <span className="lp-step-badge"><img src={step.icon} alt="" aria-hidden="true" /><span className="lp-step-no" aria-hidden="true">{index + 1}</span></span>
-                  <h3>{step.title}</h3>
-                  <p className="lp-step-role">{step.who}</p>
-                  <p>{step.text}</p>
-                </li>
-              ))}
-            </ol>
+            <div className="lp-journey" data-reveal>
+              <div className="lp-road" aria-hidden="true">
+                <span className="lp-road-truck">
+                  <svg viewBox="0 0 64 34" width="64" height="34" fill="none">
+                    <rect x="2" y="6" width="38" height="18" rx="3" fill="#fff" stroke="#3a57e8" strokeWidth="1.6" />
+                    <rect x="2" y="14" width="38" height="4" fill="#3a57e8" />
+                    <path d="M40 11h12l8 8v5H40z" fill="#0a1f5c" />
+                    <path d="M44 14h6l4 5h-10z" fill="#bfe6ff" />
+                    <circle className="lp-wheel" cx="14" cy="26" r="5" fill="#0f1b3d" stroke="#fff" strokeWidth="1.6" />
+                    <circle className="lp-wheel" cx="50" cy="26" r="5" fill="#0f1b3d" stroke="#fff" strokeWidth="1.6" />
+                  </svg>
+                </span>
+              </div>
+              <ol className="lp-steps">
+                {steps.map((step, index) => (
+                  <li className="lp-step" key={step.title} style={{ "--i": index } as React.CSSProperties}>
+                    <span className="lp-step-badge"><img src={step.icon} alt="" aria-hidden="true" /><span className="lp-step-no" aria-hidden="true">{index + 1}</span></span>
+                    <h3>{step.title}</h3>
+                    <p className="lp-step-role">{step.who}</p>
+                    <p>{step.text}</p>
+                  </li>
+                ))}
+              </ol>
             </div>
           </section>
 
           <section className="lp-section" id="roles" aria-labelledby="lp-roles">
-            <div className="lp-section-head">
+            <div className="lp-section-head" data-reveal>
               <p className="lp-eyebrow">{t("Roles")}</p>
               <h2 id="lp-roles">{t("One workspace for every role")}</h2>
               <p>{t("Your account decides which workspace opens. Sign in once and it takes you to the right one.")}</p>
             </div>
             <ul className="lp-roles">
-              {roles.map((role) => (
-                <li className="lp-role" key={role.title}>
+              {roles.map((role, index) => (
+                <li className="lp-role" key={role.title} data-reveal style={{ "--d": `${index * 80}ms` } as React.CSSProperties}>
                   <span className="lp-role-icon"><img src={role.icon} alt="" aria-hidden="true" /></span>
                   <h3>{role.title}</h3>
                   <p>{role.text}</p>
-                  {signedIn ? null : <a href="/login">{t("Sign in")}</a>}
+                  {signedIn ? null : <a href="/login">{t("Sign in")} →</a>}
                 </li>
               ))}
             </ul>
           </section>
 
           <section className="lp-section" id="driver-app" aria-labelledby="lp-app">
-            <div className="lp-app">
-              <div>
-                <p className="lp-eyebrow">{t("Driver app")}</p>
+            <div className="lp-app" data-reveal>
+              <div className="lp-app-copy">
+                <p className="lp-eyebrow lp-eyebrow--light">{t("Driver app")}</p>
                 <h2 id="lp-app">{t("Waypoint Driver for Android")}</h2>
                 <p className="lp-app-lede">{t("Your route, your stops and proof of delivery on your phone, kept safe on the phone when there is no signal.")}</p>
                 {apk === undefined ? (
