@@ -22,6 +22,32 @@ Services must not query another schema. Example: delivery-service must not `SELE
 
 Do not create a database per service yet.
 
+## Per-service database logins (optional)
+
+By default every service connects as the single `waypoint` login. `search_path` keeps a service's
+unqualified table names inside its own schema, but it is not a permission boundary. `roles.sh` adds a
+real one without touching the existing login or any running deployment:
+
+```sh
+ORDER_DB_PASSWORD=... PLANNING_DB_PASSWORD=... FLEET_DB_PASSWORD=... \
+LOADING_DB_PASSWORD=... DELIVERY_DB_PASSWORD=... SHARED_DB_PASSWORD=... \
+sh database/roles.sh                      # idempotent; re-run to rotate passwords or re-sync grants
+```
+
+It creates `waypoint_order`, `waypoint_planning`, `waypoint_fleet`, `waypoint_loading`,
+`waypoint_delivery` and `waypoint_shared`. Each can use only its own schema, plus exactly the cross-schema
+access the code performs: `order` reads `shared.outlets`, `shared.service_allowance`,
+`shared.planning_policy_current`, `shared.planning_policy_versions`, `fleet.vehicles`, `delivery.runs` and
+`delivery.stops`; `shared` reads and appends to `audit.events` (never updates or deletes it). None can run
+DDL or has elevated attributes. Tables added by later migrations are covered by default privileges, as long
+as migrations keep running as the same owner; re-run the script after changing that.
+
+Adopting them is a separate, reversible step: set `<SERVICE>_DATABASE_URL` in `.env` (see `.env.example`)
+and recreate that service. Unset, the variable falls back to `DATABASE_URL` and nothing changes. Do one
+service at a time and watch its logs for `permission denied` (SQLSTATE 42501); to roll back, unset the
+variable. Verify the matrix with `database/tests/service_roles.sh`. If a service gains a new cross-schema
+query, add the grant to `roles.sh` and to that test first.
+
 ## Catalog, store stock and agent data (migrations 0050–0054)
 
 | Migration | Tables |

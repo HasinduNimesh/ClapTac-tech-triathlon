@@ -45,3 +45,12 @@ __pycache__/
 # Built driver app (APK) and metadata served at /downloads/; never committed
 /downloads/*
 !/downloads/.gitkeep
+
+# Local tooling and screenshots (not part of the product)
+.claude/
+.codex/
+.mcp.json
+.playwright-mcp/
+Claude outputs/
+/loader-*.png
+tools/playwright-mcp/node_modules/

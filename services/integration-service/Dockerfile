@@ -1,7 +1,7 @@
 # Build from repository root:
 # docker build -f services/integration-service/Dockerfile --build-arg SERVICE=integration-service .
 ARG SERVICE=integration-service
-FROM golang:1.22-alpine AS build
+FROM golang:1.26-alpine AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download

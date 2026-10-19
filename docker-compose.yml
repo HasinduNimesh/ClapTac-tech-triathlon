@@ -109,6 +109,8 @@ services:
     environment:
       <<: *svc-env
       DATABASE_SCHEMA: orders
+      # Optional least-privilege login (database/roles.sh). Unset, this is the shared DATABASE_URL.
+      DATABASE_URL: ${ORDER_DATABASE_URL:-${DATABASE_URL:-postgres://waypoint:waypoint@postgres:5432/waypoint?sslmode=disable}}
       SHARED_SERVICE_URL: http://shared-service:8080
       PLANNING_SERVICE_URL: http://planning-service:8080
       DELIVERY_SERVICE_URL: http://delivery-service:8080
@@ -130,6 +132,8 @@ services:
     environment:
       <<: *svc-env
       DATABASE_SCHEMA: planning
+      # Optional least-privilege login (database/roles.sh). Unset, this is the shared DATABASE_URL.
+      DATABASE_URL: ${PLANNING_DATABASE_URL:-${DATABASE_URL:-postgres://waypoint:waypoint@postgres:5432/waypoint?sslmode=disable}}
       ORDER_SERVICE_URL: http://order-service:8080
       FLEET_SERVICE_URL: http://fleet-service:8080
       SHARED_SERVICE_URL: http://shared-service:8080
@@ -151,6 +155,8 @@ services:
     environment:
       <<: *svc-env
       DATABASE_SCHEMA: fleet
+      # Optional least-privilege login (database/roles.sh). Unset, this is the shared DATABASE_URL.
+      DATABASE_URL: ${FLEET_DATABASE_URL:-${DATABASE_URL:-postgres://waypoint:waypoint@postgres:5432/waypoint?sslmode=disable}}
       SHARED_SERVICE_URL: http://shared-service:8080
       OIDC_TOKEN_URL: ${OIDC_TOKEN_URL:-http://thunderid:8090/oauth2/token}
       M2M_CLIENT_ID: waypoint-fleet-service
@@ -166,6 +172,8 @@ services:
     environment:
       <<: *svc-env
       DATABASE_SCHEMA: loading
+      # Optional least-privilege login (database/roles.sh). Unset, this is the shared DATABASE_URL.
+      DATABASE_URL: ${LOADING_DATABASE_URL:-${DATABASE_URL:-postgres://waypoint:waypoint@postgres:5432/waypoint?sslmode=disable}}
       PLANNING_SERVICE_URL: http://planning-service:8080
       ORDER_SERVICE_URL: http://order-service:8080
       SHARED_SERVICE_URL: http://shared-service:8080
@@ -189,6 +197,8 @@ services:
     environment:
       <<: *svc-env
       DATABASE_SCHEMA: delivery
+      # Optional least-privilege login (database/roles.sh). Unset, this is the shared DATABASE_URL.
+      DATABASE_URL: ${DELIVERY_DATABASE_URL:-${DATABASE_URL:-postgres://waypoint:waypoint@postgres:5432/waypoint?sslmode=disable}}
       LOADING_SERVICE_URL: http://loading-service:8080
       SHARED_SERVICE_URL: http://shared-service:8080
       OIDC_TOKEN_URL: ${OIDC_TOKEN_URL:-http://thunderid:8090/oauth2/token}
@@ -212,6 +222,8 @@ services:
     environment:
       <<: *svc-env
       DATABASE_SCHEMA: shared
+      # Optional least-privilege login (database/roles.sh). Unset, this is the shared DATABASE_URL.
+      DATABASE_URL: ${SHARED_DATABASE_URL:-${DATABASE_URL:-postgres://waypoint:waypoint@postgres:5432/waypoint?sslmode=disable}}
       OIDC_TOKEN_URL: ${OIDC_TOKEN_URL:-http://thunderid:8090/oauth2/token}
       M2M_CLIENT_ID: waypoint-shared-service
       M2M_CLIENT_SECRET: ${SHARED_M2M_CLIENT_SECRET:-local-shared-m2m}
