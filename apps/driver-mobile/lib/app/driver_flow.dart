@@ -421,6 +421,7 @@ class _DriverHomeState extends State<_DriverHome> {
               trip: session.trip,
               offline: session.offline,
               savedCopy: session.showingSavedRoute,
+              location: session.location,
               onViewStop: _startStop,
               onReportProblem: () => _reportProblem(session.trip.nextStop),
               onTabSelected: session.selectTab,

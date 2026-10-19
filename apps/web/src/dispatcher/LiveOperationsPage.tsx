@@ -19,7 +19,8 @@ import { FRESH_TRIP_BUDGET_MINUTES } from "./planModel";
 import { runRecovery } from "./breakdownRecovery.mjs";
 
 import { useDepot } from "./DispatcherLayout";
-import { Incident, Outlet, outletMap } from "./types";
+import { Incident, Outlet, Vehicle, outletMap } from "./types";
+import { drivenKm, estimatedLitres, formatKm, formatLitres, livePoint } from "./drivenDistance.mjs";
 import { LatLng, MapLine, MapMarker, WaypointMap, depotPosition } from "../components/WaypointMap";
 import { LiveLocationMap } from "../components/LiveLocationMap";
 import { ESTIMATES_UNAVAILABLE_MESSAGE, validArrivalAt } from "../api/estimateAvailability.mjs";
@@ -67,6 +68,24 @@ export function LiveOperationsPage() {
   const serviceMinutes = forecast.data?.forecast?.serviceMinutesPerStop ?? fallbackServiceTime.minutes;
 
   useEffect(() => { const id = window.setInterval(() => setNow(Date.now()), 60_000); return () => window.clearInterval(id); }, []);
+
+  // Where the driver phones last reported, for trips that are running. A truck is drawn at its live position while
+  // that report is recent, and otherwise at its last reported stop, as before.
+  const [live, setLive] = useState<Record<string, LiveLocation>>({});
+  const runningTrips = rows.filter((r) => r.detail?.status === "in_progress").map((r) => r.summary.tripId).join(",");
+  useEffect(() => {
+    if (!token || !runningTrips) { setLive({}); return; }
+    let active = true;
+    const ids = runningTrips.split(",");
+    const refresh = async () => {
+      const results = await Promise.all(ids.map((id) => apiJSON<{ location: LiveLocation | null }>(`/delivery/trips/${encodeURIComponent(id)}/location`, token).then((r) => [id, r.location] as const).catch(() => [id, null] as const)));
+      if (active) setLive(Object.fromEntries(results.filter(([, location]) => location).map(([id, location]) => [id, location as LiveLocation])));
+    };
+    void refresh();
+    const timer = window.setInterval(() => { void refresh(); }, 20_000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [token, runningTrips]);
+  const vehicles = useApi<{ items: Vehicle[] }>("/fleet/vehicles");
 
   async function load() {
     if (!token) return;
@@ -229,7 +248,7 @@ export function LiveOperationsPage() {
           ]} />
           <span className="muted" style={{ fontSize: "0.8125rem" }}>◷ {t("Progress comes from driver updates, not GPS")}</span>
         </>}>
-          {view === "map" ? <TripMap rows={visible} outlets={outletMap(outlets.data?.items)} onOpen={setOpenTrip} /> : (
+          {view === "map" ? <TripMap rows={visible} outlets={outletMap(outlets.data?.items)} live={live} now={now} onOpen={setOpenTrip} /> : (
             <div className="dp-table-wrap">
               <table className="dp-table">
                 <thead><tr><th>{t("Vehicle / depot")}</th><th>{t("Brand · district")}</th><th>{t("Trip")}</th><th>{t("Progress")}</th><th>{t("Next stop")}</th><th>{t("Planned / estimated")}</th><th>{t("Cooling")}</th><th>{t("Last update")}</th><th>{t("Status")}</th></tr></thead>
@@ -261,7 +280,7 @@ export function LiveOperationsPage() {
           <div className="dp-table-foot"><span>{`${t("Showing")} ${visible.length} ${t("trips")} · ${depot ? DEPOT_LABELS[depot] : t("All depots")} · ${date}`}</span><span>{t("Completed trips move to the bottom")}</span></div>
         </Panel>
       </div>
-      <TripDrawer tripId={openTrip} plan={plan.data} serviceMinutes={serviceMinutes} serviceVersion={forecast.data?.forecast?.serviceEstimateVersion || fallbackServiceTime.version} onClose={() => setOpenTrip("")} />
+      <TripDrawer tripId={openTrip} kmPerL={vehicles.data?.items?.find((v) => v.id === rows.find((r) => r.summary.tripId === openTrip)?.summary.vehicleId)?.kmPerL} plan={plan.data} serviceMinutes={serviceMinutes} serviceVersion={forecast.data?.forecast?.serviceEstimateVersion || fallbackServiceTime.version} onClose={() => setOpenTrip("")} />
       <RecoveryDrawer incident={recovery} plan={plan.data} rows={evaluated} onClose={() => setRecovery(null)} onDone={(message) => { setRecovery(null); setToast(message); void plan.reload(); void incidents.reload(); void load(); }} />
       {toast && <Toast onClose={() => setToast("")}>✓ {toast}</Toast>}
     </>
@@ -269,9 +288,9 @@ export function LiveOperationsPage() {
 }
 
 // Trips on an OpenStreetMap map. Outlet positions are approximate (district
-// centre + offset). A truck sits at its last reported stop, or the depot before
-// the first update; trips with no recent update stay grey so silence is visible.
-function TripMap({ rows, outlets, onOpen }: { rows: Row[]; outlets: Map<string, Outlet>; onOpen: (tripId: string) => void }) {
+// centre + offset). A truck sits at its live position while the driver phone
+// reports it, else at its last reported stop, or the depot before the first update; trips with no recent update stay grey so silence is visible.
+function TripMap({ rows, outlets, live, now, onOpen }: { rows: Row[]; outlets: Map<string, Outlet>; live: Record<string, LiveLocation>; now: number; onOpen: (tripId: string) => void }) {
   const { t } = useLocale();
   const [selected, setSelected] = useState("");
   const color = (s: RowState) => (s === "broken" ? "#c03221" : s === "late" ? "#d9822b" : s === "silent" || s === "waiting" ? "#8a92a6" : "#008b52");
@@ -296,7 +315,8 @@ function TripMap({ rows, outlets, onOpen }: { rows: Row[]; outlets: Map<string, 
     lines.push({ id: row.summary.tripId, points: path, color: focus ? "#3a57e8" : "#9db3ee", weight: focus ? 5 : 3, dashed: row.state === "waiting" });
     const last = [...stops].reverse().find((s) => s.outcomeCode || s.arrivedAt);
     // A truck is drawn only where it has really been reported: its last stop, else its depot.
-    const truck = at(last) || depotAt;
+    const livePosition = livePoint(live[row.summary.tripId], now) as LatLng | null;
+    const truck = livePosition || at(last) || depotAt;
     const next = at(row.next);
     if (truck && next && row.state !== "done") lines.push({ id: `${row.summary.tripId}-next`, points: [truck, next], color: color(row.state), dashed: true, weight: 3 });
     if (focus) {
@@ -305,7 +325,7 @@ function TripMap({ rows, outlets, onOpen }: { rows: Row[]; outlets: Map<string, 
         if (p) markers.push({ id: `${row.summary.tripId}-${s.id}`, at: p, kind: "stop", color: s.outcomeCode ? "#008b52" : "#3a57e8", label: String(s.stopSequence), title: `${s.stopSequence}. ${s.outletId} ${s.outletName || ""}` });
       }
     }
-    if (truck) markers.push({ id: row.summary.tripId, at: truck, kind: "truck", color: color(row.state), labelColor: labelColor(row.state), selected: focus, label: `${row.summary.vehicleId} · ${silentText(row)}`, title: `${row.summary.vehicleId} · ${silentText(row)}`, onClick: () => setSelected(row.summary.tripId) });
+    if (truck) markers.push({ id: row.summary.tripId, at: truck, kind: "truck", color: color(row.state), labelColor: labelColor(row.state), selected: focus, label: `${row.summary.vehicleId} · ${silentText(row)}${livePosition ? ` · ${t("live")}` : ""}`, title: `${row.summary.vehicleId} · ${silentText(row)}${livePosition ? ` · ${t("live position")}` : ""}`, onClick: () => setSelected(row.summary.tripId) });
   }
   for (const d of depots) markers.push({ id: `depot-${d}`, at: depotPosition(d)!, kind: "depot", color: "#232d42", label: `${DEPOT_LABELS[d] || d} ${t("depot")}`, title: `${DEPOT_LABELS[d] || d} ${t("depot")}` });
   const chosen = rows.find((r) => r.summary.tripId === selected);
@@ -349,7 +369,7 @@ function TripMap({ rows, outlets, onOpen }: { rows: Row[]; outlets: Map<string, 
   );
 }
 
-function TripDrawer({ tripId, plan, serviceMinutes, serviceVersion, onClose }: { tripId: string; plan: PlanDetail | null; serviceMinutes: number; serviceVersion: string; onClose: () => void }) {
+function TripDrawer({ tripId, kmPerL, plan, serviceMinutes, serviceVersion, onClose }: { tripId: string; kmPerL?: number; plan: PlanDetail | null; serviceMinutes: number; serviceVersion: string; onClose: () => void }) {
   const { t } = useLocale();
   const { user } = useAuth();
   const token = user?.access_token || "";
@@ -358,6 +378,7 @@ function TripDrawer({ tripId, plan, serviceMinutes, serviceVersion, onClose }: {
   const [history, setHistory] = useState<LatenessProbability[]>([]);
   const [historyState, setHistoryState] = useState<"loading" | "ready" | "unavailable">("loading");
   const [location, setLocation] = useState<LiveLocation | null>(null);
+  const [driven, setDriven] = useState<{ distanceM: number; fixes: number } | null>(null);
   const [error, setError] = useState("");
   const [body, setBody] = useState("");
   const [stopId, setStopId] = useState("");
@@ -375,6 +396,17 @@ function TripDrawer({ tripId, plan, serviceMinutes, serviceVersion, onClose }: {
     } catch (e) { setHistoryState("unavailable"); setError(errorText(e)); }
   }
   useEffect(() => { if (tripId) void open(tripId); else setDetail(null); }, [tripId]);
+  // Distance driven stays available after the trip ends, so it is read for finished trips too.
+  useEffect(() => {
+    if (!detail?.tripId || !["in_progress", "completed"].includes(detail.status)) { setDriven(null); return; }
+    let active = true;
+    const refresh = () => apiJSON<{ distance: { distanceM: number; fixes: number } | null }>(`/delivery/trips/${encodeURIComponent(detail.tripId)}/distance`, token)
+      .then((r) => { if (active) setDriven(r.distance); })
+      .catch(() => { if (active) setDriven(null); });
+    void refresh();
+    const timer = detail.status === "in_progress" ? window.setInterval(() => { void refresh(); }, 30_000) : undefined;
+    return () => { active = false; if (timer) window.clearInterval(timer); };
+  }, [detail?.tripId, detail?.status, token]);
   useEffect(() => {
     if (!detail?.tripId || detail.status !== "in_progress") { setLocation(null); return; }
     let active = true;
@@ -409,6 +441,13 @@ function TripDrawer({ tripId, plan, serviceMinutes, serviceVersion, onClose }: {
       {detail && <>
         {(serviceVersion === fallbackServiceTime.version || historyState === "unavailable" || detail.stops.some((s) => !validArrivalAt(plan?.allocations?.find((a) => a.tripId === detail.tripId && a.orderId === s.orderId)?.plannedArrivalAt))) && <p className="dp-note" role="status">{t(ESTIMATES_UNAVAILABLE_MESSAGE)}</p>}
         <LiveLocationMap key={detail.tripId} location={location} />
+        {driven && driven.fixes > 0 && (
+          <p className="dp-note" role="status" style={{ margin: "8px 0" }}>
+            <strong>{t("Driven")}: {formatKm(drivenKm(driven.distanceM))}</strong>
+            {(() => { const litres = estimatedLitres(driven.distanceM, kmPerL); return litres === null ? null : <> · {t("about")} {formatLitres(litres)} {t("of fuel at")} {`${kmPerL} km/L`}</>; })()}
+            <span className="muted" style={{ display: "block", fontSize: "0.8125rem" }}>{t("From the driver's phone while the trip runs. Fuel is an estimate from the vehicle's rated efficiency, not a reading; actual litres are in the fuel ledger.")}</span>
+          </p>
+        )}
         <ol className="dp-checks" style={{ listStyle: "none" }}>
           {detail.stops.map((s, index, stops) => {
             const allocation = plan?.allocations?.find((a) => a.tripId === detail.tripId && a.orderId === s.orderId);

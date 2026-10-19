@@ -90,12 +90,17 @@ class AppAuthOidcClient implements OidcClient {
     }
   }
 
-  /// The authorization server said no (bad or revoked grant, access denied): the sign-in or refresh
-  /// was not accepted. Anything else (no network, unreadable discovery document, a failed browser
-  /// round trip) is the provider being unreachable. Internals are never shown to the driver.
+  /// The authorization server answered and said no (bad or revoked grant, access denied, a refused or
+  /// malformed request): the sign-in or refresh was not accepted, and trying again with the same token will
+  /// not change that. Only a missing answer (no network, an unreadable discovery document, a failed browser
+  /// round trip) or a server fault that says to try later is the provider being unreachable. Any OAuth error
+  /// the server names counts as a refusal, so a provider that words it differently from the usual codes still
+  /// ends the session instead of leaving the app "waiting for connection" and retrying forever. Internals are
+  /// never shown to the driver.
   static AuthFailure _failure(FlutterAppAuthPlatformException error) {
-    const rejected = {'invalid_grant', 'access_denied', 'invalid_client', 'unauthorized_client'};
-    if (rejected.contains(error.platformErrorDetails.error?.toLowerCase())) {
+    const transient = {'server_error', 'temporarily_unavailable'};
+    final oauthError = error.platformErrorDetails.error?.trim().toLowerCase();
+    if (oauthError != null && oauthError.isNotEmpty && !transient.contains(oauthError)) {
       return const AuthFailure(AuthFailureKind.unauthorized);
     }
     return const AuthFailure(AuthFailureKind.unavailable);

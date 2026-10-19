@@ -127,7 +127,7 @@ class _SignInScreenState extends State<SignInScreen> {
                         ),
                         const SizedBox(height: 12),
                         Text(
-                          noSignal ? 'Drivers, Loaders and Store Managers' : 'Drivers, Loaders and Store Manager',
+                          'For drivers',
                           style: AppText.of(15, FontWeight.w400, color: const Color(0xD9FFFFFF), height: 22 / 15),
                         ),
                       ],

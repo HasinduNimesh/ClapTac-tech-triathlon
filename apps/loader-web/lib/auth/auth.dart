@@ -91,6 +91,10 @@ class AuthService extends ChangeNotifier {
   // Why the last person was signed out by the app (inactivity). Per-tab storage, so the message
   // survives the round trip to the identity server's end-session page and back.
   static const _reasonKey = 'waypoint.loader.signout.reason';
+  // Set by the Waypoint web app, in this same tab, just before it hands a signed-in loader over to this app.
+  // Per-tab storage means a person opening the loader app fresh on a shared tablet never has it.
+  static const _handoffKey = 'waypoint.loader.handoff';
+  static const _handoffWindow = Duration(minutes: 2);
   // How long before expiry a token is renewed.
   static const _renewBefore = Duration(seconds: 60);
 
@@ -120,6 +124,11 @@ class AuthService extends ChangeNotifier {
         await _completeSignIn(url);
       } else {
         await _restore();
+        // Arriving straight from the web app's own sign-in: go on to the identity server without
+        // making the person press Sign in or type their password a second time.
+        if (status == AuthStatus.signedOut && error == null && _takeHandoff()) {
+          if (!await _adoptWebSession()) await signIn(afterWebSignIn: true);
+        }
       }
     } on SignInException catch (e) {
       _fail(e);
@@ -151,9 +160,21 @@ class AuthService extends ChangeNotifier {
 
   // ------------------------------------------------------------------ sign-in
 
+  /// True once, when the web app has just signed this person in and handed the tab over.
+  /// The marker is always removed, and only a recent one counts.
+  bool _takeHandoff() {
+    final raw = browser.sessionGet(_handoffKey);
+    browser.sessionRemove(_handoffKey);
+    final at = int.tryParse(raw ?? '');
+    if (at == null) return false;
+    final age = _now().millisecondsSinceEpoch - at;
+    return age >= -5000 && age <= _handoffWindow.inMilliseconds;
+  }
+
   /// Sends the browser to the identity server. `prompt=login` makes the next person on a
   /// shared tablet enter their own credentials instead of inheriting the previous session.
-  Future<void> signIn() async {
+  /// It is left off only right after the web app signed this same person in, in this tab.
+  Future<void> signIn({bool afterWebSignIn = false}) async {
     if (!config.configured) return _fail(SignInException(SignInError.notConfigured));
     error = null;
     try {
@@ -175,7 +196,7 @@ class AuthService extends ChangeNotifier {
         'nonce': nonce,
         'code_challenge': challengeFor(verifier),
         'code_challenge_method': 'S256',
-        'prompt': 'login',
+        if (!afterWebSignIn) 'prompt': 'login',
       });
       browser.navigate(target.toString());
     } on SignInException catch (e) {
@@ -211,8 +232,21 @@ class AuthService extends ChangeNotifier {
     // Fail here, with the reason, rather than later as a 401 from every API call.
     _checkAudience(access);
 
-    // The access token alone decides what the person may do, so the profile is read with it and
-    // only a loader gets in; nothing is stored until that has been checked.
+    final profile = await _loaderProfile(access);
+
+    final s = AuthSession(
+      accessToken: access,
+      refreshToken: tokens['refresh_token'] as String?,
+      idToken: tokens['id_token'] as String?,
+      profile: profile,
+      expiresAt: _expiry(tokens),
+    );
+    _store(s);
+  }
+
+  /// The access token alone decides what the person may do, so the profile is read with it and only a
+  /// loader gets in; nothing is stored until that has been checked.
+  Future<Profile> _loaderProfile(String access) async {
     final Profile profile;
     try {
       final body = await ApiClient(tokenProvider: () async => access, client: _client, baseUrl: _apiBase).get('/shared/profiles/me');
@@ -225,15 +259,38 @@ class AuthService extends ChangeNotifier {
       throw SignInException(SignInError.noConnection);
     }
     if (!profile.roles.map((r) => r.toUpperCase()).contains('LOADER')) throw SignInException(SignInError.wrongRole, profile.role);
+    return profile;
+  }
 
-    final s = AuthSession(
-      accessToken: access,
-      refreshToken: tokens['refresh_token'] as String?,
-      idToken: tokens['id_token'] as String?,
-      profile: profile,
-      expiresAt: _expiry(tokens),
-    );
-    _store(s);
+  /// The web app signs the person in with its own client and keeps that sign-in in this tab's storage
+  /// (`oidc.user:<issuer>:<client>`). Arriving straight from it, the loader app takes that access token instead
+  /// of sending the person to the identity server again: the identity server does not carry a sign-in from one
+  /// authorization request to the next, so a second request asks for the password a second time.
+  ///
+  /// The token is checked exactly like a fresh one (audience, then the profile must be a loader's). It has no
+  /// refresh token, so it lasts as long as the web token does; after that the loader signs in as usual.
+  /// Returns false on anything unexpected, and the normal sign-in goes ahead.
+  Future<bool> _adoptWebSession() async {
+    try {
+      final raw = browser.sessionGet('oidc.user:${config.issuerBase}:${config.webClientId}');
+      if (raw == null) return false;
+      final json = jsonDecode(raw);
+      if (json is! Map) return false;
+      final access = json['access_token'];
+      final expiresAt = json['expires_at'];
+      if (access is! String || access.isEmpty || expiresAt is! num) return false;
+      final expires = DateTime.fromMillisecondsSinceEpoch((expiresAt * 1000).round(), isUtc: true);
+      // Not worth adopting when it is about to run out: the sign-in screen would come straight back.
+      if (!_now().add(const Duration(minutes: 5)).isBefore(expires)) return false;
+      _checkAudience(access);
+      final profile = await _loaderProfile(access);
+      _store(AuthSession(accessToken: access, profile: profile, expiresAt: expires));
+      return true;
+    } on SignInException {
+      return false;
+    } on FormatException {
+      return false;
+    }
   }
 
   // ------------------------------------------------------------------ renewal

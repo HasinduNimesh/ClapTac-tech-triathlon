@@ -24,7 +24,7 @@ Map<String, Object?> _detail({String status = 'prepared', int version = 3}) => {
       'currentPlanVersion': version,
       'run': {'id': 'run-1', 'tripId': 'trip-1', 'planId': 'plan-1', 'planRef': 'PLAN000001', 'vehicleId': 'VEH001', 'status': status},
       'stops': [
-        {'id': 'stop-1', 'outletId': 'O1', 'outletName': 'Dehiwala', 'stopSequence': 1, 'expectedUnits': 10, 'status': 'pending'},
+        {'id': 'stop-1', 'orderId': 'order-1', 'outletId': 'O1', 'outletName': 'Dehiwala', 'stopSequence': 1, 'expectedUnits': 10, 'status': 'pending'},
       ],
     };
 
@@ -53,10 +53,12 @@ class _Starter implements TripStarter {
   _Starter(this.results);
   final List<TripStartResult> results;
   final calls = <(String, String, int)>[];
+  final confirmed = <List<String>?>[];
 
   @override
-  Future<TripStartResult> start(TripInfo trip, {required String operationId}) async {
+  Future<TripStartResult> start(TripInfo trip, {required String operationId, List<String>? confirmedOrderIds}) async {
     calls.add((trip.tripId, operationId, trip.planVersion));
+    confirmed.add(confirmedOrderIds);
     return results[calls.length - 1 < results.length ? calls.length - 1 : results.length - 1];
   }
 }
@@ -94,6 +96,51 @@ void main() {
       expect(jsonDecode(seen.first.body), {'version': 3});
       expect(seen.last.headers['Idempotency-Key'], 'op-start-1');
       expect(seen.every((r) => r.headers['Authorization'] == 'Bearer tok'), isTrue);
+    });
+
+    test('confirms the load on the truck between the acknowledgement and the start', () async {
+      final seen = <http.Request>[];
+      final result = await starter(MockClient((request) async {
+        seen.add(request);
+        return _json({});
+      })).start(trip, operationId: 'op-1', confirmedOrderIds: ['order-1']);
+      expect(result.status, TripStartStatus.started);
+      expect(seen.map((r) => r.url.path), [
+        '/api/v1/planning/plans/plan-1/acknowledgements',
+        '/api/v1/delivery/trips/trip-1/checkout',
+        '/api/v1/delivery/trips/trip-1/start',
+      ]);
+      expect(jsonDecode(seen[1].body), {'planVersion': 3, 'confirmedOrderIds': ['order-1']});
+    });
+
+    test('no confirmed load means no checkout call, so the server refuses the start instead of being misled', () async {
+      final paths = <String>[];
+      await starter(MockClient((request) async {
+        paths.add(request.url.path);
+        return _json({});
+      })).start(trip, operationId: 'op-1');
+      expect(paths.any((p) => p.endsWith('/checkout')), isFalse);
+    });
+
+    test('a refused checkout shows the server reason and never reaches the start call', () async {
+      final paths = <String>[];
+      final result = await starter(MockClient((request) async {
+        paths.add(request.url.path);
+        if (request.url.path.endsWith('/checkout')) return _json({'detail': 'conflict: plan or loading status changed; refresh trip'}, 409);
+        return _json({});
+      })).start(trip, operationId: 'op-1', confirmedOrderIds: ['order-1']);
+      expect(result.status, TripStartStatus.refused);
+      expect(result.message, contains('plan or loading status changed'));
+      expect(paths.any((p) => p.endsWith('/start')), isFalse);
+    });
+
+    test('a refused start shows what the server said, not a guess that the plan changed', () async {
+      final result = await starter(MockClient((request) async {
+        if (request.url.path.endsWith('/start')) return _json({'detail': 'conflict: truck checkout required before departure'}, 409);
+        return _json({});
+      })).start(trip, operationId: 'op-1', confirmedOrderIds: ['order-1']);
+      expect(result.status, TripStartStatus.refused);
+      expect(result.message, contains('truck checkout required before departure'));
     });
 
     test('a trip that is already started makes no calls', () async {
@@ -167,6 +214,21 @@ void main() {
       expect(starter.calls.first.$3, 3);
       await s.startTrip();
       expect(starter.calls.length, 2, reason: 'a started trip is not started again');
+    });
+
+    test('confirming the load sends the ids of the orders on the truck; an unresolved discrepancy sends none', () async {
+      final starter = _Starter([const TripStartResult(TripStartStatus.started)]);
+      final s = session(starter);
+      await s.signIn();
+      await s.confirmLoad();
+      expect(starter.confirmed.single, ['order-1']);
+
+      final other = _Starter([const TripStartResult(TripStartStatus.refused, 'conflict: truck checkout required before departure')]);
+      final t = session(other);
+      await t.signIn();
+      await t.reportLoadDiscrepancy();
+      await t.overrideLoadCheck();
+      expect(other.confirmed.single, isNull, reason: 'a driver who reported a missing item must not confirm the load as complete');
     });
 
     test('a refused start is kept with its reason and the driver stays signed in', () async {

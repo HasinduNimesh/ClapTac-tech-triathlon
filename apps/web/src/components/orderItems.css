@@ -1,0 +1,9 @@
+.order-items-wrap { overflow-x: auto; margin: 8px 0 4px; }
+.order-items { width: 100%; border-collapse: collapse; font-size: 0.875rem; color: #232d42; }
+.order-items th, .order-items td { padding: 8px 10px; border-bottom: 1px solid #dee3ed; text-align: left; vertical-align: top; }
+.order-items thead th { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #6b7893; }
+.order-items tbody th { font-weight: 600; }
+.order-items .num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.order-items-sub { display: block; font-weight: 400; font-size: 0.75rem; color: #6b7893; }
+.order-items tfoot th, .order-items tfoot td { font-weight: 700; border-bottom: 0; border-top: 2px solid #dee3ed; }
+.order-items-none { margin: 8px 0; font-size: 0.875rem; }

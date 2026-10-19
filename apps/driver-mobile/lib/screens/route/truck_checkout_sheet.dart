@@ -85,7 +85,7 @@ Future<void> showTruckCheckoutSheet(
           ),
           const SizedBox(height: 12),
           Text(
-            'Kept on this phone only. It is not sent to the loader or dispatcher yet.',
+            'When you confirm, the load check goes to Waypoint so the loader and dispatcher can see it. With no signal it waits on this phone and is sent when you are back online.',
             style:
                 AppText.of(12, FontWeight.w400, color: RouteColors.sheetMuted),
           ),

@@ -5,8 +5,8 @@ import { translate } from "../src/locale.mjs";
 
 const css = readFileSync(new URL("../src/index.css", import.meta.url), "utf8");
 const smCss = readFileSync(new URL("../src/store-manager/storeManager.css", import.meta.url), "utf8");
-const dashboardsSource = readFileSync(new URL("../src/store-manager/dashboards.ts", import.meta.url), "utf8");
-const CARD_CATALOGUE_TITLES = [...dashboardsSource.matchAll(/title: "([^"]+)"/g)].map((m) => m[1]);
+const dashboardsSource = readFileSync(new URL("../src/store-manager/dashboardRequest.mjs", import.meta.url), "utf8");
+const CARD_CATALOGUE_TITLES = [...dashboardsSource.matchAll(/^  \{ id: "\w+", title: "([^"]+)"/gm)].map((m) => m[1]);
 const menu = readFileSync(new URL("../src/store-manager/DashboardMenu.tsx", import.meta.url), "utf8");
 
 const rule = (source, selector) => {

@@ -135,6 +135,23 @@ func (m *Memory) List(filter domain.ListFilter) ([]domain.Order, error) {
 	return out, nil
 }
 
+func (m *Memory) RecentLines(outletID, temperature, since string) ([]domain.HistoricLines, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := []domain.HistoricLines{}
+	for _, o := range m.byID {
+		if o.OutletID != outletID || string(o.TemperatureRequirement) != temperature || o.RequestedDeliveryDate < since || len(o.Lines) == 0 {
+			continue
+		}
+		h := domain.HistoricLines{OrderID: o.ID, DeliveryDate: o.RequestedDeliveryDate, Packs: map[string]int{}}
+		for _, l := range o.Lines {
+			h.Packs[l.ProductID] += l.PackQty
+		}
+		out = append(out, h)
+	}
+	return out, nil
+}
+
 func (m *Memory) Forecast(now time.Time) (domain.Forecast, error) {
 	return domain.Forecast{GeneratedAt: now.UTC(), ForecastVersion: forecastVersion, Method: "four-week mean held flat across the next ten weeks; sparse history falls back to zero", HistoryWeeks: forecastHistoryWeeks, HorizonWeeks: ForecastHorizonWeeks, DriftModelVersion: "weekly_order_shift_v1", BacktestModelVersion: "prior_four_week_order_count_ape_v1", InputDrift: []domain.ForecastInputDrift{}, Weekly: []domain.ForecastBucket{}, Capacity: []domain.ForecastCapacity{}, ServiceMinutesPerStop: 20, ServiceEstimateVersion: "fixed_20m_v1", ServiceEstimateSource: "deterministic 20-minute fallback", ServiceTimeBacktestVersion: serviceTimeBacktestVersion, ServiceTimeEvaluation: []domain.ServiceTimeEvaluation{}}, nil
 }

@@ -19,7 +19,9 @@ import 'package:waypoint_loader/main.dart';
 import 'package:waypoint_loader/shared/models.dart';
 import 'package:waypoint_loader/theme/tokens.dart';
 
-const inactivityMessage = 'You were signed out after 5 minutes of inactivity.';
+// The sign-in screen names the period of the app's default; the tests below that need a short period pin five minutes.
+final inactivityMessage = 'You were signed out after ${loaderInactivityTimeout.inMinutes} minutes of inactivity.';
+const shortTimeout = Duration(minutes: 5);
 const apiBase = 'http://api.test/api/v1';
 const reasonKey = 'waypoint.loader.signout.reason';
 const sessionKey = 'waypoint.loader.session';
@@ -63,13 +65,81 @@ MockClient fakeServer() => MockClient((req) async {
     });
 
 void main() {
+  group('the Still there warning', () {
+    late TestTime time;
+    late int expiries;
+
+    Future<void> pumpDefaults(WidgetTester tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: InactivityGuard(active: true, now: time.read, onExpired: () => expiries++, child: const Scaffold(body: SizedBox.expand(child: Center(child: Text('workspace'))))),
+      ));
+    }
+
+    setUp(() {
+      time = TestTime();
+      expiries = 0;
+    });
+
+    testWidgets('appears a minute before the sign-out with a countdown, and the sign-out follows at fifteen minutes', (tester) async {
+      await pumpDefaults(tester);
+      await elapse(tester, time, const Duration(minutes: 13, seconds: 59));
+      expect(find.text('Still there?'), findsNothing);
+      await elapse(tester, time, const Duration(seconds: 1));
+      expect(find.text('Still there?'), findsOneWidget);
+      expect(find.textContaining('signed out in 1:00'), findsOneWidget);
+      await elapse(tester, time, const Duration(seconds: 30));
+      expect(find.textContaining('signed out in 30 seconds'), findsOneWidget);
+      expect(expiries, 0);
+      await elapse(tester, time, const Duration(seconds: 30));
+      expect(expiries, 1);
+      expect(find.text('Still there?'), findsNothing, reason: 'the question goes away with the sign-out');
+    });
+
+    testWidgets('Stay signed in dismisses it and the whole fifteen minutes start again', (tester) async {
+      await pumpDefaults(tester);
+      await elapse(tester, time, const Duration(minutes: 14, seconds: 30));
+      expect(find.text('Still there?'), findsOneWidget);
+      await tester.tap(find.text('Stay signed in'));
+      await tester.pump();
+      expect(find.text('Still there?'), findsNothing);
+      await elapse(tester, time, const Duration(minutes: 13, seconds: 59));
+      expect(find.text('Still there?'), findsNothing);
+      expect(expiries, 0);
+      await elapse(tester, time, const Duration(seconds: 1));
+      expect(find.text('Still there?'), findsOneWidget, reason: 'asked again before the new deadline');
+      await elapse(tester, time, const Duration(minutes: 1));
+      expect(expiries, 1);
+    });
+
+    testWidgets('touching the workspace behind the question also dismisses it', (tester) async {
+      await pumpDefaults(tester);
+      await elapse(tester, time, const Duration(minutes: 14, seconds: 10));
+      expect(find.text('Still there?'), findsOneWidget);
+      await tester.tapAt(const Offset(40, 40));
+      await tester.pump();
+      expect(find.text('Still there?'), findsNothing);
+      await elapse(tester, time, const Duration(minutes: 5));
+      expect(expiries, 0);
+    });
+
+    testWidgets('a tab that woke up inside the last minute asks first; one that slept through it signs out', (tester) async {
+      await pumpDefaults(tester);
+      await hideAndRestore(tester, whileHidden: () => time.now = time.now.add(const Duration(minutes: 14, seconds: 20)));
+      expect(find.text('Still there?'), findsOneWidget);
+      expect(expiries, 0);
+      await hideAndRestore(tester, whileHidden: () => time.now = time.now.add(const Duration(minutes: 5)));
+      expect(expiries, 1);
+      expect(find.text('Still there?'), findsNothing);
+    });
+  });
+
   group('InactivityGuard', () {
     late TestTime time;
     late int expiries;
 
     Future<void> pumpGuard(WidgetTester tester, {bool active = true}) async {
       await tester.pumpWidget(MaterialApp(
-        home: InactivityGuard(active: active, now: time.read, onExpired: () => expiries++, child: const Scaffold(body: SizedBox.expand(child: Center(child: Text('workspace'))))),
+        home: InactivityGuard(active: active, timeout: shortTimeout, warnBefore: Duration.zero, now: time.read, onExpired: () => expiries++, child: const Scaffold(body: SizedBox.expand(child: Center(child: Text('workspace'))))),
       ));
     }
 
@@ -173,6 +243,8 @@ void main() {
       await tester.pumpWidget(WaypointLoaderApp(
         auth: auth,
         now: time.read,
+        inactivityTimeout: shortTimeout,
+        inactivityWarning: Duration.zero,
         navigatorKey: navigatorKey,
         apiClientFor: (a) => ApiClient(tokenProvider: a.validToken, client: server, baseUrl: apiBase),
       ));
@@ -374,8 +446,9 @@ void main() {
     });
   });
 
-  test('the guard defaults to the five-minute shared-tablet timeout', () {
-    expect(const InactivityGuard(active: true, onExpired: _noop, child: SizedBox()).timeout, loaderInactivityTimeout);
+  test('the guard defaults to the fifteen-minute shared-tablet timeout and a one-minute warning', () {
+    expect(const InactivityGuard(active: true, onExpired: _noop, child: SizedBox()).timeout, const Duration(minutes: 15));
+    expect(const InactivityGuard(active: true, onExpired: _noop, child: SizedBox()).warnBefore, const Duration(minutes: 1));
   });
 }
 

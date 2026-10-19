@@ -1,0 +1,13 @@
+import type { CatalogProduct, DraftLine } from "./orderDraft.mjs";
+export const MAX_PACKS: number;
+export function addProduct(lines: DraftLine[], product: CatalogProduct | undefined, packs: number | string, sourceText?: string): DraftLine[];
+export function setPacks(lines: DraftLine[], productId: string, packs: number | string): DraftLine[];
+export function removeLine(lines: DraftLine[], productId: string): DraftLine[];
+export function totals(lines: DraftLine[]): { units: number; weightKg: number; volumeM3: number };
+export function requestLines(lines: DraftLine[]): { productId: string; packQty: number }[];
+export function linesSource(lines: DraftLine[]): "form" | "text_helper";
+export function pickable(products: CatalogProduct[], temperature: string, lines: DraftLine[]): CatalogProduct[];
+export type SuggestedLine = { productId: string; packs: number; basis: "history" | "sales"; perDay: number; upliftPercent: number; season?: string; reason: string };
+export type Suggestion = { deliveryDate: string; lines: SuggestedLine[]; coverDays: number; basis: "history" | "sales" | "none"; limitedHistory: boolean; notes: string[] };
+export function suggestionLines(products: CatalogProduct[], suggestion: Suggestion | undefined): { lines: DraftLine[]; reasons: Record<string, SuggestedLine> };
+export function reasonSentence(line: SuggestedLine, coverDays: number, t: (key: string) => string): string;

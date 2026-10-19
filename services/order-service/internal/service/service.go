@@ -31,6 +31,8 @@ type Service struct {
 	Now      func() time.Time
 	Planning domain.PlanningReader
 	Delivery domain.DeliveryReader
+	// Products prices an order's item lines from the catalog. Optional: without it, orders with lines are refused.
+	Products domain.ProductReader
 }
 
 var validReceiptIssueTypes = map[string]bool{"MISSING": true, "DAMAGED": true, "QUANTITY_MISMATCH": true, "OTHER": true}
@@ -443,48 +445,30 @@ func (s Service) Create(profile *authorization.Profile, bearer string, req domai
 	if len(profile.OutletIDs) == 0 {
 		return domain.Order{}, fmt.Errorf("%w: store manager profile missing", ErrNotFound)
 	}
-	if err := validateCreate(req); err != nil {
-		return domain.Order{}, err
+	if len(req.Lines) == 0 {
+		if err := validateCreate(req); err != nil {
+			return domain.Order{}, err
+		}
 	}
 	outletID := profile.OutletIDs[0]
 	outlet, err := s.Outlets.Outlet(outletID, bearer)
 	if err != nil {
 		return domain.Order{}, fmt.Errorf("%w: outlet", ErrNotFound)
 	}
+	var lines []domain.OrderLine
+	if len(req.Lines) > 0 {
+		if lines, err = s.priceLines(bearer, outlet.Brand, &req); err != nil {
+			return domain.Order{}, err
+		}
+		if err := validateCreate(req); err != nil {
+			return domain.Order{}, err
+		}
+	}
 	requested, err := time.Parse("2006-01-02", req.RequestedDeliveryDate)
 	if err != nil {
 		return domain.Order{}, fmt.Errorf("%w: requestedDeliveryDate", ErrInvalid)
 	}
-	now := time.Now()
-	if s.Now != nil {
-		now = s.Now()
-	}
-	if s.Cutoff != nil {
-		cutoffTime := s.CutoffLocalTime()
-		calendar := s.Cutoff
-		if s.Calendar != nil {
-			loc, _ := time.LoadLocation(cutoff.Zone)
-			if loc == nil {
-				loc = time.UTC
-			}
-			from, to := now.In(loc).Format("2006-01-02"), requested.In(loc).AddDate(0, 0, 14).Format("2006-01-02")
-			if to >= from {
-				if days, calendarErr := s.Calendar.OperatingDays(from, to); calendarErr == nil {
-					configured := make([]cutoff.Day, 0, len(days))
-					for _, d := range days {
-						parsed, parseErr := time.ParseInLocation("2006-01-02", d.Date, loc)
-						if parseErr == nil {
-							configured = append(configured, cutoff.Day{Date: parsed, IsOperating: d.IsOperating})
-						}
-					}
-					if len(configured) > 0 {
-						calendar = cutoff.Load(configured)
-					}
-				}
-			}
-		}
-		requested = calendar.AdjustWithCutoff(requested, now, cutoffTime)
-	}
+	requested, _ = s.deliveryDate(requested)
 	order := domain.Order{
 		OutletID:               outletID,
 		Brand:                  outlet.Brand,
@@ -495,6 +479,7 @@ func (s Service) Create(profile *authorization.Profile, bearer string, req domai
 		TemperatureRequirement: req.TemperatureRequirement,
 		Status:                 domain.StatusConfirmed,
 		CreatedBy:              profile.UserID,
+		Lines:                  lines,
 	}
 	created, err := s.Repo.Create(order)
 	if err != nil {
@@ -507,6 +492,7 @@ func (s Service) Create(profile *authorization.Profile, bearer string, req domai
 			"orderId":  created.ID, "orderUnits": created.OrderUnits, "orderWeightKg": created.OrderWeightKg, "orderVolumeM3": created.OrderVolumeM3, "temperatureRequirement": created.TemperatureRequirement,
 			"outletId": created.OutletID,
 			"status":   created.Status,
+			"lines":    len(created.Lines),
 		})
 	}
 	return created, nil
@@ -611,6 +597,42 @@ func (s Service) Get(profile *authorization.Profile, id string) (domain.Order, e
 		}
 	}
 	return domain.Order{}, ErrForbidden
+}
+
+// deliveryDate is the date an order requested for requested will actually be delivered: moved past the daily
+// cutoff and any non-operating days, using the configured operating calendar when it can be read.
+func (s Service) deliveryDate(requested time.Time) (time.Time, time.Time) {
+	now := time.Now()
+	if s.Now != nil {
+		now = s.Now()
+	}
+	if s.Cutoff != nil {
+		cutoffTime := s.CutoffLocalTime()
+		calendar := s.Cutoff
+		if s.Calendar != nil {
+			loc, _ := time.LoadLocation(cutoff.Zone)
+			if loc == nil {
+				loc = time.UTC
+			}
+			from, to := now.In(loc).Format("2006-01-02"), requested.In(loc).AddDate(0, 0, 14).Format("2006-01-02")
+			if to >= from {
+				if days, calendarErr := s.Calendar.OperatingDays(from, to); calendarErr == nil {
+					configured := make([]cutoff.Day, 0, len(days))
+					for _, d := range days {
+						parsed, parseErr := time.ParseInLocation("2006-01-02", d.Date, loc)
+						if parseErr == nil {
+							configured = append(configured, cutoff.Day{Date: parsed, IsOperating: d.IsOperating})
+						}
+					}
+					if len(configured) > 0 {
+						calendar = cutoff.Load(configured)
+					}
+				}
+			}
+		}
+		requested = calendar.AdjustWithCutoff(requested, now, cutoffTime)
+	}
+	return requested, now
 }
 
 func validateCreate(req domain.CreateRequest) error {

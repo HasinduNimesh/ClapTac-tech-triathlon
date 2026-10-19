@@ -61,7 +61,8 @@ void main() {
   late int expiries;
   late InactivityMonitor monitor;
 
-  InactivityMonitor build() => InactivityMonitor(onExpired: () => expiries++, now: clock.read, timerFactory: clock.timer);
+  // The older tests below are about the mechanism and use a five-minute period with no warning.
+  InactivityMonitor build() => InactivityMonitor(onExpired: () => expiries++, timeout: const Duration(minutes: 5), warnBefore: Duration.zero, now: clock.read, timerFactory: clock.timer);
 
   setUp(() {
     clock = FakeClock();
@@ -69,9 +70,105 @@ void main() {
     monitor = build();
   });
 
-  test('the shared-tablet timeout is five minutes, the same as the web app', () {
-    expect(loaderInactivityTimeout, const Duration(minutes: 5));
-    expect(monitor.timeout, const Duration(minutes: 5));
+  test('the shared-tablet defaults: signed out after fifteen minutes, warned one minute before', () {
+    expect(loaderInactivityTimeout, const Duration(minutes: 15));
+    expect(loaderInactivityWarning, const Duration(minutes: 1));
+    final defaults = InactivityMonitor(onExpired: () {});
+    expect(defaults.timeout, const Duration(minutes: 15));
+    expect(defaults.warnBefore, const Duration(minutes: 1));
+  });
+
+  group('the warning before the sign-out', () {
+    late int warnings;
+    late int cleared;
+    late InactivityMonitor warned;
+
+    InactivityMonitor buildWarned({Duration timeout = const Duration(minutes: 15), Duration warnBefore = const Duration(minutes: 1)}) => InactivityMonitor(
+          onExpired: () => expiries++,
+          onWarning: () => warnings++,
+          onWarningCleared: () => cleared++,
+          timeout: timeout,
+          warnBefore: warnBefore,
+          now: clock.read,
+          timerFactory: clock.timer,
+        );
+
+    setUp(() {
+      warnings = 0;
+      cleared = 0;
+      warned = buildWarned()..start();
+    });
+
+    test('warns once at fourteen minutes, not a moment before, and signs out at fifteen', () {
+      clock.advance(const Duration(minutes: 14) - const Duration(milliseconds: 1));
+      expect(warnings, 0);
+      expect(warned.warning, isFalse);
+      clock.advance(const Duration(milliseconds: 1));
+      expect(warnings, 1);
+      expect(warned.warning, isTrue);
+      clock.advance(const Duration(seconds: 59));
+      expect(expiries, 0);
+      clock.advance(const Duration(seconds: 1));
+      expect(expiries, 1);
+      expect(warnings, 1, reason: 'one warning only');
+      expect(warned.warning, isFalse, reason: 'the warning is gone once the sign-out has happened');
+      expect(cleared, 1);
+    });
+
+    test('touching during the warning clears it and starts the whole fifteen minutes again', () {
+      clock.advance(const Duration(minutes: 14, seconds: 30));
+      expect(warned.warning, isTrue);
+      warned.activity();
+      expect(warned.warning, isFalse);
+      expect(cleared, 1);
+      clock.advance(const Duration(minutes: 13, seconds: 59));
+      expect(warnings, 1, reason: 'no second warning yet');
+      expect(expiries, 0);
+      clock.advance(const Duration(seconds: 1));
+      expect(warnings, 2, reason: 'the warning comes back a minute before the new deadline');
+      clock.advance(const Duration(minutes: 1));
+      expect(expiries, 1);
+    });
+
+    test('activity before the warning never shows one, and the deadline moves with it', () {
+      clock.advance(const Duration(minutes: 10));
+      warned.activity();
+      clock.advance(const Duration(minutes: 13, seconds: 59));
+      expect(warnings, 0);
+      clock.advance(const Duration(seconds: 1));
+      expect(warnings, 1);
+    });
+
+    test('a tab that slept into the warning window warns instead of signing out; one that slept past the end signs out', () {
+      clock.jumpWithoutTimers(const Duration(minutes: 14, seconds: 20));
+      warned.checkNow();
+      expect(warnings, 1);
+      expect(expiries, 0);
+      clock.jumpWithoutTimers(const Duration(minutes: 5));
+      warned.checkNow();
+      expect(expiries, 1);
+    });
+
+    test('stopping clears a showing warning and nothing fires afterwards', () {
+      clock.advance(const Duration(minutes: 14, seconds: 10));
+      warned.stop();
+      expect(cleared, 1);
+      clock.advance(const Duration(minutes: 30));
+      expect(expiries, 0);
+      expect(warnings, 1);
+    });
+
+    test('no warning is given when it is zero, or not shorter than the whole period', () {
+      warned.stop(); // the monitor from setUp warns normally; this test is about the others
+      for (final d in [Duration.zero, const Duration(minutes: 15), const Duration(minutes: 20)]) {
+        warnings = 0;
+        expiries = 0;
+        buildWarned(warnBefore: d).start();
+        clock.advance(const Duration(minutes: 15));
+        expect(warnings, 0, reason: 'warnBefore $d');
+        expect(expiries, 1, reason: 'warnBefore $d');
+      }
+    });
   });
 
   test('signs out at exactly five minutes of no activity, not a moment before', () {

@@ -23,6 +23,8 @@ type Handler struct {
 	CallbackURL       string
 	CallbackAuthToken string
 	StatusSink        StatusSink
+	// GatewayWebhookSecret signs the cellular gateway's webhooks (HMAC-SHA256). Empty switches the endpoint off.
+	GatewayWebhookSecret string
 }
 
 type SMSProvider interface {
@@ -38,6 +40,7 @@ func (h Handler) Routes(r chi.Router) {
 		r.Post("/storage/presign", h.withAuth(h.presign))
 		r.Post("/notifications/send", h.withAuth(h.notify))
 		r.Post("/notifications/status", h.statusCallback)
+		r.Post("/notifications/gateway", h.gatewayWebhook)
 	})
 }
 
@@ -67,6 +70,41 @@ func (h Handler) statusCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err = h.StatusSink.UpdateStatus(r.Context(), u); err != nil {
+		apierrors.Internal(w, "notification status update failed")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// gatewayWebhook receives the cellular gateway's signed events and records what happened to an outbound text.
+// It is called by the gateway, not by a user, so the HMAC signature is its only credential. Events that say
+// nothing about a notification (inbound SMS, calls, device presence) are acknowledged and ignored. A failure to
+// record the status answers 500, so the gateway retries the delivery.
+func (h Handler) gatewayWebhook(w http.ResponseWriter, r *http.Request) {
+	if h.GatewayWebhookSecret == "" || h.StatusSink == nil {
+		apierrors.NotImplemented(w, "gateway webhook is not configured")
+		return
+	}
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 16384))
+	if err != nil {
+		apierrors.RequestEntityTooLarge(w, "webhook body exceeds limit")
+		return
+	}
+	if !notify.VerifyGatewaySignature(h.GatewayWebhookSecret, body, r.Header.Get("X-CG-Signature")) {
+		apierrors.Forbidden(w, "invalid gateway webhook signature")
+		return
+	}
+	event, err := notify.ParseGatewayEvent(body)
+	if err != nil {
+		apierrors.BadRequest(w, "invalid gateway event")
+		return
+	}
+	update, relevant := event.StatusUpdate()
+	if !relevant {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	if err = h.StatusSink.UpdateStatus(r.Context(), update); err != nil {
 		apierrors.Internal(w, "notification status update failed")
 		return
 	}

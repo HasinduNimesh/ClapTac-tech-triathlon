@@ -28,6 +28,7 @@ type Driver interface {
 
 	UpdateLocation(ctx context.Context, profile *authorization.Profile, tripID string, latitude, longitude float64, timestamp time.Time) (domain.Location, error)
 	TripLocation(ctx context.Context, profile *authorization.Profile, tripID string) (*domain.Location, error)
+	RunDistance(ctx context.Context, profile *authorization.Profile, tripID string) (*domain.RunDistance, error)
 
 	PublishArrivalPrediction(ctx context.Context, profile *authorization.Profile, tripID, stopID string, planVersion int, sourceAt *time.Time, eta time.Time, lower, upper *time.Time, risk string) (domain.ArrivalPrediction, error)
 	Checkout(ctx context.Context, profile *authorization.Profile, tripID string, planVersion int, confirmed []string) (domain.Checkout, error)
@@ -79,6 +80,7 @@ func (h Handler) Routes(r chi.Router) {
 
 		r.With(update).Post("/trips/{tripId}/location", h.updateLocation)
 		r.With(authorization.RequireWith(h.Authn, h.Profiles, authorization.PermDeliveryViewAll)).Get("/trips/{tripId}/location", h.tripLocation)
+		r.With(authorization.RequireWith(h.Authn, h.Profiles, authorization.PermDeliveryViewAll)).Get("/trips/{tripId}/distance", h.runDistance)
 
 		r.With(authorization.RequireWith(h.Authn, h.Profiles, authorization.PermDeliveryViewAll)).Post("/trips/{tripId}/stops/{stopId}/arrival-prediction", h.publishArrivalPrediction)
 

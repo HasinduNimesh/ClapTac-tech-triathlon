@@ -31,14 +31,16 @@ class TripStartResult {
 }
 
 abstract class TripStarter {
-  /// Acknowledges the current plan version, then starts the run. Safe to repeat: both calls are
-  /// idempotent on the server.
-  Future<TripStartResult> start(TripInfo trip, {required String operationId});
+  /// Acknowledges the current plan version, confirms the load on the truck when [confirmedOrderIds] is given,
+  /// then starts the run. Safe to repeat: every call is idempotent on the server.
+  Future<TripStartResult> start(TripInfo trip, {required String operationId, List<String>? confirmedOrderIds});
 }
 
 /// Starts a trip through the Waypoint API: `POST /api/v1/planning/plans/{id}/acknowledgements`
-/// with the plan version, then `POST /api/v1/delivery/trips/{id}/start` with an Idempotency-Key.
-/// Both need a connection; the server does not accept a trip start through the sync endpoint.
+/// with the plan version, `POST /api/v1/delivery/trips/{id}/checkout` with the plan version and the
+/// orders the driver confirmed on the truck, then `POST /api/v1/delivery/trips/{id}/start` with an
+/// Idempotency-Key. The server refuses a start without a confirmed checkout. All need a connection;
+/// the server does not accept a trip start through the sync endpoint.
 class ApiTripStarter implements TripStarter {
   ApiTripStarter({required http.Client client, required String baseUrl, required AuthGateway auth, this.timeout = const Duration(seconds: 20)})
       : _client = client,
@@ -51,7 +53,7 @@ class ApiTripStarter implements TripStarter {
   final Duration timeout;
 
   @override
-  Future<TripStartResult> start(TripInfo trip, {required String operationId}) async {
+  Future<TripStartResult> start(TripInfo trip, {required String operationId, List<String>? confirmedOrderIds}) async {
     if (trip.started) return const TripStartResult(TripStartStatus.started);
     final String? token;
     try {
@@ -70,8 +72,17 @@ class ApiTripStarter implements TripStarter {
         token,
         body: {'version': trip.planVersion},
       );
-      final ackFailure = _failure(ack, whatFailed: 'acknowledge the plan');
+      final ackFailure = _failure(ack, whatFailed: 'acknowledge the plan', conflictMeansPlanChanged: true);
       if (ackFailure != null) return ackFailure;
+      if (confirmedOrderIds != null) {
+        final checkout = await _post(
+          '/api/v1/delivery/trips/${Uri.encodeComponent(trip.tripId)}/checkout',
+          token,
+          body: {'planVersion': trip.planVersion, 'confirmedOrderIds': confirmedOrderIds},
+        );
+        final checkoutFailure = _failure(checkout, whatFailed: 'confirm the load on the truck');
+        if (checkoutFailure != null) return checkoutFailure;
+      }
       final started = await _post(
         '/api/v1/delivery/trips/${Uri.encodeComponent(trip.tripId)}/start',
         token,
@@ -98,14 +109,19 @@ class ApiTripStarter implements TripStarter {
         .timeout(timeout);
   }
 
-  TripStartResult? _failure(http.Response response, {required String whatFailed}) {
+  TripStartResult? _failure(http.Response response, {required String whatFailed, bool conflictMeansPlanChanged = false}) {
     final code = response.statusCode;
     if (code >= 200 && code < 300) return null;
     if (code == 401) return const TripStartResult(TripStartStatus.signInNeeded, 'Your sign-in was not accepted. Sign in again.');
     if (code >= 500) return const TripStartResult(TripStartStatus.offline);
     if (code == 403) return TripStartResult(TripStartStatus.refused, 'This account is not allowed to $whatFailed.');
-    if (code == 409) {
+    if (code == 409 && conflictMeansPlanChanged) {
       return TripStartResult(TripStartStatus.refused, 'The plan changed, so the trip could not start. Reload your route and read the new instructions. ${_detail(response)}'.trim());
+    }
+    if (code == 409) {
+      // The server says exactly why (the load is not ready, the load does not match, a checkout is required...).
+      final why = _detail(response);
+      return TripStartResult(TripStartStatus.refused, why.isEmpty ? 'The trip could not start. Reload your route and read the new instructions.' : 'The trip could not start: $why');
     }
     return TripStartResult(TripStartStatus.refused, 'Waypoint could not $whatFailed (HTTP $code). ${_detail(response)}'.trim());
   }

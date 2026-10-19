@@ -279,6 +279,9 @@ const followUpLabels = {
     Issue: "ගැටලුව",
     Reported: "වාර්තා කළේ",
     "Completing sign-in…": "පිවිසීම සම්පූර්ණ කරමින්…",
+    "Drivers use the Waypoint Driver app": "රියදුරන් Waypoint රියදුරු යෙදුම භාවිතා කරයි",
+    "Your route, stops, proof of delivery and offline sync are in the mobile app. The web version of the driver screens is turned off.": "ඔබගේ මාර්ගය, නැවතුම්, බෙදාහැරීමේ සාක්ෂි සහ අන්තර්ජාලය නැති විට සමමුහුර්ත කිරීම ජංගම යෙදුමේ ඇත. රියදුරු තිරවල වෙබ් අනුවාදය ක්‍රියා විරහිත කර ඇත.",
+    "How to install": "ස්ථාපනය කරන ආකාරය",
     "Open my workspace": "මගේ වැඩබිම විවෘත කරන්න",
     "A store places its order before the daily cutoff.": "වෙළඳසැලක් දෛනික අවසන් වේලාවට පෙර ඇණවුම් කරයි.",
     "The dispatcher plans and allocates orders to vehicles.": "බෙදාහැරීමේ සම්බන්ධීකාරක ඇණවුම් සැලසුම් කර වාහනවලට වෙන් කරයි.",
@@ -446,6 +449,9 @@ const followUpLabels = {
     Issue: "சிக்கல்",
     Reported: "தெரிவிக்கப்பட்டது",
     "Completing sign-in…": "உள்நுழைவு நிறைவுபெறுகிறது…",
+    "Drivers use the Waypoint Driver app": "ஓட்டுநர்கள் Waypoint ஓட்டுநர் செயலியைப் பயன்படுத்துகிறார்கள்",
+    "Your route, stops, proof of delivery and offline sync are in the mobile app. The web version of the driver screens is turned off.": "உங்கள் வழித்தடம், நிறுத்தங்கள், விநியோக ஆதாரம் மற்றும் இணையம் இல்லாதபோதான ஒத்திசைவு மொபைல் செயலியில் உள்ளன. ஓட்டுநர் திரைகளின் வலை பதிப்பு நிறுத்தப்பட்டுள்ளது.",
+    "How to install": "நிறுவுவது எப்படி",
     "Open my workspace": "எனது பணியிடத்தைத் திற",
     "A store places its order before the daily cutoff.": "கடை தினசரி கடைசி நேரத்துக்கு முன் ஆர்டர் இடுகிறது.",
     "The dispatcher plans and allocates orders to vehicles.": "டிஸ்பாட்சர் ஆர்டர்களைத் திட்டமிட்டு வாகனங்களுக்கு ஒதுக்குகிறார்.",
@@ -1576,5 +1582,147 @@ Object.assign(labels.ta, {
 });
 
 // Feature-audit gap work (PL-10, LD-6, LO-6, LO-2 grouping, ST-3, XR-3, receipt temperature).
+Object.assign(labels.si, {
+  "Receipts and shortages": "ලැබීම් සහ හිඟකම්",
+  "Delivery performance": "බෙදාහැරීමේ කාර්ය සාධනය",
+  "Chilled watch": "සිසිල් භාණ්ඩ නිරීක්ෂණය",
+  "Weekly overview": "සතිපතා දළ විශ්ලේෂණය",
+  "Move up": "ඉහළට",
+  "Move down": "පහළට",
+  "Start from a template": "අච්චුවකින් ආරම්භ කරන්න",
+  "Cards in this dashboard": "මෙම උපකරණ පුවරුවේ කාඩ්පත්",
+  "Started from": "ආරම්භ කළේ",
+  "Ask for a change, or save it when it looks right.": "වෙනසක් ඉල්ලන්න, නැතහොත් නිවැරදි නම් සුරකින්න.",
+});
+Object.assign(labels.ta, {
+  "Receipts and shortages": "பெறுதல்களும் பற்றாக்குறைகளும்",
+  "Delivery performance": "விநியோக செயல்திறன்",
+  "Chilled watch": "குளிர்ப்பொருள் கண்காணிப்பு",
+  "Weekly overview": "வாராந்திர மேலோட்டம்",
+  "Move up": "மேலே நகர்த்து",
+  "Move down": "கீழே நகர்த்து",
+  "Start from a template": "வார்ப்புருவிலிருந்து தொடங்கு",
+  "Cards in this dashboard": "இந்தப் பலகையின் அட்டைகள்",
+  "Started from": "தொடங்கியது",
+  "Ask for a change, or save it when it looks right.": "மாற்றம் கேளுங்கள், அல்லது சரியாக இருந்தால் சேமியுங்கள்.",
+});
+Object.assign(labels.si, {
+  "No item details were recorded for this order. It only has totals:": "මෙම ඇණවුම සඳහා අයිතම විස්තර සටහන් කර නැත. එහි ඇත්තේ එකතු පමණි:",
+  "boxes": "පෙට්ටි",
+  "Items on this order": "මෙම ඇණවුමේ අයිතම",
+  "Item": "අයිතමය",
+  "Boxes": "පෙට්ටි",
+  "per": "බැගින්",
+  "Total": "එකතුව",
+  "Choose a product to add.": "එක් කිරීමට නිෂ්පාදනයක් තෝරන්න.",
+  "Enter a whole number of boxes above zero.": "බිංදුවට වඩා වැඩි පූර්ණ සංඛ්‍යාවක් ඇතුළත් කරන්න.",
+  "Add at least one item to the order.": "ඇණවුමට අවම වශයෙන් එක් අයිතමයක් එක් කරන්න.",
+  "Pick the products and how many boxes of each. Weight and volume are worked out from the product list, and they are what planning checks against the vehicle.": "නිෂ්පාදන සහ ඒ සෑම එකකම පෙට්ටි ගණන තෝරන්න. බර සහ පරිමාව නිෂ්පාදන ලැයිස්තුවෙන් ගණනය කෙරේ; සැලසුම් කිරීම වාහනයට එරෙහිව පරීක්ෂා කරන්නේ ඒවාය.",
+  "The product list is not available right now. Enter the totals instead.": "නිෂ්පාදන ලැයිස්තුව දැන් ලබාගත නොහැක. ඒ වෙනුවට එකතු ඇතුළත් කරන්න.",
+  "Loading products…": "නිෂ්පාදන පූරණය වෙමින්…",
+  "Number of boxes": "පෙට්ටි ගණන",
+  "Add item": "අයිතමය එක් කරන්න",
+  "No items added yet.": "තවම අයිතම එක් කර නැත.",
+  "I only know the totals": "මම දන්නේ එකතු පමණි",
+  "Choose items from the product list": "නිෂ්පාදන ලැයිස්තුවෙන් අයිතම තෝරන්න",
+});
+Object.assign(labels.ta, {
+  "No item details were recorded for this order. It only has totals:": "இந்த ஆர்டருக்கு பொருள் விவரங்கள் பதிவு செய்யப்படவில்லை. மொத்தங்கள் மட்டுமே உள்ளன:",
+  "boxes": "பெட்டிகள்",
+  "Items on this order": "இந்த ஆர்டரில் உள்ள பொருட்கள்",
+  "Item": "பொருள்",
+  "Boxes": "பெட்டிகள்",
+  "per": "ஒவ்வொன்றிலும்",
+  "Total": "மொத்தம்",
+  "Choose a product to add.": "சேர்க்க ஒரு பொருளைத் தேர்ந்தெடுக்கவும்.",
+  "Enter a whole number of boxes above zero.": "பூஜ்ஜியத்தை விட அதிகமான முழு எண்ணை உள்ளிடவும்.",
+  "Add at least one item to the order.": "ஆர்டரில் குறைந்தது ஒரு பொருளைச் சேர்க்கவும்.",
+  "Pick the products and how many boxes of each. Weight and volume are worked out from the product list, and they are what planning checks against the vehicle.": "பொருட்களையும் ஒவ்வொன்றின் பெட்டிகளின் எண்ணிக்கையையும் தேர்ந்தெடுக்கவும். எடையும் கன அளவும் பொருள் பட்டியலிலிருந்து கணக்கிடப்படும்; திட்டமிடல் அவற்றையே வாகனத்துடன் சரிபார்க்கும்.",
+  "The product list is not available right now. Enter the totals instead.": "பொருள் பட்டியல் இப்போது கிடைக்கவில்லை. அதற்குப் பதிலாக மொத்தங்களை உள்ளிடவும்.",
+  "Loading products…": "பொருட்கள் ஏற்றப்படுகின்றன…",
+  "Number of boxes": "பெட்டிகளின் எண்ணிக்கை",
+  "Add item": "பொருளைச் சேர்",
+  "No items added yet.": "இன்னும் பொருட்கள் சேர்க்கப்படவில்லை.",
+  "I only know the totals": "எனக்கு மொத்தங்கள் மட்டுமே தெரியும்",
+  "Choose items from the product list": "பொருள் பட்டியலிலிருந்து பொருட்களைத் தேர்ந்தெடுக்கவும்",
+});
+Object.assign(labels.si, {
+  "There is nothing to suggest yet for this goods type. Add the items yourself.": "මෙම භාණ්ඩ වර්ගය සඳහා තවම යෝජනා කිරීමට කිසිවක් නැත. අයිතම ඔබම එක් කරන්න.",
+  "The suggestion is not available right now. Add the items yourself.": "යෝජනාව දැන් ලබාගත නොහැක. අයිතම ඔබම එක් කරන්න.",
+  "Working out a suggestion…": "යෝජනාවක් සකසමින්…",
+  "Suggest an order": "ඇණවුමක් යෝජනා කරන්න",
+  "Suggested from your past orders and the delivery calendar. Check every quantity before you send.": "ඔබගේ පෙර ඇණවුම් සහ බෙදාහැරීමේ දින දර්ශනය අනුව යෝජනා කළා. යැවීමට පෙර සෑම ප්‍රමාණයක්ම පරීක්ෂා කරන්න.",
+  "Planned for delivery on": "බෙදාහැරීමට සැලසුම් කළ දිනය",
+  "This delivery has to last {days} days, because the depot does not deliver on the days after it.": "මෙම බෙදාහැරීම දින {days}ක් පවතින්නට සිදුවේ, මන්ද ඉන් පසු දිනවල ගබඩාව බෙදාහරින්නේ නැත.",
+  "There are not enough earlier orders with items yet, so quantities come from the store's usual daily sales.": "අයිතම සහිත පෙර ඇණවුම් තවමත් ප්‍රමාණවත් නැති නිසා, ප්‍රමාණ ගෙන ඇත්තේ අලෙවිසැලේ සාමාන්‍ය දෛනික විකුණුම් අනුවය.",
+  "for {days} days": "දින {days} සඳහා",
+  "{percent}% more for {season}": "{season} නිසා {percent}% වැඩියෙන්",
+  "About {rate} boxes a day from your last orders": "ඔබගේ අවසාන ඇණවුම් අනුව දිනකට පෙට්ටි {rate} ක් පමණ",
+  "About {rate} boxes a day from the store's usual sales": "අලෙවිසැලේ සාමාන්‍ය විකුණුම් අනුව දිනකට පෙට්ටි {rate} ක් පමණ",
+  "the season": "මෙම කාලය",
+  "Sinhala and Tamil New Year": "සිංහල හා දෙමළ අලුත් අවුරුද්ද",
+  "Christmas season": "නත්තල් කාලය",
+});
+Object.assign(labels.ta, {
+  "There is nothing to suggest yet for this goods type. Add the items yourself.": "இந்த வகைப் பொருட்களுக்கு இன்னும் பரிந்துரைக்க எதுவும் இல்லை. பொருட்களை நீங்களே சேர்க்கவும்.",
+  "The suggestion is not available right now. Add the items yourself.": "பரிந்துரை இப்போது கிடைக்கவில்லை. பொருட்களை நீங்களே சேர்க்கவும்.",
+  "Working out a suggestion…": "பரிந்துரையைத் தயாரிக்கிறது…",
+  "Suggest an order": "ஆர்டரைப் பரிந்துரை",
+  "Suggested from your past orders and the delivery calendar. Check every quantity before you send.": "உங்கள் முந்தைய ஆர்டர்கள் மற்றும் விநியோக நாட்காட்டியின் அடிப்படையில் பரிந்துரைக்கப்பட்டது. அனுப்பும் முன் ஒவ்வொரு அளவையும் சரிபார்க்கவும்.",
+  "Planned for delivery on": "விநியோகத்திற்குத் திட்டமிடப்பட்ட தேதி",
+  "This delivery has to last {days} days, because the depot does not deliver on the days after it.": "இந்த விநியோகம் {days} நாட்களுக்குப் போதுமானதாக இருக்க வேண்டும், ஏனெனில் அதற்குப் பிறகு கிடங்கு விநியோகிக்காது.",
+  "There are not enough earlier orders with items yet, so quantities come from the store's usual daily sales.": "பொருள் விவரங்களுடன் கூடிய முந்தைய ஆர்டர்கள் இன்னும் போதுமானதாக இல்லை, எனவே அளவுகள் கடையின் வழக்கமான தினசரி விற்பனையிலிருந்து எடுக்கப்பட்டன.",
+  "for {days} days": "{days} நாட்களுக்கு",
+  "{percent}% more for {season}": "{season} காரணமாக {percent}% கூடுதல்",
+  "About {rate} boxes a day from your last orders": "உங்கள் கடைசி ஆர்டர்களின்படி நாளொன்றுக்கு சுமார் {rate} பெட்டிகள்",
+  "About {rate} boxes a day from the store's usual sales": "கடையின் வழக்கமான விற்பனையின்படி நாளொன்றுக்கு சுமார் {rate} பெட்டிகள்",
+  "the season": "இந்தப் பருவம்",
+  "Sinhala and Tamil New Year": "சிங்கள மற்றும் தமிழ் புத்தாண்டு",
+  "Christmas season": "கிறிஸ்துமஸ் காலம்",
+});
+Object.assign(labels.si, {
+  "damaged": "හානි වූ",
+  "affected": "බලපෑමට ලක් වූ",
+  "differs from the driver's record by": "රියදුරුගේ වාර්තාවට වඩා වෙනස් වන්නේ",
+});
+Object.assign(labels.ta, {
+  "damaged": "சேதமடைந்தவை",
+  "affected": "பாதிக்கப்பட்டவை",
+  "differs from the driver's record by": "ஓட்டுநர் பதிவிலிருந்து வேறுபடுவது",
+});
+Object.assign(labels.si, {
+  "live": "සජීවී",
+  "live position": "සජීවී ස්ථානය",
+  "Driven": "ධාවනය කළ දුර",
+  "about": "දළ වශයෙන්",
+  "of fuel at": "ඉන්ධන, මෙහි කාර්යක්ෂමතාව",
+  "From the driver's phone while the trip runs. Fuel is an estimate from the vehicle's rated efficiency, not a reading; actual litres are in the fuel ledger.": "ගමන පවතින විට රියදුරුගේ දුරකථනයෙන්. ඉන්ධන යනු වාහනයේ නියමිත කාර්යක්ෂමතාව අනුව කළ ඇස්තමේන්තුවකි, මිනුමක් නොවේ; සැබෑ ලීටර් ඉන්ධන ලේඛනයේ ඇත.",
+});
+Object.assign(labels.ta, {
+  "live": "நேரடி",
+  "live position": "நேரடி இடம்",
+  "Driven": "ஓட்டிய தூரம்",
+  "about": "சுமார்",
+  "of fuel at": "எரிபொருள், செயல்திறன்",
+  "From the driver's phone while the trip runs. Fuel is an estimate from the vehicle's rated efficiency, not a reading; actual litres are in the fuel ledger.": "பயணம் நடக்கும்போது ஓட்டுநரின் தொலைபேசியிலிருந்து. எரிபொருள் என்பது வாகனத்தின் மதிப்பிடப்பட்ட செயல்திறனின் அடிப்படையிலான மதிப்பீடு, அளவீடு அல்ல; உண்மையான லிட்டர்கள் எரிபொருள் பதிவேட்டில் உள்ளன.",
+});
+Object.assign(labels.si, {
+  "Your session has ended. Sign in again to carry on. You will come back to this page, but anything you had not saved is lost.": "ඔබගේ සැසිය අවසන් වී ඇත. දිගටම කරගෙන යාමට නැවත පිවිසෙන්න. ඔබ මෙම පිටුවටම නැවත පැමිණෙන නමුත්, සුරකින්නේ නැති ඕනෑම දෙයක් අහිමි වේ.",
+  "Your session ends in {minutes} minutes. Finish and save what you are doing, or stay signed in.": "ඔබගේ සැසිය විනාඩි {minutes}කින් අවසන් වේ. ඔබ කරමින් සිටින දේ අවසන් කර සුරකින්න, නැතහොත් පිවිස සිටින්න.",
+  "Sign in again": "නැවත පිවිසෙන්න",
+  "Stay signed in": "පිවිස සිටින්න",
+});
+Object.assign(labels.ta, {
+  "Your session has ended. Sign in again to carry on. You will come back to this page, but anything you had not saved is lost.": "உங்கள் அமர்வு முடிந்துவிட்டது. தொடர மீண்டும் உள்நுழையவும். நீங்கள் இந்தப் பக்கத்திற்கே திரும்பி வருவீர்கள், ஆனால் சேமிக்காதவை இழக்கப்படும்.",
+  "Your session ends in {minutes} minutes. Finish and save what you are doing, or stay signed in.": "உங்கள் அமர்வு {minutes} நிமிடங்களில் முடிகிறது. நீங்கள் செய்வதை முடித்துச் சேமிக்கவும், அல்லது உள்நுழைந்தே இருக்கவும்.",
+  "Sign in again": "மீண்டும் உள்நுழையவும்",
+  "Stay signed in": "உள்நுழைந்தே இருக்கவும்",
+});
+Object.assign(labels.si, {
+  "just now": "දැන් ම",
+});
+Object.assign(labels.ta, {
+  "just now": "இப்போதுதான்",
+});
 Object.assign(labels.si, auditGapLabels.si);
 Object.assign(labels.ta, auditGapLabels.ta);

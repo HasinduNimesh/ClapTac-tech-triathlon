@@ -1,6 +1,10 @@
 package domain
 
-import "time"
+import (
+	"time"
+
+	"github.com/HasinduNimesh/ClapTac-tech-triathlon/services/order-service/internal/suggest"
+)
 
 type Temperature string
 
@@ -25,6 +29,66 @@ type Order struct {
 	CreatedAt              time.Time   `json:"createdAt"`
 	SourceSystem           string      `json:"sourceSystem,omitempty"`
 	ExternalOrderID        string      `json:"externalOrderId,omitempty"`
+	// Lines are the items on the order. Orders placed before item lines existed, and imported orders, have none
+	// and only carry totals. When there are lines the totals are the sum of the lines.
+	Lines []OrderLine `json:"lines,omitempty"`
+}
+
+// OrderLine is one product on an order. Names and pack sizes are copied from the catalog when the order is placed
+// so history stays readable after the catalog changes. Quantity is in packs (box, crate, case), which is also what
+// loaders and drivers count.
+type OrderLine struct {
+	LineNo       int     `json:"lineNo"`
+	ProductID    string  `json:"productId"`
+	ProductName  string  `json:"productName"`
+	Pack         string  `json:"pack"`
+	UnitsPerPack int     `json:"unitsPerPack"`
+	PackQty      int     `json:"packQty"`
+	WeightKg     float64 `json:"weightKg"`
+	VolumeM3     float64 `json:"volumeM3"`
+	Source       string  `json:"source"`
+}
+
+// LineRequest is what a client sends for one line: only the product and how many packs. Names, weights and volumes
+// always come from the catalog, never from the client.
+type LineRequest struct {
+	ProductID string `json:"productId"`
+	PackQty   int    `json:"packQty"`
+}
+
+// Product is a catalog product as read from shared-service.
+type Product struct {
+	ID           string  `json:"id"`
+	Brand        string  `json:"brand"`
+	Name         string  `json:"name"`
+	Pack         string  `json:"pack"`
+	UnitsPerPack int     `json:"unitsPerPack"`
+	PackWeightKg float64 `json:"packWeightKg"`
+	PackVolumeM3 float64 `json:"packVolumeM3"`
+	Temperature  string  `json:"temperature"`
+	Season       string  `json:"season,omitempty"`
+	// AvgDailySalesEach is the outlet's usual daily sales in single items; only set on an outlet's own range.
+	AvgDailySalesEach float64 `json:"avgDailySalesEach,omitempty"`
+}
+
+type ProductReader interface {
+	Products(ids []string, bearer string) ([]Product, error)
+	// Range is the calling store manager's own outlet range, with its usual daily sales.
+	Range(bearer string) ([]Product, error)
+}
+
+// Suggestion is a proposed set of item lines for one delivery date. It is advice: nothing is ordered until the
+// manager submits the order.
+type Suggestion struct {
+	DeliveryDate string `json:"deliveryDate"`
+	suggest.Result
+}
+
+// HistoricLines is one past order's items, for suggesting the next order.
+type HistoricLines struct {
+	OrderID      string
+	DeliveryDate string
+	Packs        map[string]int
 }
 
 type ImportResult struct {
@@ -38,6 +102,10 @@ type CreateRequest struct {
 	OrderWeightKg          float64     `json:"orderWeightKg"`
 	OrderVolumeM3          float64     `json:"orderVolumeM3"`
 	TemperatureRequirement Temperature `json:"temperatureRequirement"`
+	// Lines, when present, replace the totals above: units, weight and volume are computed from the catalog.
+	Lines []LineRequest `json:"lines,omitempty"`
+	// LinesSource says how the lines were produced: form (default), text_helper or habit_helper.
+	LinesSource string `json:"linesSource,omitempty"`
 }
 
 type ListFilter struct {
@@ -120,6 +188,8 @@ type Repository interface {
 	Forecast(now time.Time) (Forecast, error)
 	ImportOrders(source string, orders []Order) ([]ImportResult, error)
 	GetImported(source, externalID string) (Order, error)
+	// RecentLines returns the item lines of an outlet's orders of one goods type delivered on or after since.
+	RecentLines(outletID, temperature, since string) ([]HistoricLines, error)
 }
 
 type ReceiptIssueRequest struct {

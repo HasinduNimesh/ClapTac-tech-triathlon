@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:waypoint_loader/api/api_client.dart';
 import 'package:waypoint_loader/auth/auth.dart';
 import 'package:waypoint_loader/auth/browser_stub.dart';
 import 'package:waypoint_loader/auth/oidc_config.dart';
@@ -85,6 +86,160 @@ Future<(AuthService, MemoryBrowser, FakeServer, Uri)> signedInto({String? return
 }
 
 void main() {
+  group('handing over from the web app', () {
+    const handoffKey = 'waypoint.loader.handoff';
+    final clock = DateTime.utc(2026, 10, 5, 9);
+
+    Future<(AuthService, MemoryBrowser)> startWith(Map<String, String> storage) async {
+      final browser = browserAt('https://app.example.test/loader-app/');
+      browser.storage.addAll(storage);
+      final auth = serviceFor(FakeServer(), browser, now: () => clock);
+      await auth.start();
+      return (auth, browser);
+    }
+
+    test('a fresh hand-off goes straight to the identity server without prompt=login, once', () async {
+      final (auth, browser) = await startWith({handoffKey: '${clock.millisecondsSinceEpoch - 3000}'});
+      final url = Uri.parse(browser.navigations.single);
+      expect('${url.scheme}://${url.host}${url.path}', '$issuer/oauth2/authorize');
+      expect(url.queryParameters.containsKey('prompt'), isFalse, reason: 'the web app just signed this same person in, in this tab');
+      expect(url.queryParameters['client_id'], 'waypoint-loader');
+      expect(browser.storage.containsKey(handoffKey), isFalse, reason: 'single use');
+      expect(auth.status, AuthStatus.signedOut);
+    });
+
+    test('an old hand-off is ignored, so the person sees the Sign in screen and a forced login', () async {
+      final (auth, browser) = await startWith({handoffKey: '${clock.millisecondsSinceEpoch - const Duration(minutes: 10).inMilliseconds}'});
+      expect(browser.navigations, isEmpty);
+      expect(browser.storage.containsKey(handoffKey), isFalse);
+      expect(auth.status, AuthStatus.signedOut);
+      await auth.signIn();
+      expect(Uri.parse(browser.navigations.single).queryParameters['prompt'], 'login');
+    });
+
+    test('a marker from the future or with junk in it is ignored', () async {
+      for (final value in ['${clock.millisecondsSinceEpoch + 600000}', 'yes', '']) {
+        final (_, browser) = await startWith({handoffKey: value});
+        expect(browser.navigations, isEmpty, reason: 'value "$value"');
+      }
+    });
+
+    test('opening the loader app with no hand-off never signs in by itself', () async {
+      final (auth, browser) = await startWith({});
+      expect(browser.navigations, isEmpty);
+      expect(auth.status, AuthStatus.signedOut);
+    });
+
+    test('a signed-out message such as inactivity is shown instead of starting another sign-in', () async {
+      final (auth, browser) = await startWith({
+        handoffKey: '${clock.millisecondsSinceEpoch - 1000}',
+        'waypoint.loader.signout.reason': 'inactivity',
+      });
+      expect(browser.navigations, isEmpty);
+      expect(auth.error, isNotNull);
+    });
+  });
+
+  group('carrying the web app\'s sign-in over (no second password)', () {
+    const handoffKey = 'waypoint.loader.handoff';
+    const webKey = 'oidc.user:$issuer:waypoint-web';
+    var now = DateTime.utc(2026, 10, 5, 9);
+
+    String webUser(String token, {Duration validFor = const Duration(hours: 1)}) =>
+        jsonEncode({'access_token': token, 'expires_at': DateTime.utc(2026, 10, 5, 9).add(validFor).millisecondsSinceEpoch ~/ 1000, 'token_type': 'Bearer'});
+
+    Future<(AuthService, MemoryBrowser, FakeServer)> start({
+      Map<String, String> storage = const {},
+      String? role,
+      OidcConfig? with_,
+    }) async {
+      now = DateTime.utc(2026, 10, 5, 9);
+      final server = FakeServer();
+      if (role != null) server.role = role;
+      final browser = browserAt('https://app.example.test/loader-app/');
+      browser.storage.addAll(storage);
+      final auth = serviceFor(server, browser, now: () => now, with_: with_);
+      await auth.start();
+      return (auth, browser, server);
+    }
+
+    test('a loader who has just signed in on the web app is signed in here without going to the identity server', () async {
+      final (auth, browser, server) = await start(storage: {handoffKey: '${DateTime.utc(2026, 10, 5, 9).millisecondsSinceEpoch - 2000}', webKey: webUser('web-token')});
+      expect(auth.status, AuthStatus.signedIn);
+      expect(browser.navigations, isEmpty, reason: 'no second trip to the identity server, so no second password');
+      expect(auth.session!.accessToken, 'web-token');
+      expect(auth.session!.refreshToken, isNull);
+      expect(auth.session!.profile.roles.map((r) => r.toUpperCase()), contains('LOADER'));
+      expect(browser.storage.containsKey(handoffKey), isFalse, reason: 'single use');
+      expect(server.requests.where((r) => r.url.path == '/oauth2/token'), isEmpty);
+      final profile = server.requests.singleWhere((r) => r.url.path == '/api/v1/shared/profiles/me');
+      expect(profile.headers['Authorization'], 'Bearer web-token');
+    });
+
+    test('the borrowed session ends when the web token runs out, because it cannot be renewed', () async {
+      final (auth, _, _) = await start(storage: {handoffKey: '${DateTime.utc(2026, 10, 5, 9).millisecondsSinceEpoch - 2000}', webKey: webUser('web-token')});
+      expect(auth.status, AuthStatus.signedIn);
+      // The app starts renewing a minute before expiry; with no refresh token that is the end of the session.
+      now = now.add(const Duration(minutes: 59, seconds: 30));
+      await expectLater(auth.validToken(), throwsA(isA<ApiException>()));
+      expect(auth.status, AuthStatus.signedOut);
+    });
+
+    test('a web token that is about to expire is not borrowed: the normal sign-in goes ahead', () async {
+      final (auth, browser, _) = await start(storage: {
+        handoffKey: '${DateTime.utc(2026, 10, 5, 9).millisecondsSinceEpoch - 2000}',
+        webKey: webUser('web-token', validFor: const Duration(minutes: 2)),
+      });
+      expect(auth.status, AuthStatus.signedOut);
+      expect(Uri.parse(browser.navigations.single).path, '/oauth2/authorize');
+    });
+
+    test('a web token for another API is not borrowed', () async {
+      final server = FakeServer();
+      final wrong = server.accessToken('web', 'https://other.example.test/api');
+      final (auth, browser, _) = await start(
+        storage: {handoffKey: '${DateTime.utc(2026, 10, 5, 9).millisecondsSinceEpoch - 2000}', webKey: webUser(wrong)},
+        with_: resourceConfig,
+      );
+      expect(auth.status, AuthStatus.signedOut);
+      expect(browser.navigations, hasLength(1), reason: 'falls back to the identity server, which reports the audience problem itself');
+    });
+
+    test('somebody who is not a loader is not signed in this way', () async {
+      final (auth, browser, _) = await start(
+        storage: {handoffKey: '${DateTime.utc(2026, 10, 5, 9).millisecondsSinceEpoch - 2000}', webKey: webUser('web-token')},
+        role: 'DRIVER',
+      );
+      expect(auth.status, AuthStatus.signedOut);
+      expect(auth.session, isNull);
+      expect(browser.navigations, hasLength(1));
+    });
+
+    test('without the hand-off marker a web sign-in is never used: a shared tablet still asks the next person', () async {
+      final (auth, browser, server) = await start(storage: {webKey: webUser('web-token')});
+      expect(auth.status, AuthStatus.signedOut);
+      expect(browser.navigations, isEmpty);
+      expect(server.requests.where((r) => r.url.path == '/api/v1/shared/profiles/me'), isEmpty);
+    });
+
+    test('an old marker is not enough either', () async {
+      final (auth, browser, _) = await start(storage: {
+        handoffKey: '${DateTime.utc(2026, 10, 5, 9).millisecondsSinceEpoch - const Duration(minutes: 10).inMilliseconds}',
+        webKey: webUser('web-token'),
+      });
+      expect(auth.status, AuthStatus.signedOut);
+      expect(browser.navigations, isEmpty);
+    });
+
+    test('damaged web storage falls back to the normal sign-in', () async {
+      for (final junk in ['not json', '[]', '{}', jsonEncode({'access_token': 'x'})]) {
+        final (auth, browser, _) = await start(storage: {handoffKey: '${DateTime.utc(2026, 10, 5, 9).millisecondsSinceEpoch - 2000}', webKey: junk});
+        expect(auth.status, AuthStatus.signedOut, reason: junk);
+        expect(browser.navigations, hasLength(1), reason: junk);
+      }
+    });
+  });
+
   group('starting a sign-in', () {
     test('goes to the identity server with a PKCE challenge, state, the callback under /loader-app/ and the registered client', () async {
       final server = FakeServer();

@@ -69,7 +69,7 @@ class _Starter implements TripStarter {
   final List<TripStartResult> results;
   int calls = 0;
   @override
-  Future<TripStartResult> start(TripInfo trip, {required String operationId}) async => results[calls++ < results.length ? calls - 1 : results.length - 1];
+  Future<TripStartResult> start(TripInfo trip, {required String operationId, List<String>? confirmedOrderIds}) async => results[calls++ < results.length ? calls - 1 : results.length - 1];
 }
 
 Future<void> _settle() => Future<void>.delayed(const Duration(milliseconds: 50));

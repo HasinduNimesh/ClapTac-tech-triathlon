@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../data/driver_models.dart';
+import '../../location/location_reporter.dart';
 import '../../theme/assets.dart';
 import '../../theme/tokens.dart';
 import '../../widgets/driver_shell.dart';
 import '../../widgets/note_banner.dart';
 import '../../widgets/svg_icon.dart';
+import 'location_share_banner.dart';
 import 'route_assets.dart';
 import 'route_widgets.dart';
 
@@ -20,6 +22,7 @@ class RouteHomeScreen extends StatefulWidget {
     this.onTabSelected,
     this.offline = false,
     this.savedCopy = false,
+    this.location,
   });
 
   final TripInfo trip;
@@ -29,6 +32,9 @@ class RouteHomeScreen extends StatefulWidget {
 
   /// The route on screen is the copy saved on the phone, because the live one could not be loaded.
   final bool savedCopy;
+
+  /// Sharing the truck's position with dispatch during a trip. Null when the app has no position sharing.
+  final LocationReporter? location;
   final VoidCallback onViewStop;
   final VoidCallback onReportProblem;
   final ValueChanged<DriverTab>? onTabSelected;
@@ -83,6 +89,7 @@ class _RouteHomeScreenState extends State<RouteHomeScreen> {
             ),
             const SizedBox(height: 15),
           ],
+          if (widget.location != null) LocationShareBanner(reporter: widget.location!),
           _VehicleCard(trip: trip, textStyle: black),
           const SizedBox(height: 13),
           _Progress(completed: trip.completedStops, total: trip.stops.length),

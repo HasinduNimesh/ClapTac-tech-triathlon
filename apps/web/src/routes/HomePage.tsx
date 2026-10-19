@@ -2,9 +2,10 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { roleOf, useAuth } from "../auth/AuthContext";
 import { useLocale } from "../i18n";
-import { describeApk, type ApkInfo } from "./apkInfo.mjs";
+import { useDriverApk } from "./useDriverApk";
 import { startLoginRedirect } from "./startLoginRedirect.mjs";
 import { workspaceFor } from "./workspaceLink.mjs";
+import { markLoaderHandoff } from "../loader/handoff.mjs";
 import "./landing.css";
 import logo from "../assets/login/logo.png";
 import hero from "../assets/login/hero.png";
@@ -21,21 +22,12 @@ export function HomePage() {
   const { t, locale, setLocale } = useLocale();
   const { login, user, profile } = useAuth();
   const [status, setStatus] = useState<Status>("checking");
-  const [apk, setApk] = useState<ApkInfo | null | undefined>(undefined);
+  const apk = useDriverApk();
   const [starting, setStarting] = useState(false);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     fetch("/health/live").then((r) => setStatus(r.ok ? "live" : "down")).catch(() => setStatus("down"));
-  }, []);
-
-  useEffect(() => {
-    let active = true;
-    fetch("/downloads/waypoint-driver.json", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((meta) => { if (active) setApk(describeApk(meta)); })
-      .catch(() => { if (active) setApk(null); });
-    return () => { active = false; };
   }, []);
 
   const onSignIn = () =>
@@ -51,7 +43,7 @@ export function HomePage() {
 
   const primary = signedIn
     ? (workspace.external
-      ? <a className="lp-btn lp-btn--primary" href={workspace.href}>{t("Open my workspace")}</a>
+      ? <a className="lp-btn lp-btn--primary" href={workspace.href} onClick={() => markLoaderHandoff()}>{t("Open my workspace")}</a>
       : <Link className="lp-btn lp-btn--primary" to={workspace.href}>{t("Open my workspace")}</Link>)
     : <button type="button" className="lp-btn lp-btn--primary" disabled={starting} onClick={onSignIn}>{starting ? t("Connecting to identity provider…") : t("Sign in")}</button>;
 
@@ -176,7 +168,6 @@ export function HomePage() {
                     <p className="lp-app-meta">
                       <span>{t("Version")} <b>{apk.version}</b></span>
                       <span><b>{apk.sizeLabel}</b></span>
-                      {apk.builtOn && <span>{t("Updated")} <b>{apk.builtOn}</b></span>}
                       <span>{t("Android 8.0 or newer")}</span>
                     </p>
                     <ol className="lp-app-steps">

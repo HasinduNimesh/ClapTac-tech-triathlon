@@ -1,3 +1,4 @@
+import '../location/location_reporter.dart';
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -21,6 +22,7 @@ import '../trips/trip_start.dart';
 import '../widgets/driver_shell.dart';
 import '../widgets/note_banner.dart';
 import 'driver_prefs.dart';
+import 'stop_result_text.dart';
 
 String _two(int value) => value.toString().padLeft(2, '0');
 
@@ -59,6 +61,7 @@ class DriverSession extends ChangeNotifier {
     this.messagePollInterval = const Duration(seconds: 30),
     this.routeStore,
     this.prefs,
+    this.location,
   })  : _initialTrip = trip ?? ((demoRoute || (auth == null && demoAuth)) ? sampleTrip : null),
         _clock = clock ?? DateTime.now,
         _newId = newId ?? newOperationId {
@@ -254,13 +257,33 @@ class DriverSession extends ChangeNotifier {
   /// Acknowledges the plan and starts the run on the server. Null in demo and test sessions.
   final TripStarter? starter;
 
+  /// Shares the truck's position with dispatch while a trip is running. Null in demo and test sessions.
+  final LocationReporter? location;
+
   bool _disposed = false;
 
   /// Work that was still under way when the session was disposed (a retry waiting for Waypoint) finishes
   /// quietly instead of notifying listeners that are gone.
   @override
   void notifyListeners() {
-    if (!_disposed) super.notifyListeners();
+    if (_disposed) return;
+    _updateTracking();
+    super.notifyListeners();
+  }
+
+  /// Position sharing follows the trip, and nothing else: it runs while a signed-in driver has a started trip, for
+  /// that trip, and stops the moment the driver signs out or the trip is no longer the one on screen. Called on
+  /// every change, so no transition can be missed; it does nothing when the answer has not changed.
+  void _updateTracking() {
+    final reporter = location;
+    if (reporter == null) return;
+    final trip = hasRoute ? _baseTrip : null;
+    final wanted = signedIn && tripStartState == TripStartState.started && trip != null ? trip.tripId : null;
+    if (wanted == null) {
+      if (reporter.tripId != null) unawaited(reporter.stop());
+    } else if (reporter.tripId != wanted) {
+      unawaited(reporter.startFor(wanted));
+    }
   }
 
   @override
@@ -270,6 +293,7 @@ class DriverSession extends ChangeNotifier {
     unawaited(_connectivitySubscription?.cancel());
     _messageTimer?.cancel();
     worker?.onProgress = null;
+    unawaited(location?.stop());
     super.dispose();
   }
 
@@ -839,7 +863,10 @@ class DriverSession extends ChangeNotifier {
     tripStartState = TripStartState.starting;
     tripStartMessage = null;
     notifyListeners();
-    final result = await source.start(trip, operationId: _operationId('start:${base.tripId}'));
+    // Only a driver who confirmed the whole load sends a checkout. One who reported something missing sends none,
+    // so the server refuses the start instead of being told a load was complete when it was not.
+    final confirmed = loadCheck == LoadCheck.confirmed ? [for (final stop in base.stops) if (stop.orderId.isNotEmpty) stop.orderId] : null;
+    final result = await source.start(trip, operationId: _operationId('start:${base.tripId}'), confirmedOrderIds: confirmed);
     // Started for a driver who has since signed out: it says nothing about whoever is signed in now, and
     // the state on screen is theirs, so it is left alone.
     if (epoch != _identityEpoch) return;
@@ -990,6 +1017,14 @@ class DriverSession extends ChangeNotifier {
     notifyListeners();
   }
 
+  static DeliveryOutcome? _serverOutcome(String code) => switch (code.toUpperCase()) {
+        'DELIVERED' => DeliveryOutcome.delivered,
+        'PARTIAL' => DeliveryOutcome.partial,
+        'FAILED' => DeliveryOutcome.failed,
+        'REFUSED' => DeliveryOutcome.refused,
+        _ => null,
+      };
+
   EndOfDaySummary get summary {
     final completed = <StopResult>[];
     final unresolved = <StopResult>[];
@@ -997,22 +1032,29 @@ class DriverSession extends ChangeNotifier {
     var partial = 0;
     var failed = 0;
     final base = _baseTrip!;
+    final queuedUpdates = pendingUploads > 0;
     for (final stop in base.stops) {
       final draft = _results[stop.stopId];
-      if (draft == null) continue;
-      switch (draft.outcome) {
+      // A result still waiting on this phone wins; otherwise a stop the server has finished reports what the
+      // server recorded, so the summary is right after a restart too.
+      final outcome = draft?.outcome ?? _serverOutcome(stop.outcomeCode);
+      if (outcome == null) continue;
+      final quantity = draft != null ? draft.quantity : stop.deliveredUnits;
+      final notes = draft?.notes ?? '';
+      final stillOnPhone = draft != null && queuedUpdates;
+      switch (outcome) {
         case DeliveryOutcome.delivered:
           delivered++;
           completed.add(StopResult(name: stop.name, window: stop.window, status: 'Delivered'));
         case DeliveryOutcome.partial:
           partial++;
           final expected = stop.units;
-          final short = draft.quantity == null || expected == null ? null : expected - draft.quantity!;
+          final short = quantity == null || expected == null ? null : expected - quantity;
           unresolved.add(StopResult(
             name: stop.name,
             window: stop.window,
             status: 'Partial delivery',
-            detail: short == null || short <= 0 ? 'Saved on this phone, not sent yet' : '$short units short - saved on this phone, not sent yet',
+            detail: stopFollowUpText(short: short, stillOnPhone: stillOnPhone),
           ));
         case DeliveryOutcome.failed:
         case DeliveryOutcome.refused:
@@ -1020,8 +1062,8 @@ class DriverSession extends ChangeNotifier {
           unresolved.add(StopResult(
             name: stop.name,
             window: stop.window,
-            status: draft.outcome == DeliveryOutcome.failed ? 'Failed delivery' : 'Refused',
-            detail: draft.notes.isEmpty ? 'Saved on this phone, not sent yet' : '${draft.notes} - saved on this phone, not sent yet',
+            status: outcome == DeliveryOutcome.failed ? 'Failed delivery' : 'Refused',
+            detail: stopFollowUpText(note: notes, stillOnPhone: stillOnPhone),
           ));
       }
     }

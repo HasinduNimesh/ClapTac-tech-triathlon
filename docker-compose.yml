@@ -238,6 +238,13 @@ services:
       TWILIO_FROM: ${TWILIO_FROM:-}
       TWILIO_MESSAGING_SERVICE_SID: ${TWILIO_MESSAGING_SERVICE_SID:-}
       TWILIO_STATUS_CALLBACK_URL: ${TWILIO_STATUS_CALLBACK_URL:-}
+      SMS_PROVIDER: ${SMS_PROVIDER:-}
+      GATEWAY_URL: ${GATEWAY_URL:-}
+      GATEWAY_API_KEY: ${GATEWAY_API_KEY:-}
+      GATEWAY_GROUP: ${GATEWAY_GROUP:-}
+      GATEWAY_DEVICE: ${GATEWAY_DEVICE:-}
+      GATEWAY_QUEUE: ${GATEWAY_QUEUE:-true}
+      GATEWAY_WEBHOOK_SECRET: ${GATEWAY_WEBHOOK_SECRET:-}
     healthcheck: *backend-healthcheck
 
   agent-orchestrator:
@@ -297,6 +304,7 @@ services:
         VITE_OIDC_CLIENT_ID: ${VITE_OIDC_CLIENT_ID:-waypoint-web}
         VITE_OIDC_REDIRECT_URI: ${VITE_OIDC_REDIRECT_URI:-http://localhost/auth/callback}
         VITE_OIDC_AUDIENCE: ${VITE_OIDC_AUDIENCE:-waypoint-api}
+        VITE_OIDC_SCOPE: ${VITE_OIDC_SCOPE:-openid profile}
         VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api/v1}
     expose:
       - "80"

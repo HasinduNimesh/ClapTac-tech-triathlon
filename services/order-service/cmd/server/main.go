@@ -56,6 +56,7 @@ func main() {
 		Service: service.Service{
 			Repo:     store.Postgres{Pool: pool},
 			Outlets:  shared,
+			Products: shared,
 			Audit:    shared,
 			Cutoff:   cal,
 			Policy:   shared,

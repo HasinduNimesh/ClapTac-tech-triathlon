@@ -24,18 +24,23 @@ const loaderCallbackPath = '/loader-app/auth/callback';
 ///  * `OIDC_SCOPES` — requested scopes; `offline_access` is what lets the session renew itself
 ///    instead of sending the loader back to sign in every time the access token expires.
 class OidcConfig {
-  const OidcConfig({required this.issuer, this.clientId = 'waypoint-loader', this.scopes = 'openid profile offline_access', this.resource = ''});
+  const OidcConfig({required this.issuer, this.clientId = 'waypoint-loader', this.scopes = 'openid profile offline_access', this.resource = '', this.webClientId = 'waypoint-web'});
 
   factory OidcConfig.fromEnvironment() => const OidcConfig(
         issuer: String.fromEnvironment('OIDC_ISSUER'),
         clientId: String.fromEnvironment('OIDC_CLIENT_ID', defaultValue: 'waypoint-loader'),
         scopes: String.fromEnvironment('OIDC_SCOPES', defaultValue: 'openid profile offline_access'),
         resource: String.fromEnvironment('OIDC_RESOURCE'),
+        webClientId: String.fromEnvironment('OIDC_WEB_CLIENT_ID', defaultValue: 'waypoint-web'),
       );
 
   final String issuer;
   final String clientId;
   final String scopes;
+
+  /// The web app's client. A loader who has just signed in there is carried over from that sign-in (see
+  /// `AuthService.start`), so the identity server is not asked for the password a second time.
+  final String webClientId;
 
   /// The API the token is for; empty sends no `resource` and skips the audience check.
   final String resource;

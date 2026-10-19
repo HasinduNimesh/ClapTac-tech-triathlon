@@ -199,6 +199,14 @@ td {
   border-radius: 8px;
 }
 
+a.tap.primary {
+  display: block;
+  box-sizing: border-box;
+  text-align: center;
+  text-decoration: none;
+  font-weight: 600;
+}
+
 .trip-list,
 .load-list,
 .issues {

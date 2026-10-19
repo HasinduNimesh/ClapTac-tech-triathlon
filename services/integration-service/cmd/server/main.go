@@ -18,11 +18,13 @@ func main() {
 		log.Fatal(err)
 	}
 	h := handler.Handler{Authn: app.Authenticator, CallbackURL: os.Getenv("TWILIO_STATUS_CALLBACK_URL"), CallbackAuthToken: os.Getenv("TWILIO_AUTH_TOKEN"), StatusSink: notify.SharedStatusSink{SharedURL: getenv("SHARED_SERVICE_URL", "http://shared-service:8080"), Tokens: &oauth.TokenSource{TokenURL: getenv("OIDC_TOKEN_URL", "http://thunderid:8090/oauth2/token"), ClientID: getenv("M2M_CLIENT_ID", "waypoint-integration-service"), ClientSecret: os.Getenv("M2M_CLIENT_SECRET"), Scope: "notifications:write", Resource: getenv("OIDC_AUDIENCE", "waypoint-api")}}}
-	sms, err := notify.NewTwilio(notify.TwilioConfig{AccountSID: os.Getenv("TWILIO_ACCOUNT_SID"), AuthToken: os.Getenv("TWILIO_AUTH_TOKEN"), From: os.Getenv("TWILIO_FROM"), MessagingServiceSID: os.Getenv("TWILIO_MESSAGING_SERVICE_SID"), StatusCallbackURL: os.Getenv("TWILIO_STATUS_CALLBACK_URL")}, nil)
-	if err == nil {
+	// The SMS provider is our own cellular gateway when it is configured, otherwise Twilio (see ProviderFromEnv).
+	h.GatewayWebhookSecret = os.Getenv("GATEWAY_WEBHOOK_SECRET")
+	if sms, name, perr := notify.ProviderFromEnv(os.Getenv); perr == nil {
 		h.SMS = sms
+		app.Logger.Info("sms_provider", "provider", name)
 	} else {
-		app.Logger.Warn("sms_provider_unavailable", "reason", err)
+		app.Logger.Warn("sms_provider_unavailable", "provider", name, "reason", perr)
 	}
 	if err := app.Run(func(r chi.Router) { h.Routes(r) }); err != nil {
 		log.Fatal(err)
