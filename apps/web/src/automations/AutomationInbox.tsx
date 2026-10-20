@@ -4,6 +4,29 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { apiJSON } from "../api/client";
 import { apiBase, Result } from "./types";
+
+// A result carries order ids; people know orders by their number. The list the person can already see maps one to the other.
+let cachedRefs: { token: string; map: Record<string, string> } | null = null;
+function useOrderRefs(needed: boolean) {
+  const { user } = useAuth();
+  const token = user?.access_token || "";
+  const [map, setMap] = useState<Record<string, string>>(cachedRefs && cachedRefs.token === token ? cachedRefs.map : {});
+  useEffect(() => {
+    if (!needed || !token || (cachedRefs && cachedRefs.token === token)) return;
+    let alive = true;
+    apiJSON<{ items: { id: string; orderRef: string }[] }>("/orders", token)
+      .then((body) => {
+        const next: Record<string, string> = {};
+        for (const o of body.items || []) if (o.id && o.orderRef) next[o.id] = o.orderRef;
+        cachedRefs = { token, map: next };
+        if (alive) setMap(next);
+      })
+      .catch(() => undefined); // The line still reads fine without the number.
+    return () => { alive = false; };
+  }, [needed, token]);
+  return map;
+}
+
 /** 2026-10-07 as "7 Oct", the way the rest of the app writes a day; an unreadable value is shown as it came. */
 function dayOf(value: string) {
   const d = new Date(`${value}T00:00:00+05:30`);
@@ -12,8 +35,9 @@ function dayOf(value: string) {
 
 export function ResultView({ result }: { result: Result }) {
   const { t } = useLocale();
+  const refs = useOrderRefs(result.items.length > 0);
   return <div><p>{result.message}</p>{result.prefill && <p><strong>{result.prefill.orderUnits}{" "}{t("units")}</strong> · {result.prefill.orderWeightKg}{" "}{t("kg ·")}{" "}{result.prefill.orderVolumeM3} m³ · {result.prefill.temperatureRequirement}</p>}
-    {result.items.length > 0 && <ul>{result.items.map(item => <li key={item.orderId}><strong>{item.outletId}</strong> · {t("deferred on")} {dayOf(item.date)} · {item.count} {t(item.count === 1 ? "deferral in the last 4 weeks" : "deferrals in the last 4 weeks")}</li>)}</ul>}
+    {result.items.length > 0 && <ul>{result.items.map(item => <li key={item.orderId}><strong>{item.outletId}</strong> · {refs[item.orderId] || t("an order")} · {t("deferred on")} {dayOf(item.date)} · {item.count} {t(item.count === 1 ? "deferral in the last 4 weeks" : "deferrals in the last 4 weeks")}</li>)}</ul>}
   </div>;
 }
 export function AutomationInbox({ refresh = 0, runs = false }: { refresh?: number; runs?: boolean }) {
