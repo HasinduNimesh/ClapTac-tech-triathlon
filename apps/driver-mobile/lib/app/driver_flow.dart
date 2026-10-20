@@ -375,6 +375,10 @@ class _DriverHomeState extends State<_DriverHome> {
       );
       return;
     }
+    if (id == DriverSession.finishedTripUpdatesId) {
+      _discardFinishedTrips();
+      return;
+    }
     if (id != DriverSession.planConflictId) return;
     Navigator.of(context).push(MaterialPageRoute<void>(
       builder: (context) => PlanConflictScreen(

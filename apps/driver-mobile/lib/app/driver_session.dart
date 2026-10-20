@@ -91,6 +91,9 @@ class DriverSession extends ChangeNotifier {
 
   static const planConflictId = 'plan-conflict';
 
+  /// The sync card that offers to discard saved updates for a trip Waypoint has already finished.
+  static const finishedTripUpdatesId = 'finished-trip-updates';
+
   /// Phone settings: low-data mode (DR-6) and the first-run sheet (DR-8). Null in tests that do not need them.
   final DriverPrefs? prefs;
 
@@ -390,7 +393,19 @@ class DriverSession extends ChangeNotifier {
       SyncProgress.offline => ('Waiting for connection', syncDetail ?? 'Saved updates will retry when Waypoint can be reached.', NoteTone.offline),
       SyncProgress.needsAttention => ('Sync needs attention', syncDetail ?? 'A saved update needs review before later updates can sync.', NoteTone.danger),
     };
-    return [UpdateItem(title: title, detail: detail, time: clockLabel(_clock()), tone: tone), ..._messageItems, ...updates];
+    // A sync problem caused by a trip Waypoint has already finished can only be cleared by dropping those updates.
+    final discardable = syncProgress == SyncProgress.needsAttention && hasFinishedTripUpdates;
+    return [
+      UpdateItem(
+        id: discardable ? finishedTripUpdatesId : null,
+        title: title,
+        detail: discardable ? '$detail Tap here to discard them.' : detail,
+        time: clockLabel(_clock()),
+        tone: tone,
+      ),
+      ..._messageItems,
+      ...updates,
+    ];
   }
 
   /// Dispatch's messages as Updates entries, unread ones first. Opening one shows it in full and, when
