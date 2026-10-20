@@ -84,6 +84,14 @@ jobs:
             echo "targets=$targets"
           } >> "$GITHUB_OUTPUT"
 
+  deploy-script:
+    name: Deploy script checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # The deploy preflight is Python inside shell quotes: one stray apostrophe breaks every deploy.
+      - run: python3 -m unittest scripts.test_deploy_preflight -v
+
   go:
     name: Go services
     needs: changes
@@ -346,7 +354,7 @@ jobs:
           weak = []
           for svc, spec in services.items():
               env = spec.get("environment") or {}
-              # Traffic to the compose-internal "postgres" service stays on the VM's private network,
+              # Traffic to the compose-internal "postgres" service stays on the VM private network,
               # so only require TLS when the database host is somewhere else.
               url = str(env.get("DATABASE_URL", ""))
               host = url.split("@")[-1].split("/")[0].split(":")[0]
