@@ -436,6 +436,27 @@ class DriverSession extends ChangeNotifier {
     await _refreshPending();
   }
 
+  /// Whether saved updates remain that belong to a trip the server has already finished. They can never be sent,
+  /// so the driver is offered a way to drop them. The trip on screen is never one of them.
+  bool get hasFinishedTripUpdates => _pendingCount > 0 && _finishedTripIds().isNotEmpty;
+
+  Set<String> _finishedTripIds() {
+    final finished = {...?worker?.finishedTrips};
+    finished.remove(_baseTrip?.tripId);
+    return finished;
+  }
+
+  /// Drops the saved updates for trips the server has already finished (see [hasFinishedTripUpdates]). Returns how
+  /// many were dropped. Updates for the current trip are never touched.
+  Future<int> discardFinishedTripUpdates() async {
+    final source = queue;
+    if (source is! SqliteSyncQueue) return 0;
+    final dropped = await source.discardTrips(_finishedTripIds());
+    await worker?.syncNow();
+    await _refreshPending();
+    return dropped;
+  }
+
   bool get usesIdentityProvider => auth != null;
 
   String _operationId(String key) => _operationIds.putIfAbsent(key, _newId);

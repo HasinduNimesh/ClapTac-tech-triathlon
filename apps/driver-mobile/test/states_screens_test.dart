@@ -192,6 +192,21 @@ void main() {
       handle.dispose();
     });
 
+    testWidgets('offers to discard updates for a finished trip only when asked to', (tester) async {
+      await pumpScreen(tester, EndOfDayScreen(summary: sampleEndOfDay, onFinishTrip: () {}), size: tall);
+      expect(find.text('Discard updates for a finished trip'), findsNothing);
+
+      var discarded = 0;
+      await pumpScreen(
+        tester,
+        EndOfDayScreen(summary: sampleEndOfDay, onFinishTrip: () {}, onDiscardFinishedTrips: () => discarded++),
+        size: tall,
+      );
+      expect(find.text('Discard updates for a finished trip'), findsOneWidget);
+      await tester.tap(find.text('Discard updates for a finished trip'));
+      expect(discarded, 1);
+    });
+
     testWidgets('hides the pending uploads section when everything is uploaded', (tester) async {
       const summary = EndOfDaySummary(
         totalStops: 1,

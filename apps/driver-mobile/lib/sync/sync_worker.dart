@@ -36,11 +36,16 @@ class DeliverySyncWorker {
   final Duration interval;
   final Duration timeout;
   SyncProgress? _lastProgress;
+  Set<String> _finishedTrips = const {};
   String? _lastDetail;
   Timer? _timer;
   Future<void>? _current;
   bool _again = false;
   bool _enabled = false;
+
+  /// Trips with saved updates that the server will never take because it has already finished them, as of the
+  /// last pass. The driver can choose to discard those updates.
+  Set<String> get finishedTrips => _finishedTrips;
 
   void _report(SyncProgress progress, String? detail) {
     _lastProgress = progress;
@@ -86,10 +91,12 @@ class DeliverySyncWorker {
     // (not started, already finished, blocked, waiting for a proof) must not hold up the others: an old trip
     // left on the phone used to freeze today's delivery for good.
     final held = <String, ({SyncProgress progress, String? detail})>{};
+    final finished = <String>{};
     try {
       while (_enabled) {
         final item = await _queue.next(skipTrips: held.keys.toSet());
         if (item == null) {
+          _finishedTrips = finished;
           _reportHeld(held);
           return;
         }
@@ -136,6 +143,7 @@ class DeliverySyncWorker {
             return;
           }
           if (status == 'completed') {
+            finished.add(trip);
             // The server will never take updates for a finished trip, so this is not "waiting for the trip to start".
             held[trip] = (progress: SyncProgress.needsAttention, detail: 'A trip on this phone is already finished on Waypoint, so its saved updates cannot be sent. Ask your dispatcher.');
             continue;

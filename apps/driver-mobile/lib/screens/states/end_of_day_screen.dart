@@ -62,12 +62,16 @@ class EndOfDayScreen extends StatelessWidget {
     required this.summary,
     required this.onFinishTrip,
     this.onRetryUpload,
+    this.onDiscardFinishedTrips,
     this.onTabSelected,
   });
 
   final EndOfDaySummary summary;
   final VoidCallback onFinishTrip;
   final VoidCallback? onRetryUpload;
+
+  /// Offered only when saved updates belong to a trip Waypoint has already finished and can never take.
+  final VoidCallback? onDiscardFinishedTrips;
   final ValueChanged<DriverTab>? onTabSelected;
 
   @override
@@ -123,6 +127,10 @@ class EndOfDayScreen extends StatelessWidget {
             const SizedBox(height: 7),
             _PendingRow(count: pending, onRetry: onRetryUpload),
             const SizedBox(height: 7),
+            if (onDiscardFinishedTrips != null) ...[
+              _DiscardRow(onDiscard: onDiscardFinishedTrips!),
+              const SizedBox(height: 7),
+            ],
             DismissibleNote(
               text: pending == 1
                   ? 'Saved on this phone. One upload has not been sent yet.'
@@ -285,6 +293,34 @@ class _UnresolvedCard extends StatelessWidget {
           ),
         ],
       ],
+    );
+  }
+}
+
+class _DiscardRow extends StatelessWidget {
+  const _DiscardRow({required this.onDiscard});
+
+  final VoidCallback onDiscard;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: 'Discard saved updates for a trip that is already finished',
+      child: Material(
+        color: tinted(255, 224, 224, 0.5),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.r8), side: const BorderSide(color: Color(0xFFB42318))),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(AppRadius.r8),
+          onTap: onDiscard,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Center(
+              child: figmaText('Discard updates for a finished trip', size: 12, weight: FontWeight.w700, color: const Color(0xFFB42318), lineHeight: 19),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
