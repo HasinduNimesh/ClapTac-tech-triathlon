@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
+import { pastArrivals } from "./planTiming.mjs";
 import { PriorityReviews } from "../automations/PriorityReviews";
 import { Link } from "react-router-dom";
 import { ApiError, apiJSON } from "../api/client";
@@ -165,6 +166,7 @@ export function PlanningPage() {
   const estFuel = (detail?.vehicles || []).reduce((s, v) => s + (v.planFuelL || 0), 0);
   // Planned fuel converts back to the distance it was estimated from.
   const estDistance = (detail?.vehicles || []).reduce((s, v) => s + (v.planFuelL || 0) * (v.kmPerL || 0), 0);
+  const lateArrivals = pastArrivals(detail?.allocations || []);
   const assignedCount = detail?.allocations.length || 0;
   const orderTotal = detail?.orders.length || 0;
   const deferOrderData = ordersById.get(deferOrder);
@@ -221,6 +223,7 @@ export function PlanningPage() {
           </Banner>
         ) : (
           <Banner tone="green" icon="✓" title={t("Plan ready")} text={t("All checks passed. You can lock this plan.")}>
+            {lateArrivals.past > 0 && <p className="dp-note dp-note--amber" role="alert" style={{ margin: "0 0 12px" }}>{`${lateArrivals.past} ${t("of")} ${lateArrivals.total} ${t("planned arrivals are already in the past. Check the delivery date before you lock this plan.")}`}</p>}
             <button type="button" className="dp-btn" onClick={() => void confirm()}>🔒 {t("Lock plan and send to dispatch")}</button>
           </Banner>
         ))}

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { receiptIssueSummary } from "./receiptIssueSummary.mjs";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { apiFetch, apiJSON } from "../api/client";
 import { todayInSriLanka } from "../api/date.mjs";
 import { DockAlert, LoadingIssue, LoadingTripDetail, LoadingTripSummary } from "../api/loading";
@@ -9,6 +9,7 @@ import { useLocale } from "../i18n";
 import { AuditEvent, Availability, Incident, ReceiptIssue } from "./types";
 import { DpHero, Drawer, Note, Panel, Tag, Toast } from "./ui";
 import { failedSourceCount } from "./sourceFailures.mjs";
+import { isChilledShortfall, openShortfallCount, shortfallSeverity, tripsWithOpenShortfall } from "./shortfalls.mjs";
 import { dateTime, errorText, useApi, useToken } from "./useApi";
 
 type Alert = { key: string; tone: "red" | "amber" | "cool" | "primary"; tag: string; title: string; text: string; action: string; onOpen?: () => void; to?: string };
@@ -18,7 +19,10 @@ type Decision = "partial" | "hold" | "move";
 export function DispatcherNotificationsPage() {
   const { t } = useLocale();
   const token = useToken();
-  const date = todayInSriLanka();
+  // A trip for tomorrow (an order placed after the cutoff) is decided here too, so the day comes from the link.
+  const [params, setParams] = useSearchParams();
+  const requested = params.get("date") || "";
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(requested) ? requested : todayInSriLanka();
   const [exceptionTrip, setExceptionTrip] = useState<LoadingTripSummary | null>(null);
   const [conflictsOpen, setConflictsOpen] = useState(false);
   const [toast, setToast] = useState("");
@@ -53,9 +57,8 @@ export function DispatcherNotificationsPage() {
   const alerts: Alert[] = [];
   for (const incident of incidents.data?.items || []) alerts.push({ key: incident.id, tone: "red", tag: t("Critical · chilled risk"), title: `${incident.vehicleId}${incident.tripId ? ` · ${incident.tripId}` : ""} · ${t(incident.type)}`, text: `${incident.description} · ${dateTime(incident.reportedAt)}`, action: t("Reassign stops or defer with a reason"), to: "/dispatcher/live" });
   for (const ev of temperature.data?.items || []) alerts.push({ key: ev.event_id, tone: "red", tag: t("Critical · temperature"), title: `${ev.resource_type} ${ev.resource_id}`, text: `${ev.reason || t("Out-of-range temperature recorded")} · ${dateTime(ev.timestamp)}`, action: t("Open live operations"), to: "/dispatcher/live" });
-  const isChilled = (x: LoadingTripSummary) => x.vehicleTemperatureCapability === "reefer";
-  const shortTrips = (loading.data?.items || []).filter((x) => (x.shortfallCount || 0) > 0).sort((x, y) => Number(isChilled(y)) - Number(isChilled(x)) || (y.shortfallCount || 0) - (x.shortfallCount || 0));
-  for (const trip of shortTrips) alerts.push({ key: `short-${trip.tripId}`, tone: isChilled(trip) ? "red" : "amber", tag: isChilled(trip) ? t("Critical · chilled load exception") : t("High · loader shortfall"), title: `${trip.vehicleId} · ${t("Trip")} ${trip.tripNumber ?? 1} · ${trip.shortfallCount} ${t("order(s) short")}`, text: t("Shortfall needs dispatcher acceptance or a new plan before departure"), action: t("Review the load exception"), onOpen: () => setExceptionTrip(trip) });
+  const shortTrips = tripsWithOpenShortfall(loading.data?.items || []);
+  for (const trip of shortTrips) alerts.push({ key: `short-${trip.tripId}`, tone: isChilledShortfall(trip) ? "red" : "amber", tag: shortfallSeverity(trip) === "critical" ? t("Critical · chilled load exception") : t("High · loader shortfall"), title: `${trip.vehicleId} · ${t("Trip")} ${trip.tripNumber ?? 1} · ${openShortfallCount(trip)} ${t("order(s) short")}`, text: t("Shortfall needs dispatcher acceptance or a new plan before departure"), action: t("Review the load exception"), onOpen: () => setExceptionTrip(trip) });
   for (const alert of (dockAlerts.data?.items || []).filter((a) => !a.resolvedAt)) {
     const at = (loading.data?.items || []).find((x) => x.tripId === alert.tripId);
     alerts.push({ key: `dock-${alert.id}`, tone: "amber", tag: t("High · wrong vehicle"), title: `${alert.orderRef} ${t("found at")} ${at?.vehicleId || alert.tripId}${alert.belongsVehicleId ? ` · ${t("belongs on")} ${alert.belongsVehicleId}` : ""}`, text: `${t("Reported by the loader")} ${alert.reportedBy} · ${dateTime(alert.createdAt)}${alert.note ? ` · ${alert.note}` : ""}`, action: t("Mark handled"), onOpen: () => void resolveAlert(alert) });
@@ -66,7 +69,12 @@ export function DispatcherNotificationsPage() {
 
   return (
     <>
-      <DpHero title={t("Notifications")} />
+      <DpHero title={t("Notifications")}>
+        <div className="dp-row">
+          <label className="visually-hidden" htmlFor="notifications-date">{t("Delivery date")}</label>
+          <input id="notifications-date" className="dp-input" style={{ width: 170 }} type="date" value={date} onChange={(e) => { if (e.target.value) setParams({ date: e.target.value }, { replace: true }); }} />
+        </div>
+      </DpHero>
       <div className="dp-body dp-body--flush">
         {staleVehicles.length > 0 && plan.data && (
           <div className="dp-banner dp-banner--amber" role="status">

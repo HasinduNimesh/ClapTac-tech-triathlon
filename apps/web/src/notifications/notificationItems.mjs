@@ -3,6 +3,7 @@
  * both call these, so the bell count is always the page's open count.
  * `ctx.t` translates a label and `ctx.dateTime` formats a timestamp; both default to identity.
  */
+import { openShortfallCount, shortfallSeverity, tripsWithOpenShortfall } from "../dispatcher/shortfalls.mjs";
 import { colomboTime, isDeferred, needsReceipt } from "../store-manager/orderStage.mjs";
 import { messageTypeLabel } from "../store-manager/outletMessages.mjs";
 
@@ -29,8 +30,9 @@ export function deriveDispatcherAlerts(source = {}, ctx) {
   for (const ev of source.temperature || []) {
     alerts.push({ key: ev.event_id, kind: "temperature", tone: "red", tag: t("Critical · temperature"), title: `${ev.resource_type} ${ev.resource_id}`, text: `${ev.reason || t("Out-of-range temperature recorded")} · ${dateTime(ev.timestamp)}`, action: t("Open live operations"), to: "/dispatcher/live" });
   }
-  for (const trip of trips.filter((x) => (x.shortfallCount || 0) > 0)) {
-    alerts.push({ key: `short-${trip.tripId}`, kind: "shortfall", tone: "amber", tag: t("High · loader shortfall"), title: `${trip.vehicleId} · ${t("Trip")} ${trip.tripNumber ?? 1} · ${trip.shortfallCount} ${t("order(s) short")}`, text: t("Shortfall needs dispatcher acceptance or a new plan before departure"), action: t("Review the load exception"), open: "exception", trip });
+  for (const trip of tripsWithOpenShortfall(trips)) {
+    const critical = shortfallSeverity(trip) === "critical";
+    alerts.push({ key: `short-${trip.tripId}`, kind: "shortfall", tone: critical ? "red" : "amber", tag: critical ? t("Critical · chilled load exception") : t("High · loader shortfall"), title: `${trip.vehicleId} · ${t("Trip")} ${trip.tripNumber ?? 1} · ${openShortfallCount(trip)} ${t("order(s) short")}`, text: t("Shortfall needs dispatcher acceptance or a new plan before departure"), action: t("Review the load exception"), open: "exception", trip });
   }
   for (const alert of (source.dockAlerts || []).filter((a) => !a.resolvedAt)) {
     const at = trips.find((x) => x.tripId === alert.tripId);

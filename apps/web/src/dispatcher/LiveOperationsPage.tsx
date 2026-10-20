@@ -26,6 +26,7 @@ import { LiveLocationMap } from "../components/LiveLocationMap";
 import { ESTIMATES_UNAVAILABLE_MESSAGE, validArrivalAt } from "../api/estimateAvailability.mjs";
 import { Check, ChipGroup, DpHero, Drawer, Note, Panel, Stat, StatRow, Tag, Toast } from "./ui";
 import { clock, dateTime, errorText, isChilled, minutesAgo, useApi, useToken } from "./useApi";
+import { openShortfallCount, shortfallLink, shortfallSeverity, tripsWithOpenShortfall } from "./shortfalls.mjs";
 
 type TripMessage = { id: string; tripId: string; stopId?: string; body: string; sentBy: string; createdAt: string; acknowledgedBy?: string; acknowledgedAt?: string };
 type BreakdownProposal = { planId: string; vehicleId: string; items: { tripNumber: number; stops: { allocationId: string; orderId: string; orderRef: string; outletId: string; stopSequence: number; urgencyRank?: number; chilled?: boolean; windowClose?: string }[]; options: { vehicleId: string; valid: boolean; projectedStops: number; failures: { reasonCode: string }[] }[] }[]; confirmed: boolean; critical?: boolean; severity?: string };
@@ -163,7 +164,7 @@ export function LiveOperationsPage() {
     if (alert.type === "SILENT_TRIP") actions.push({ key: alert.id, severity: "medium", ...tripOf(alert.tripId), title: `${t("No update from")} ${alert.vehicleId} ${t("for")} ${alert.minutes} ${t("minutes")}`, text: `${t("No update since")} ${alert.timeStr}${alert.lastKnownPlace ? ` · ${t("Last known")}: ${alert.lastKnownPlace}` : ""} · ${t("Records made offline will sync when signal returns")}`, actions: [ackAction, openAction] });
     else actions.push({ key: alert.id, severity: "high", ...tripOf(alert.tripId), title: `${alert.vehicleId} · ${t("Chilled goods on board running long")}`, text: `${t("Chilled time on board")}: ${alert.chilledMinutes}m (${t("exceeds allowed limit")})`, actions: [ackAction, openAction] });
   }
-  for (const trip of (loading.data?.items || []).filter((x) => (x.shortfallCount || 0) > 0)) actions.push({ key: `short-${trip.tripId}`, severity: "medium", tripId: trip.tripId, tripLabel: tripLabel(trip.vehicleId, trip.tripNumber), title: `${t("Loading shortfall on")} ${trip.vehicleId} ${t("trip")} ${trip.tripNumber ?? 1}: ${trip.shortfallCount} ${t("order(s) short before departure")}`, text: `${DEPOT_LABELS[trip.depot || ""] || trip.depot || ""} · ${trip.planRef || ""}`, actions: [{ label: t("Review shortfall"), primary: true, to: "/dispatcher/notifications" }] });
+  for (const trip of tripsWithOpenShortfall(loading.data?.items || [])) actions.push({ key: `short-${trip.tripId}`, severity: shortfallSeverity(trip), tripId: trip.tripId, tripLabel: tripLabel(trip.vehicleId, trip.tripNumber), title: `${t("Loading shortfall on")} ${trip.vehicleId} ${t("trip")} ${trip.tripNumber ?? 1}: ${openShortfallCount(trip)} ${t("order(s) short before departure")}`, text: `${DEPOT_LABELS[trip.depot || ""] || trip.depot || ""} · ${trip.planRef || ""}`, actions: [{ label: t("Review shortfall"), primary: true, to: shortfallLink(trip, date) }] });
   for (const row of evaluated) {
     const top = row.disruptions?.[0];
     if (!top || top.effectiveSeverity !== "HIGH") continue;

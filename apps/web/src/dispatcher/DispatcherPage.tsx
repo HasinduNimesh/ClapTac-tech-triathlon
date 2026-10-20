@@ -9,6 +9,7 @@ import { Availability, Incident, Outlet, ReceiptIssue, Vehicle, availabilityOf, 
 import { BRAND_COLORS, Donut, DpHero, Meter, Panel, Stat, StatRow, Tag } from "./ui";
 import { clock, dayLabel, isChilled, minutesAgo, pct, useApi } from "./useApi";
 import { splitByDeliveryDate } from "./orderTiming.mjs";
+import { openShortfallCount, shortfallLink, shortfallSeverity, tripsWithOpenShortfall } from "./shortfalls.mjs";
 
 type Exception = { key: string; tone: "red" | "amber" | "primary"; icon: string; title: string; text: string; when?: string; to: string };
 
@@ -46,7 +47,7 @@ export function DispatcherPage() {
   for (const incident of incidents.data?.items || []) exceptions.push({ key: incident.id, tone: "red", icon: "!", title: `${t("Vehicle in workshop")} · ${incident.vehicleId}`, text: `${t(incident.type)} · ${incident.description}`, when: incident.reportedAt, to: "/dispatcher/live" });
   const windowRisk = unallocated.filter((u) => u.reasonCode === "DELIVERY_WINDOW_CONFLICT");
   if (windowRisk.length) exceptions.push({ key: "window", tone: "amber", icon: "!", title: t("Missed delivery window risk"), text: `${windowRisk.length} ${t("orders may miss their delivery window.")}`, to: "/dispatcher/planning" });
-  for (const trip of trips.filter((item) => (item.shortfallCount || 0) > 0)) exceptions.push({ key: `short-${trip.tripId}`, tone: "amber", icon: "!", title: `${t("Loading shortfall")} · ${trip.vehicleId || trip.planRef}`, text: `${trip.shortfallCount} ${t("order(s) short before departure")}`, to: "/dispatcher/notifications" });
+  for (const trip of tripsWithOpenShortfall(trips)) exceptions.push({ key: `short-${trip.tripId}`, tone: shortfallSeverity(trip) === "critical" ? "red" : "amber", icon: "!", title: `${t("Loading shortfall")} · ${trip.vehicleId || trip.planRef}`, text: `${openShortfallCount(trip)} ${t("order(s) short before departure")}`, to: shortfallLink(trip) });
   for (const [index, item] of (receipts.data?.items || []).slice(0, 3).entries()) exceptions.push({ key: `receipt-${index}`, tone: "primary", icon: "i", title: `${t("Receipt issue")} · ${item.outletId}`, text: `${item.orderRef} · ${t(item.issue.issueType)} · ${item.issue.affectedUnits} ${t("units")}`, when: item.issue.createdAt, to: "/dispatcher/notifications" });
   if (timing.overdue > 0) exceptions.push({ key: "overdue", tone: "amber", icon: "!", title: t("Overdue orders"), text: `${timing.overdue} ${t("confirmed orders are past their delivery date and have not been planned.")}`, to: "/dispatcher/orders" });
   if (!plan.data && !plan.loading) exceptions.push({ key: "noplan", tone: "amber", icon: "!", title: t("No plan for today yet"), text: t("Create a plan to allocate confirmed orders to vehicles."), to: "/dispatcher/planning" });
