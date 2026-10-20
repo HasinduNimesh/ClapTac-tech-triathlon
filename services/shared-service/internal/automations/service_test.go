@@ -70,7 +70,12 @@ func TestDurableHabitsAndWorkflowLifecycle(t *testing.T) {
 	}}
 	pre := automation.Prefill{OutletID: "OUT001", Units: 30, Weight: 150, Volume: .42, Temperature: "ambient"}
 	for i := 1; i <= 3; i++ {
-		_, err = pool.Exec(ctx, `INSERT INTO audit.events(event_id,actor_id,action,new_state,timestamp,source) VALUES($1,'store','order.created',$2,$3,'order-service')`, fmt.Sprint(i), marshal(pre), now.AddDate(0, 0, -7*i))
+		// The order service records ORDER_CREATED. One week uses the old dotted name to prove both are counted.
+		action := "ORDER_CREATED"
+		if i == 1 {
+			action = "order.created"
+		}
+		_, err = pool.Exec(ctx, `INSERT INTO audit.events(event_id,actor_id,action,new_state,timestamp,source) VALUES($1,'store',$4,$2,$3,'order-service')`, fmt.Sprint(i), marshal(pre), now.AddDate(0, 0, -7*i), action)
 		if err != nil {
 			t.Fatal(err)
 		}

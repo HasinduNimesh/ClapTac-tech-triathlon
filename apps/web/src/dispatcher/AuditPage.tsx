@@ -3,6 +3,9 @@ import { apiFetch, apiJSON } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { useLocale } from "../i18n";
 import { buildAuditSearchParams } from "./auditQuery.mjs";
+import { describeError } from "../api/friendlyError.mjs";
+import { dateTime } from "./useApi";
+import { auditDetail } from "./auditDetail.mjs";
 
 type AuditEvent = { event_id: string; actor_id: string; action: string; resource_type: string; resource_id: string; timestamp: string; source: string; reason?: string; new_state?: Record<string, unknown> };
 type SearchResult = { items: AuditEvent[]; total: number; limit: number; offset: number };
@@ -31,7 +34,7 @@ export function AuditPage() {
     try {
       params = buildAuditSearchParams({ query, action, resourceType, resourceId, actorId, from, to }, offset);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(describeError(e));
       setLoading(false);
       return;
     }
@@ -41,7 +44,7 @@ export function AuditPage() {
         apiJSON<KPIs>("/shared/audit/kpis", token),
       ]);
       setResult(events); setKpis(summary);
-    } catch (e) { setError(e instanceof Error ? e.message : "Audit data could not be loaded"); }
+    } catch (e) { setError(e instanceof Error ? describeError(e) : "Audit data could not be loaded"); }
     finally { setLoading(false); }
   }
   async function exportCsv() {
@@ -56,7 +59,7 @@ export function AuditPage() {
       const a = document.createElement("a");
       a.href = url; a.download = "audit-export.csv"; a.click();
       URL.revokeObjectURL(url);
-    } catch (e) { setError(e instanceof Error ? e.message : "Audit export failed"); }
+    } catch (e) { setError(e instanceof Error ? describeError(e) : "Audit export failed"); }
   }
   useEffect(() => { void load(); }, [token]);
   function submit(e: FormEvent) { e.preventDefault(); void load(0); }
@@ -88,7 +91,7 @@ export function AuditPage() {
     {result && <>
       <p>{result.total} {t("matching events · page")} {Math.floor(result.offset / result.limit) + 1}</p>
       <div className="table-scroll"><table><thead><tr><th>{t("Time")}</th><th>{t("Action")}</th><th>{t("Actor")}</th><th>{t("Resource")}</th><th>{t("Source")}</th><th>{t("Details")}</th></tr></thead>
-        <tbody>{result.items.map(ev => <tr key={ev.event_id}><td>{new Date(ev.timestamp).toLocaleString()}</td><td>{ev.action}</td><td>{ev.actor_id || t("System")}</td><td>{ev.resource_type} {ev.resource_id}</td><td>{ev.source}</td><td>{ev.reason || JSON.stringify(ev.new_state || {})}</td></tr>)}</tbody></table></div>
+        <tbody>{result.items.map(ev => <tr key={ev.event_id}><td>{dateTime(ev.timestamp)}</td><td>{ev.action}</td><td>{ev.actor_id || t("System")}</td><td>{ev.resource_type} {ev.resource_id}</td><td>{ev.source}</td><td>{auditDetail(ev, t)}</td></tr>)}</tbody></table></div>
       <div className="row"><button disabled={loading || result.offset <= 0} onClick={() => void load(Math.max(0, result.offset - result.limit))}>{t("Previous")}</button><button disabled={loading || result.offset + result.limit >= result.total} onClick={() => void load(result.offset + result.limit)}>{t("Next")}</button></div>
     </>}
   </section>;

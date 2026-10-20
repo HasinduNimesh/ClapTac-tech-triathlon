@@ -10,9 +10,10 @@ from .fakes import FakeBusiness, FakeLLM, PROFILES, extraction, item
 TODAY = date(2026, 10, 3)  # Saturday
 
 
-def run(args, orders=None, message="order text"):
+def run(args, orders=None, message="order text", products=None):
     llm = FakeLLM(args)
     business = FakeBusiness(PROFILES, orders)
+    business.product_rows = products
     state = asyncio.run(order_graph.build_graph().ainvoke(
         {"message": message, "today": TODAY, "token": "store", "outlet_id": "OUT034"},
         config={"configurable": {"business": business, "llm": llm}},
@@ -124,3 +125,48 @@ class OrderAssistantTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def live(id, family, name, size="", pack="bale", units=10, kg=10.0, m3=0.016, temp="ambient"):
+    return {"id": id, "brand": "Fresh", "family": family, "name": name, "size": size, "pack": pack,
+            "unitsPerPack": units, "packWeightKg": kg, "packVolumeM3": m3, "temperature": temp}
+
+
+LIVE = [
+    live("P-BASMATI", "basmati", "Basmati rice 1 kg", "1 kg"),
+    live("P-SAMBA-5", "rice", "Samba rice 5 kg", "5 kg", pack="bag", units=1, kg=5.1),
+    live("P-MARIE", "biscuits", "Marie biscuits 80 g", "80 g", pack="case", units=24, kg=2.1),
+    live("P-CHOC", "biscuits", "Chocolate biscuits 100 g", "100 g", pack="case", units=24, kg=2.8),
+]
+
+
+class LiveCatalogTest(unittest.TestCase):
+    """The assistant works from the product list in master data, not from a copy baked into the service."""
+
+    def test_basmati_is_not_turned_into_samba(self):
+        body, llm, _ = run(extraction([item("basmati rice 2 bales", "basmati", 2)]), products=LIVE)
+        self.assertEqual([(l["productId"], l["quantity"]) for l in body["lines"]], [("P-BASMATI", 2)])
+        families = llm.calls[0]["function"]["parameters"]["properties"]["items"]["items"]["properties"]["family"]["enum"]
+        self.assertIn("basmati", families)
+        self.assertIn("biscuits", families)
+
+    def test_a_product_in_master_data_but_not_in_the_old_copy_can_be_ordered(self):
+        body, _, _ = run(extraction([item("marie biscuits 80 g 3 cases", "biscuits", 3, size="80 g")]), products=LIVE)
+        self.assertEqual([(l["productId"], l["quantity"]) for l in body["lines"]], [("P-MARIE", 3)])
+
+    def test_two_products_in_one_family_ask_which_one(self):
+        body, _, _ = run(extraction([item("biscuits 2 cases", "biscuits", 2)]), products=LIVE)
+        self.assertEqual(body["lines"], [])
+        self.assertEqual(body["questions"][0]["kind"], "choose_product")
+        self.assertEqual({o["id"] for o in body["questions"][0]["options"]}, {"P-MARIE", "P-CHOC"})
+
+    def test_a_product_taken_out_of_the_range_is_unknown(self):
+        body, _, _ = run(extraction([item("basmati rice 2 bales", "basmati", 2)]), products=[p for p in LIVE if p["id"] != "P-BASMATI"])
+        self.assertEqual(body["lines"], [])
+        self.assertEqual(body["questions"][0]["kind"], "not_in_catalog")
+
+    def test_incomplete_rows_are_skipped_not_guessed(self):
+        broken = [{"id": "X", "family": "rice"}, {**LIVE[0], "unitsPerPack": 0}, {**LIVE[0], "temperature": "frozen"}, LIVE[1]]
+        body, _, _ = run(extraction([item("samba rice 1 bag", "rice", 1)]), products=broken)
+        self.assertEqual([l["productId"] for l in body["lines"]], ["P-SAMBA-5"])
+        self.assertEqual([p["id"] for p in body["products"]], ["P-SAMBA-5"])

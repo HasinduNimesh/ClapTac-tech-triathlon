@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { nextPollDelay, POLL_INTERVAL_MS, shouldRefreshOnVisible } from "./polling.mjs";
 import { NOTIFICATION_REFRESH_EVENT } from "./readState.mjs";
+import { describeError } from "../api/friendlyError.mjs";
 
 export type Polled<T> = { data: T | null; error: string; loading: boolean; reload: () => void };
 
@@ -46,7 +47,7 @@ export function usePolledResource<T>(fetcher: () => Promise<T>, enabled: boolean
       } catch (err) {
         if (cancelled) return;
         failures += 1;
-        setError(err instanceof Error ? err.message : String(err));
+        setError(describeError(err));
       } finally {
         inFlight = false;
         lastFetchAt = Date.now();

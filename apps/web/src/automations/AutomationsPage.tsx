@@ -7,6 +7,7 @@ import { AutomationInbox, ResultView } from "./AutomationInbox";
 import { PriorityReviews } from "./PriorityReviews";
 import { apiBase, days, Definition, Result } from "./types";
 import "./automations.css";
+import { describeError } from "../api/friendlyError.mjs";
 const initial: Definition = { version: 1, name: "Weekly deferred orders", weekday: 5, time: "15:00", timezone: "Asia/Colombo", action: "notify_deferrals" };
 export function AutomationsPage() {
   const { t } = useLocale();
@@ -17,12 +18,12 @@ export function AutomationsPage() {
   const [items, setItems] = useState<{ id: string; definition: Definition; status: string; nextRunAt: string }[]>([]);
   const [demo, setDemo] = useState(false);
   const [enabled, setEnabled] = useState(true); const [preview, setPreview] = useState<{ id: string; result: Result } | null>(null);
-  const [testAt, setTestAt] = useState("previous"); const [busy, setBusy] = useState(false); const [error, setError] = useState(""); const [notice, setNotice] = useState(""); const [refresh, setRefresh] = useState(0);
+  const [testAt, setTestAt] = useState("previous"); const [confirmDelete, setConfirmDelete] = useState(""); const [busy, setBusy] = useState(false); const [error, setError] = useState(""); const [notice, setNotice] = useState(""); const [refresh, setRefresh] = useState(0);
   async function load() { const data = await apiJSON<{ items: typeof items; habitEnabled: boolean; demoHistory: boolean }>(`${apiBase}/`, token); setItems(data.items); setEnabled(data.habitEnabled); setDemo(data.demoHistory); }
-  useEffect(() => { if (token) void load().catch(e => setError(String(e))); }, [token]);
+  useEffect(() => { if (token) void load().catch(e => setError(describeError(e))); }, [token]);
   useEffect(() => {if(incoming){setDraft(incoming);setBuilding(true);setPreview(null);navigate(location.pathname,{replace:true,state:null});}},[location.key]);
   function change(next: Definition) { setDraft(next); setPreview(null); setNotice(""); }
-  async function perform(action: () => Promise<void>) { if (busy) return; setBusy(true); setError(""); try { await action(); } catch (e) { setError(String(e)); } finally { setBusy(false); } }
+  async function perform(action: () => Promise<void>) { if (busy) return; setBusy(true); setError(""); try { await action(); } catch (e) { setError(describeError(e)); } finally { setBusy(false); } }
   async function interpret() { const data = await apiJSON<{ definition?: Definition; clarification?: string; source?: string }>("/agent/workflows/draft", token, { method: "POST", body: JSON.stringify({ message }) }); if (data.definition) { change(data.definition);setNotice(`Draft prepared using ${data.source}. Review the schedule below.`); } else {setPreview(null);setNotice(data.clarification || "Please clarify your request.");} }
   async function test() {setPreview(null);setPreview(await apiJSON(`${apiBase}/preview`, token, { method: "POST", body: JSON.stringify({ definition: draft, at: testAt }) }));}
   async function activate() { if (!preview) return; await apiJSON(`${apiBase}/`, token, { method: "POST", body: JSON.stringify({ previewId: preview.id }) });setBuilding(false);setPreview(null);setNotice("Automation is on. It will run at the next scheduled time.");await load(); }
@@ -42,7 +43,7 @@ export function AutomationsPage() {
       {preview && <div className="auto-test-result"><strong>{t("Test complete · no actions taken")}</strong><p>{new Date(preview.result.at).toLocaleString("en-GB",{timeZone:"Asia/Colombo"})}{" "}{t("· Sri Lanka")}</p><ResultView result={preview.result}/></div>}
       <div className="auto-actions"><button className="primary" disabled={busy||!preview} onClick={()=>void perform(activate)}>{t("Turn on")}</button><button disabled={busy} onClick={()=>{setBuilding(false);setPreview(null);}}>{t("Cancel")}</button></div><small>{t("Orders are never submitted and plans are never published by these workflows.")}</small>
     </div></section>}
-    <section className="auto-panel"><div className="auto-eyebrow">{t("SAVED ROUTINES")}</div><h2>{t("Your workflows")}</h2>{items.length===0 && <p className="muted">{t("No automations yet. Start with a weekly deferred-order list.")}</p>}{items.map(item=><article className="auto-workflow" key={item.id}><div><h3>{item.definition.name}</h3><p>{t("Every")}{" "}{days[item.definition.weekday]}{" "}{t("at")}{" "}{item.definition.time}{" "}{t("· Asia/Colombo")}</p><small>{item.status==="active"?`Next run: ${new Date(item.nextRunAt).toLocaleString("en-GB",{timeZone:"Asia/Colombo"})}`:"Paused — no scheduled actions"}</small></div><span className={`auto-status ${item.status}`}>{item.status}</span><button disabled={busy} onClick={()=>void perform(()=>status(item.id,item.status==="active"?"paused":"active"))}>{item.status==="active"?"Pause":"Resume"}</button><button disabled={busy} onClick={()=>void perform(()=>status(item.id,"deleted"))}>{t("Delete")}</button></article>)}</section>
+    <section className="auto-panel"><div className="auto-eyebrow">{t("SAVED ROUTINES")}</div><h2>{t("Your workflows")}</h2>{items.length===0 && <p className="muted">{t("No automations yet. Start with a weekly deferred-order list.")}</p>}{items.map(item=><article className="auto-workflow" key={item.id}><div><h3>{item.definition.name}</h3><p>{t("Every")}{" "}{days[item.definition.weekday]}{" "}{t("at")}{" "}{item.definition.time}{" "}{t("· Asia/Colombo")}</p><small>{item.status==="active"?`${t("Next run:")} ${new Date(item.nextRunAt).toLocaleString("en-GB",{timeZone:"Asia/Colombo"})}`:t("Paused — no scheduled actions")}</small></div><span className={`auto-status ${item.status}`}>{t(item.status==="active"?"active":"paused")}</span><button disabled={busy} onClick={()=>void perform(()=>status(item.id,item.status==="active"?"paused":"active"))}>{t(item.status==="active"?"Pause":"Resume")}</button>{confirmDelete===item.id?<><span role="alert">{t("Delete this routine?")}</span><button disabled={busy} onClick={()=>void perform(async()=>{await status(item.id,"deleted");setConfirmDelete("");})}>{t("Yes, delete")}</button><button disabled={busy} onClick={()=>setConfirmDelete("")}>{t("Keep it")}</button></>:<button disabled={busy} onClick={()=>setConfirmDelete(item.id)}>{t("Delete")}</button>}</article>)}</section>
     {dispatcher && <PriorityReviews/>}<div className="auto-builder"><AutomationInbox refresh={refresh}/><AutomationInbox refresh={refresh} runs/></div>
   </div>;
 }

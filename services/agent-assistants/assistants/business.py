@@ -53,5 +53,11 @@ class BusinessClient:
         items = body.get("items") or []
         return [o for o in items if isinstance(o, dict)]
 
+    async def products(self, token: str, correlation_id: str = "") -> list[dict]:
+        """The product list the caller can order from. A store manager gets their own outlet's range."""
+        body = await self.get_json(self.shared_url, "/api/v1/shared/products", token, correlation_id)
+        items = body.get("items") or []
+        return [p for p in items if isinstance(p, dict)]
+
     async def aclose(self) -> None:
         await self._http.aclose()

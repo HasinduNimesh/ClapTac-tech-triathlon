@@ -130,7 +130,7 @@ func (h Handler) chat(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			telemetry.AgentFailures.WithLabelValues("provider").Inc()
 			rec.AddSince(callStarted, agenttrace.KindError, "llm_call", "The model provider failed, so the request stops instead of guessing an answer.", "error", map[string]any{"turn": i + 1})
-			h.publish(r.Context(), audit.ActionAgentToolFailed, "", profile.Subject, map[string]any{"stage": "provider"})
+			h.publish(r.Context(), audit.ActionAgentToolFailed, "", profile.Subject, map[string]any{"stage": "provider", "reason": providerReason(err)})
 			http.Error(w, "agent_unavailable: assistant provider failed", http.StatusServiceUnavailable)
 			return
 		}
@@ -498,4 +498,14 @@ func redactSlice(items []any) []any {
 		}
 	}
 	return out
+}
+
+// providerReason is why the model call failed, short and free of secrets (the errors it returns carry a status or a
+// plain sentence, never the key), so a failure can be diagnosed from the audit trail instead of guessed at.
+func providerReason(err error) string {
+	reason := err.Error()
+	if len(reason) > 200 {
+		reason = reason[:200]
+	}
+	return reason
 }

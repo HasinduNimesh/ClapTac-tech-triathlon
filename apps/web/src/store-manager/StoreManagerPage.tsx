@@ -4,14 +4,15 @@ import { useEffect, useState } from "react";
 import { apiJSON, ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { useLocale } from "../i18n";
+import { describeError } from "../api/friendlyError.mjs";
 
 type Outlet = { id:string; brand:string; name:string; accessInstructions:string; accessInstructionsUpdatedBy?:string; accessInstructionsUpdatedAt?:string; accessInstructionsConfirmedBy?:string; accessInstructionsConfirmedAt?:string; version:number };
 
 export function StoreManagerPage() {
   const { t } = useLocale(); const {user,profile}=useAuth(); const token=user?.access_token||"";
   const [outlets,setOutlets]=useState<Outlet[]>([]);const [busy,setBusy]=useState("");const [error,setError]=useState("");const [notice,setNotice]=useState("");
-  useEffect(()=>{let active=true;if(!token||!profile)return;void apiJSON<{items:Outlet[]}>("/shared/outlets",token).then(data=>{if(active){const allowed=new Set(profile.outletIds||[]);setOutlets((data.items||[]).filter(o=>allowed.has(o.id)));}}).catch(e=>{if(active)setError(e instanceof Error?e.message:t("Outlet access notes could not be loaded"));});return()=>{active=false;};},[token,profile,t]);
-  async function confirm(outlet:Outlet){setBusy(outlet.id);setError("");setNotice("");try{const data=await apiJSON<{outlet:Outlet}>(`/shared/outlets/${encodeURIComponent(outlet.id)}/access-instructions/confirm`,token,{method:"POST",body:JSON.stringify({expectedVersion:outlet.version})});setOutlets(items=>items.map(item=>item.id===outlet.id?data.outlet:item));setNotice(`${t("Access note confirmed for")} ${outlet.name}.`);}catch(e){setError(e instanceof ApiError&&e.status===409?t("This outlet note changed. Reload before confirming."):e instanceof Error?e.message:t("Access note confirmation failed"));}finally{setBusy("");}}
+  useEffect(()=>{let active=true;if(!token||!profile)return;void apiJSON<{items:Outlet[]}>("/shared/outlets",token).then(data=>{if(active){const allowed=new Set(profile.outletIds||[]);setOutlets((data.items||[]).filter(o=>allowed.has(o.id)));}}).catch(e=>{if(active)setError(e instanceof Error ? describeError(e) :t("Outlet access notes could not be loaded"));});return()=>{active=false;};},[token,profile,t]);
+  async function confirm(outlet:Outlet){setBusy(outlet.id);setError("");setNotice("");try{const data=await apiJSON<{outlet:Outlet}>(`/shared/outlets/${encodeURIComponent(outlet.id)}/access-instructions/confirm`,token,{method:"POST",body:JSON.stringify({expectedVersion:outlet.version})});setOutlets(items=>items.map(item=>item.id===outlet.id?data.outlet:item));setNotice(`${t("Access note confirmed for")} ${outlet.name}.`);}catch(e){setError(e instanceof ApiError&&e.status===409?t("This outlet note changed. Reload before confirming."):e instanceof Error ? describeError(e) :t("Access note confirmation failed"));}finally{setBusy("");}}
   return (
     <>
     <section className="card">

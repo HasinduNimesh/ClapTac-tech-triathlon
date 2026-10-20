@@ -9,6 +9,8 @@ import { useAuth } from "../auth/AuthContext";
 import { useLocale } from "../i18n";
 import { deferralExplanation } from "./deferralMessage.mjs";
 import { StoreManagerHero } from "./StoreManagerHero";
+import { describeError } from "../api/friendlyError.mjs";
+import { shortfallText } from "./shortfallText.mjs";
 
 type ReceiptIssue = { id:string; issueType:string; affectedUnits:number; note?:string };
 type Receipt = { id:string; expectedUnits:number; receivedUnits:number; status:string; confirmedAt:string };
@@ -39,7 +41,7 @@ export function TrackingPage({receiptsOnly=false}:{receiptsOnly?:boolean}){
       const rows=await Promise.all((body.items||[]).map(async order=>{
         const result=await apiJSON<{tracking:Tracking}>(`/orders/${order.id}/tracking`,token);return result.tracking;
       }));if(request===latestLoad.current)setItems(rows);
-    }catch(e){if(request===latestLoad.current){setError(String(e));setItems(current=>current.map(row=>({...row,delivery:row.delivery?{...row.delivery,location:undefined}:undefined})));}}
+    }catch(e){if(request===latestLoad.current){setError(describeError(e));setItems(current=>current.map(row=>({...row,delivery:row.delivery?{...row.delivery,location:undefined}:undefined})));}}
   },[token,receiptsOnly]);
   useEffect(()=>{void load();},[load]);
   useEffect(()=>()=>{latestLoad.current+=1;},[]);
@@ -59,14 +61,14 @@ export function TrackingPage({receiptsOnly=false}:{receiptsOnly?:boolean}){
     try{await apiJSON(`/orders/${order.id}/receipt/confirm`,token,{method:"POST",headers:{"Idempotency-Key":payload.issue?.idempotencyKey||idempotencyKey()},body:JSON.stringify(payload)});
       if(tech){const key=custodyKeys[order.id]||idempotencyKey();setCustodyKeys(v=>({...v,[order.id]:key}));await apiJSON(`/orders/${order.id}/custody`,token,{method:"POST",headers:{"Idempotency-Key":key},body:JSON.stringify({stage:"RECEIVED",sealId:custody.sealId.trim(),serialNumbers:custody.serials.split(/[\n,;]/).map(v=>v.trim()).filter(Boolean),condition:custody.condition.trim(),receiverName:custody.receiver.trim(),idempotencyKey:key})});}
       setMessage(`${t("Receipt saved for")} ${order.orderRef}.`);await load();}
-    catch(err){setError(String(err));}
+    catch(err){setError(describeError(err));}
     void tracking;
   }
 
   async function reportIssue(e:FormEvent,order:Order){
     e.preventDefault();setError("");setMessage("");const key=idempotencyKey();
     try{await apiJSON(`/orders/${order.id}/receipt/issues`,token,{method:"POST",headers:{"Idempotency-Key":key},body:JSON.stringify({issueType:issueType[order.id]||"DAMAGED",affectedUnits:Number(issueUnits[order.id]||0),note:note[order.id]||"",idempotencyKey:key})});setMessage(`${t("Issue recorded for")} ${order.orderRef}.`);setReportFor("");await load();}
-    catch(err){setError(String(err));}
+    catch(err){setError(describeError(err));}
   }
 
   return <>
@@ -76,7 +78,7 @@ export function TrackingPage({receiptsOnly=false}:{receiptsOnly?:boolean}){
     {error&&<p className="status-bad" role="alert">{error}</p>}{message&&<p role="status">{message}</p>}
     {receiptsOnly?pending.map(({order,tracking})=><article className="card" key={order.id}>
       <h3>{order.orderRef} · {order.brand}</h3><p>{order.orderUnits} {t("expected units")} · {t("Driver outcome")}: {t(tracking.delivery?.outcome||"")}</p>
-      {(tracking.delivery?.loadingShortfallSummary?.length||0)>0&&<p className="status-bad">{t("Loading shortfall reported")} {JSON.stringify(tracking.delivery?.loadingShortfallSummary)}</p>}
+      {(tracking.delivery?.loadingShortfallSummary?.length||0)>0&&<p className="status-bad">{t("Loading shortfall reported")} {shortfallText(tracking.delivery?.loadingShortfallSummary,t)}</p>}
       {order.brand.toLowerCase()==="tech"&&<fieldset><legend>{t("High-value Tech custody")}</legend><label>{t("Seal ID")}<input value={techReceipt[order.id]?.sealId??tracking.custody?.[0]?.sealId??""} onChange={e=>setTechReceipt(v=>({...v,[order.id]:{sealId:e.target.value,serials:v[order.id]?.serials??(tracking.custody?.[0]?.serialNumbers||[]).join(", "),condition:v[order.id]?.condition||"",receiver:v[order.id]?.receiver||""}}))}/></label><label>{t("Serial number(s), comma separated")}<textarea value={techReceipt[order.id]?.serials??(tracking.custody?.[0]?.serialNumbers||[]).join(", ")} onChange={e=>setTechReceipt(v=>({...v,[order.id]:{sealId:v[order.id]?.sealId??tracking.custody?.[0]?.sealId??"",serials:e.target.value,condition:v[order.id]?.condition||"",receiver:v[order.id]?.receiver||""}}))}/></label><label>{t("Received condition")}<input value={techReceipt[order.id]?.condition||""} onChange={e=>setTechReceipt(v=>({...v,[order.id]:{sealId:v[order.id]?.sealId??tracking.custody?.[0]?.sealId??"",serials:v[order.id]?.serials??(tracking.custody?.[0]?.serialNumbers||[]).join(", "),condition:e.target.value,receiver:v[order.id]?.receiver||""}}))}/></label><label>{t("Receiver name")}<input value={techReceipt[order.id]?.receiver||""} onChange={e=>setTechReceipt(v=>({...v,[order.id]:{sealId:v[order.id]?.sealId??tracking.custody?.[0]?.sealId??"",serials:v[order.id]?.serials??(tracking.custody?.[0]?.serialNumbers||[]).join(", "),condition:v[order.id]?.condition||"",receiver:e.target.value}}))}/></label></fieldset>}
       <form onSubmit={e=>confirm(e,order,tracking)}>
         <label>{t("Received units")} <input type="number" min="1" max={order.orderUnits} value={received[order.id]??String(order.orderUnits)} onChange={e=>setReceived({...received,[order.id]:e.target.value})} required /></label>
@@ -103,7 +105,7 @@ export function TrackingPage({receiptsOnly=false}:{receiptsOnly?:boolean}){
       {row.planning.reasonCode&&(()=>{const why=deferralExplanation(row.planning.reasonCode);return <div className="status-bad" role="status"><p><strong>{t("Deferred")}</strong>: {t(why.message)}{row.planning.reasonComment?` · ${row.planning.reasonComment}`:""}</p><p>{t("What happens next")}: {t(why.nextAction)}</p></div>;})()}
       {(row.custody||[]).length>0&&<section className="card"><h4>{t("Tech chain of custody")}</h4><ol>{row.custody!.map(event=><li key={event.id}>{t(event.stage)} · {t("Seal ID")} {event.sealId} · {event.serialNumbers.join(", ")} · {event.condition} · {event.recordedBy} · {new Date(event.recordedAt).toLocaleString()}{event.receiverName?` · ${event.receiverName}`:""}{event.evidenceRef?` · ${t("Evidence reference")} ${event.evidenceRef}`:""}</li>)}</ol></section>}
       {row.delivery&&<p>{t("Driver outcome")}: {t(row.delivery.outcome||row.delivery.runStatus)}{row.delivery.reason?` · ${t(row.delivery.reason)}`:""} · {row.delivery.proofs?.length||0} {t("proof item(s)")}{row.delivery.proofs?.find((p)=>p.receiverName)&&` · ${t("Received by")} ${row.delivery.proofs.find((p)=>p.receiverName)!.receiverName}`}</p>}
-      {(row.delivery?.loadingShortfallSummary?.length||0)>0&&<p className="status-bad">{t("Loading shortfall")}: {JSON.stringify(row.delivery?.loadingShortfallSummary)}</p>}
+      {(row.delivery?.loadingShortfallSummary?.length||0)>0&&<p className="status-bad">{t("Loading shortfall")}: {shortfallText(row.delivery?.loadingShortfallSummary,t)}</p>}
       {row.receipt?<><p>{t("Receipt")} {t(row.receipt.status.replace(/_/g," "))} · {row.receipt.receivedUnits}/{row.receipt.expectedUnits} {t("units")} · {row.receiptIssues.length} {t("issue(s)")}</p>{row.receiptIssues.map(i=><p key={i.id}>{t(i.issueType)} · {i.affectedUnits} {t("affected units")}{i.note?` · ${i.note}`:""}</p>)}<button type="button" onClick={()=>setReportFor(reportFor===row.order.id?"":row.order.id)}>{t("Report Issue")}</button>{reportFor===row.order.id&&<form onSubmit={e=>reportIssue(e,row.order)}><label>{t("Issue type")} <select value={issueType[row.order.id]||"DAMAGED"} onChange={e=>setIssueType({...issueType,[row.order.id]:e.target.value})}><option value="MISSING">{t("MISSING")}</option><option value="DAMAGED">{t("DAMAGED")}</option><option value="QUANTITY_MISMATCH">{t("QUANTITY_MISMATCH")}</option><option value="OTHER">{t("OTHER")}</option></select></label><label>{t("Affected units")} <input type="number" min="0" max={row.order.orderUnits} value={issueUnits[row.order.id]||"0"} onChange={e=>setIssueUnits({...issueUnits,[row.order.id]:e.target.value})}/></label><label>{t("Note")} <textarea value={note[row.order.id]||""} onChange={e=>setNote({...note,[row.order.id]:e.target.value})} maxLength={1000}/></label><button type="submit">{t("Submit Issue")}</button></form>}</>:row.delivery&&(row.delivery.outcome==="DELIVERED"||row.delivery.outcome==="PARTIAL")&&<p><Link to="/store-manager/receipts">{t("Confirm this receipt")}</Link></p>}
     </article>)}
     {receiptsOnly&&!pending.length&&!error&&<p>{t("No receipts are waiting for confirmation.")}</p>}

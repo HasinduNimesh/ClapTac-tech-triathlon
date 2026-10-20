@@ -8,6 +8,7 @@ import { receiptDiscrepancy } from "./receiptDiscrepancy.mjs";
 import { colomboDate, colomboTime, formatDay } from "./orderStage.mjs";
 import { StoreManagerHero } from "./StoreManagerHero";
 import { Tracking } from "./useOrderTrackings";
+import { describeError } from "../api/friendlyError.mjs";
 
 type Pending = { order: Order; tracking: Tracking };
 const key = () => (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `receipt-${Date.now()}-${Math.random().toString(16).slice(2)}`);
@@ -32,7 +33,7 @@ export function ReceiptConfirmPage() {
     if (!token) return;
     setLoading(true);
     try { setItems((await apiJSON<{ items: Pending[] }>("/orders/receipts/pending", token)).items || []); setError(""); }
-    catch (e) { setError(String(e)); }
+    catch (e) { setError(describeError(e)); }
     finally { setLoading(false); }
   }, [token]);
   useEffect(() => { void load(); }, [load]);
@@ -83,7 +84,7 @@ export function ReceiptConfirmPage() {
       setMessage(`${t("Receipt saved for")} ${order.orderRef}.`);
       params.delete("order"); setParams(params);
       await load();
-    } catch (err) { setError(String(err)); }
+    } catch (err) { setError(describeError(err)); }
     finally { setBusy(false); }
   }
 

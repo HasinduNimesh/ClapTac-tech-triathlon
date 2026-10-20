@@ -34,6 +34,8 @@ class FakeBusiness:
         self.order_items = orders or []
         self.brand = brand
         self.tokens = []
+        # None means the products of the static test catalog; a test can set its own live list.
+        self.product_rows = None
 
     async def get_json(self, base_url, path, token, correlation_id=""):
         self.tokens.append(token)
@@ -48,6 +50,13 @@ class FakeBusiness:
     async def orders(self, token, correlation_id=""):
         self.tokens.append(token)
         return self.order_items
+
+    async def products(self, bearer, correlation_id=""):
+        self.tokens.append(bearer)
+        if self.product_rows is not None:
+            return self.product_rows
+        from assistants.order_assistant.catalog import load_catalog
+        return [p.public() for p in load_catalog().products(self.brand)]
 
     async def aclose(self):
         return None

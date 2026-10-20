@@ -5,6 +5,7 @@ import { drainFIFOQueue } from "./fifoQueue.mjs";
 import { singleFlight } from "./singleFlight.mjs";
 import { classifySyncResult, orderForSync, readSyncConflict, syncOperationBody } from "./syncQueue.mjs";
 import { createSyncProgress } from "./syncProgress.mjs";
+import { describeError } from "../api/friendlyError.mjs";
 
 const base = import.meta.env.VITE_API_BASE_URL || "/api/v1";
 
@@ -124,7 +125,7 @@ async function drainQueueSerial(token: string, ownerId: string): Promise<SyncBan
     onFailure: async (e: unknown, item: { operationId: string }, count: number): Promise<SyncBanner> => {
       // The record stays queued in every case below. A 401 or a lost connection
       // returns it to "Saved on this phone"; any other failure shows Retry.
-      const reason = e instanceof Error ? e.message : String(e);
+      const reason = describeError(e);
       if (e instanceof ApiError && e.status === 401) {
         syncProgress.markSaved(item.operationId);
         await setPaused(ownerId, true);

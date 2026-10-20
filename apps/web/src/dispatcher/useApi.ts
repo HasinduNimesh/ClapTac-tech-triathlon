@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, apiJSON } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
+import { describeError } from "../api/friendlyError.mjs";
 
 // status is the HTTP status of the last failed request (0 when none failed or it never reached the server).
 export type ApiState<T> = { data: T | null; error: string; status: number; loading: boolean; reload: () => Promise<void> };
 
 export function errorText(err: unknown) {
-  return err instanceof ApiError ? `${err.status}: ${err.message}` : err instanceof Error ? err.message : String(err);
+  return describeError(err);
 }
 
 // Small read hook for dispatcher screens. A null path skips the request, so a

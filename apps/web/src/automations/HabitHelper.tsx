@@ -5,6 +5,7 @@ import { useAuth } from "../auth/AuthContext";
 import { apiJSON } from "../api/client";
 import { apiBase, fromHabit, Habit } from "./types";
 import "./automations.css";
+import { describeError } from "../api/friendlyError.mjs";
 
 export function HabitHelper() {
   const { t } = useLocale();
@@ -33,7 +34,7 @@ export function HabitHelper() {
         if (result.prefill) navigate("/store-manager/orders/new", { state: { habitPrefill: result.prefill, prefillOwner: profile!.userId } });
         window.dispatchEvent(new Event("waypoint-priorities-changed"));
       }
-    } catch (e) { setError(String(e)); } finally { setBusy(false); }
+    } catch (e) { setError(describeError(e)); } finally { setBusy(false); }
   }
   return <aside className="habit-card" aria-label="Habit helper">
     <div className="auto-eyebrow">{t("A3 · HABIT HELPER")}</div>

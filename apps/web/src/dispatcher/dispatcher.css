@@ -209,6 +209,7 @@
 
 .dp-grid-2 { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(320px, 1fr); gap: 24px; align-items: start; }
 .dp-grid-2--even { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.dp-grid-2 > * { min-width: 0; }
 .dp-grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
 .dp-stack { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .dp-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
@@ -599,7 +600,7 @@
 
 @media (max-width: 1280px) {
   .dp-stats { --dp-stat-cols: 2 !important; }
-  .dp-grid-2 { grid-template-columns: 1fr; }
+  .dp-grid-2 { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 1100px) {
   .dp-body { padding: 0 20px 24px; }

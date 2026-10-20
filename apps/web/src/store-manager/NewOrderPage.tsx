@@ -15,17 +15,11 @@ import "../components/orderItems.css";
 import type { CatalogProduct, DraftLine, FormFill } from "./orderDraft.mjs";
 import { addProduct, linesSource, pickable, reasonSentence, removeLine, requestLines, setPacks, suggestionLines, totals } from "./orderLines.mjs";
 import type { SuggestedLine, Suggestion } from "./orderLines.mjs";
+import { describeError } from "../api/friendlyError.mjs";
 
 function failureMessage(error: unknown, fallback: string) {
-  if (error instanceof ApiError) {
-    try {
-      const parsed = JSON.parse(error.message) as { message?: string; error?: string };
-      return parsed.message || parsed.error || fallback;
-    } catch {
-      return error.message || fallback;
-    }
-  }
-  return fallback;
+  // A refusal from the server says why in plain words; the fallback (check your connection) is only for a request that never got an answer.
+  return error instanceof ApiError ? describeError(error) : fallback;
 }
 
 export function NewOrderPage() {

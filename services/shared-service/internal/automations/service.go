@@ -184,7 +184,8 @@ func (s Service) habits(ctx context.Context, p *authorization.Profile) ([]Habit,
 	date := now.In(loc).Format("2006-01-02")
 	candidates := []Habit{}
 	if role(p) == "STORE_MANAGER" {
-		rows, err := s.Pool.Query(ctx, `SELECT new_state,timestamp FROM audit.events WHERE actor_id=$1 AND action='order.created' AND timestamp>=$2 AND timestamp<=$3 ORDER BY timestamp`, p.UserID, now.AddDate(0, 0, -28), now)
+		// Order service records ORDER_CREATED; the dotted name is what older code and tests used, so both count.
+		rows, err := s.Pool.Query(ctx, `SELECT new_state,timestamp FROM audit.events WHERE actor_id=$1 AND action IN ('ORDER_CREATED','order.created') AND timestamp>=$2 AND timestamp<=$3 ORDER BY timestamp`, p.UserID, now.AddDate(0, 0, -28), now)
 		if err != nil {
 			return out, err
 		}
