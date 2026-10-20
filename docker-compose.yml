@@ -59,7 +59,7 @@ services:
   bootstrap:
     image: postgres:16-alpine
     environment:
-      DATABASE_URL: postgres://waypoint:waypoint@postgres:5432/waypoint?sslmode=disable
+      DATABASE_URL: ${DATABASE_URL:-postgres://waypoint:waypoint@postgres:5432/waypoint?sslmode=disable}
       THUNDER_URL: http://thunderid:8090
     volumes:
       - ./scripts:/scripts:ro
