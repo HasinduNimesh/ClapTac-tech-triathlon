@@ -70,4 +70,18 @@ void main() {
     expect(broken.error, isEmpty);
     expect(c.trips, hasLength(1));
   });
+
+  testWidgets('the timer itself re-reads the day, and stopAutoRefresh ends it', (tester) async {
+    final c = controller();
+    c.loading = false; // as after the first load
+    c.startAutoRefresh(every: const Duration(seconds: 45));
+    await tester.pump(const Duration(seconds: 46));
+    await tester.pump();
+    expect(tripListCalls, greaterThanOrEqualTo(1), reason: 'one tick should have fetched the trip list');
+    final after = tripListCalls;
+    c.stopAutoRefresh();
+    await tester.pump(const Duration(minutes: 5));
+    await tester.pump();
+    expect(tripListCalls, after, reason: 'no further requests once stopped');
+  });
 }
