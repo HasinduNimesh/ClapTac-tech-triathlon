@@ -95,16 +95,25 @@ class SqliteSyncQueue implements SyncQueue {
   /// everything, but otherwise the oldest status update (arrival, a failed or refused outcome) that is
   /// not waiting on an unsent proof goes ahead of photo and signature uploads, so the dispatcher sees
   /// what happened at a stop before a large photo has finished uploading on a weak signal.
-  Future<QueuedOperation?> next() async {
+  ///
+  /// Updates keep their order within a trip, but a trip that cannot send right now (not started, already finished,
+  /// or blocked) must not hold up another one, so the worker passes the trips it has set aside in [skipTrips].
+  Future<QueuedOperation?> next({Set<String> skipTrips = const {}}) async {
     final rows = await (await db).query('operations',
         columns: ['event_json', 'state', 'failure'],
         where: 'owner_id = ? AND state != ?',
         whereArgs: [owner, 'synced'],
         orderBy: 'sequence ASC');
-    if (rows.isEmpty) return null;
-    final items = [for (final row in rows) QueuedOperation(_event(row['event_json'] as String), row['state'] as String, row['failure'] as String)];
+    final items = [
+      for (final row in rows)
+        QueuedOperation(_event(row['event_json'] as String), row['state'] as String, row['failure'] as String)
+    ].where((item) => !skipTrips.contains(tripOf(item))).toList();
+    if (items.isEmpty) return null;
     return items[statusFirstIndex(items)];
   }
+
+  /// The trip an update belongs to; empty for one that names none.
+  static String tripOf(QueuedOperation item) => (item.event.payload['tripId'] as String?) ?? '';
 
   @override
   Future<void> markSynced(String idempotencyKey) => _setState(idempotencyKey, 'synced', '');

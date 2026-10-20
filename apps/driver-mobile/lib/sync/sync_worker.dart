@@ -35,10 +35,18 @@ class DeliverySyncWorker {
   void Function(SyncProgress progress, String? detail)? onProgress;
   final Duration interval;
   final Duration timeout;
+  SyncProgress? _lastProgress;
+  String? _lastDetail;
   Timer? _timer;
   Future<void>? _current;
   bool _again = false;
   bool _enabled = false;
+
+  void _report(SyncProgress progress, String? detail) {
+    _lastProgress = progress;
+    _lastDetail = detail;
+    onProgress?.call(progress, detail);
+  }
 
   void start() {
     if (_enabled) return;
@@ -74,20 +82,25 @@ class DeliverySyncWorker {
   }
 
   Future<void> _pass() async {
+    // Trips whose updates cannot go right now. Updates stay in order within a trip, but a trip that is stuck
+    // (not started, already finished, blocked, waiting for a proof) must not hold up the others: an old trip
+    // left on the phone used to freeze today's delivery for good.
+    final held = <String, ({SyncProgress progress, String? detail})>{};
     try {
       while (_enabled) {
-        final item = await _queue.next();
+        final item = await _queue.next(skipTrips: held.keys.toSet());
         if (item == null) {
-          onProgress?.call(SyncProgress.idle, null);
+          _reportHeld(held);
           return;
         }
+        final trip = SqliteSyncQueue.tripOf(item);
         if (item.state == 'blocked') {
-          onProgress?.call(SyncProgress.needsAttention, item.failure);
-          return;
+          held[trip] = (progress: SyncProgress.needsAttention, detail: item.failure);
+          continue;
         }
         final token = await _auth.accessToken();
         if (token == null) {
-          onProgress?.call(SyncProgress.waitingForSignIn, null);
+          _report(SyncProgress.waitingForSignIn, null);
           return;
         }
         final operation = item.event.payload;
@@ -100,8 +113,8 @@ class DeliverySyncWorker {
             (operation['dependsOnOperationId'] as String?)?.isNotEmpty != true) {
           // The server permanently rejects a successful outcome without a
           // finalized proof. Keep its ID unused until proof capture exists.
-          onProgress?.call(SyncProgress.waitingForProof, null);
-          return;
+          held[trip] = (progress: SyncProgress.waitingForProof, detail: null);
+          continue;
         }
         if (type == OperationType.arrived ||
             type == OperationType.stopOutcome ||
@@ -110,52 +123,64 @@ class DeliverySyncWorker {
           final tripId = operation['tripId'] as String?;
           if (tripId == null || tripId.isEmpty) {
             await _queue.markBlocked(item.event.idempotencyKey, 'Missing server trip ID');
-            onProgress?.call(SyncProgress.needsAttention, 'Missing server trip ID');
-            return;
+            held[trip] = (progress: SyncProgress.needsAttention, detail: 'Missing server trip ID');
+            continue;
           }
           final status = await _tripStatus(tripId, token);
           if (status == null) {
-            onProgress?.call(SyncProgress.offline, null);
+            _report(SyncProgress.offline, null);
             return;
           }
           if (status == 'unauthorized') {
-            onProgress?.call(SyncProgress.waitingForSignIn, null);
+            _report(SyncProgress.waitingForSignIn, null);
             return;
           }
+          if (status == 'completed') {
+            // The server will never take updates for a finished trip, so this is not "waiting for the trip to start".
+            held[trip] = (progress: SyncProgress.needsAttention, detail: 'A trip on this phone is already finished on Waypoint, so its saved updates cannot be sent. Ask your dispatcher.');
+            continue;
+          }
           if (status != 'in_progress') {
-            onProgress?.call(SyncProgress.waitingForTripStart, null);
-            return;
+            held[trip] = (progress: SyncProgress.waitingForTripStart, detail: null);
+            continue;
           }
         }
         if (type == OperationType.proofUpload) {
-          onProgress?.call(SyncProgress.syncing, null);
+          _report(SyncProgress.syncing, null);
           if (await _uploadProof(item, operation, payload, token)) continue;
+          // It has reported why it stopped. Only a problem with this trip sets the trip aside; no connection or
+          // no sign-in stops the whole pass as before.
+          final stopped = _lastProgress;
+          if (stopped == SyncProgress.waitingForTripStart || stopped == SyncProgress.needsAttention || stopped == SyncProgress.waitingForProof) {
+            held[trip] = (progress: stopped!, detail: _lastDetail);
+            continue;
+          }
           return;
         }
-        onProgress?.call(SyncProgress.syncing, null);
+        _report(SyncProgress.syncing, null);
         final response = await _client.post(
           Uri.parse('$_baseUrl/api/v1/delivery/sync'),
           headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json', 'Accept': 'application/json'},
           body: jsonEncode({'operations': [operation]}),
         ).timeout(timeout);
         if (response.statusCode == 401) {
-          onProgress?.call(SyncProgress.waitingForSignIn, null);
+          _report(SyncProgress.waitingForSignIn, null);
           return;
         }
         if (response.statusCode != 200) {
-          onProgress?.call(response.statusCode >= 500 ? SyncProgress.offline : SyncProgress.needsAttention,
+          _report(response.statusCode >= 500 ? SyncProgress.offline : SyncProgress.needsAttention,
               'Waypoint returned HTTP ${response.statusCode}; the update remains saved on this phone');
           return;
         }
         final body = jsonDecode(response.body);
         final results = body is Map ? body['results'] : null;
         if (results is! List || results.length != 1 || results.first is! Map) {
-          onProgress?.call(SyncProgress.offline, 'Waypoint returned an unreadable sync result');
+          _report(SyncProgress.offline, 'Waypoint returned an unreadable sync result');
           return;
         }
         final result = (results.first as Map).cast<String, Object?>();
         if (result['operationId'] != item.event.idempotencyKey) {
-          onProgress?.call(SyncProgress.offline, 'Waypoint returned a different operation ID');
+          _report(SyncProgress.offline, 'Waypoint returned a different operation ID');
           return;
         }
         final status = result['status'];
@@ -165,22 +190,39 @@ class DeliverySyncWorker {
         }
         final detail = result['detail']?.toString() ?? 'Waypoint rejected this update';
         await _queue.markBlocked(item.event.idempotencyKey, '$status: $detail');
-        onProgress?.call(SyncProgress.needsAttention, '$status: $detail');
-        return;
+        held[trip] = (progress: SyncProgress.needsAttention, detail: '$status: $detail');
+        continue;
       }
     } on AuthFailure {
       // Refreshing the access token needed a connection that is not there; the queue is untouched.
-      onProgress?.call(SyncProgress.offline, null);
+      _report(SyncProgress.offline, null);
     } on SocketException {
-      onProgress?.call(SyncProgress.offline, null);
+      _report(SyncProgress.offline, null);
     } on TimeoutException {
-      onProgress?.call(SyncProgress.offline, null);
+      _report(SyncProgress.offline, null);
     } on http.ClientException {
-      onProgress?.call(SyncProgress.offline, null);
+      _report(SyncProgress.offline, null);
     } on FormatException {
-      onProgress?.call(SyncProgress.offline, 'Waypoint returned unreadable data');
+      _report(SyncProgress.offline, 'Waypoint returned unreadable data');
     } on Object catch (error) {
-      onProgress?.call(SyncProgress.needsAttention, 'Sync stopped: $error');
+      _report(SyncProgress.needsAttention, 'Sync stopped: $error');
+    }
+  }
+
+  /// Reports the most important reason a trip was set aside, or that everything is sent.
+  void _reportHeld(Map<String, ({SyncProgress progress, String? detail})> held) {
+    if (held.isEmpty) {
+      _report(SyncProgress.idle, null);
+      return;
+    }
+    const order = [SyncProgress.needsAttention, SyncProgress.waitingForProof, SyncProgress.waitingForTripStart];
+    for (final progress in order) {
+      for (final entry in held.values) {
+        if (entry.progress == progress) {
+          _report(entry.progress, entry.detail);
+          return;
+        }
+      }
     }
   }
 
@@ -196,7 +238,7 @@ class DeliverySyncWorker {
     if (stopId.isEmpty || path.isEmpty || !file.existsSync()) {
       const detail = 'The photo or signature file is missing from this phone';
       await _queue.markBlocked(item.event.idempotencyKey, detail);
-      onProgress?.call(SyncProgress.needsAttention, detail);
+      _report(SyncProgress.needsAttention, detail);
       return false;
     }
     final request = http.MultipartRequest(
@@ -222,16 +264,16 @@ class DeliverySyncWorker {
       return true;
     }
     if (code == 401) {
-      onProgress?.call(SyncProgress.waitingForSignIn, null);
+      _report(SyncProgress.waitingForSignIn, null);
     } else if (code >= 500 || code == 408 || code == 429) {
-      onProgress?.call(SyncProgress.offline, 'Waypoint returned HTTP $code; the photo or signature remains saved on this phone');
+      _report(SyncProgress.offline, 'Waypoint returned HTTP $code; the photo or signature remains saved on this phone');
     } else if (code == 409) {
       // For example "run is not in progress": it can succeed once the trip starts, so keep it.
-      onProgress?.call(SyncProgress.waitingForTripStart, _problemDetail(response) ?? 'The proof is waiting for the trip to start');
+      _report(SyncProgress.waitingForTripStart, _problemDetail(response) ?? 'The proof is waiting for the trip to start');
     } else {
       final detail = _problemDetail(response) ?? 'Waypoint rejected this photo or signature (HTTP $code)';
       await _queue.markBlocked(item.event.idempotencyKey, 'HTTP $code: $detail');
-      onProgress?.call(SyncProgress.needsAttention, 'HTTP $code: $detail');
+      _report(SyncProgress.needsAttention, 'HTTP $code: $detail');
     }
     return false;
   }

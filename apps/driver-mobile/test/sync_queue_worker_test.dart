@@ -166,24 +166,92 @@ void main() {
     expect(paths, ['/api/v1/delivery/trips/trip-1']);
     expect((await queue.pending()).single.idempotencyKey, 'arrival');
   });
+
+  http.Response applied(http.Request request) {
+    final id = (((jsonDecode(request.body) as Map)['operations'] as List).single as Map)['operationId'] as String;
+    return http.Response(jsonEncode({'results': [{'operationId': id, 'status': 'APPLIED'}]}), 200);
+  }
+
+  test('a finished trip left on the phone does not hold up today\'s trip', () async {
+    await queue.enqueue(_event('old-arrival', OperationType.arrived, trip: 'trip-old'));
+    await queue.enqueue(_event('new-arrival', OperationType.arrived, trip: 'trip-new'));
+    final sent = <String>[];
+    final worker = _worker(queue, MockClient((request) async {
+      if (request.method == 'GET') {
+        final status = request.url.path.endsWith('trip-old') ? 'completed' : 'in_progress';
+        return http.Response(jsonEncode({'run': {'status': status}}), 200);
+      }
+      sent.add((((jsonDecode(request.body) as Map)['operations'] as List).single as Map)['operationId'] as String);
+      return applied(request);
+    }));
+    final done = Completer<(SyncProgress, String?)>();
+    worker.onProgress = (progress, detail) {
+      if (progress == SyncProgress.needsAttention && !done.isCompleted) done.complete((progress, detail));
+    };
+    worker.start();
+    final (_, detail) = await done.future.timeout(const Duration(seconds: 5));
+    worker.stop();
+
+    expect(sent, ['new-arrival']);
+    expect((await queue.pending()).map((item) => item.idempotencyKey), ['old-arrival']);
+    expect(detail, contains('already finished'));
+  });
+
+  test('a trip that has not started does not hold up a started trip', () async {
+    await queue.enqueue(_event('waiting-arrival', OperationType.arrived, trip: 'trip-waiting'));
+    await queue.enqueue(_event('live-arrival', OperationType.arrived, trip: 'trip-live'));
+    final sent = <String>[];
+    final worker = _worker(queue, MockClient((request) async {
+      if (request.method == 'GET') {
+        final status = request.url.path.endsWith('trip-waiting') ? 'prepared' : 'in_progress';
+        return http.Response(jsonEncode({'run': {'status': status}}), 200);
+      }
+      sent.add((((jsonDecode(request.body) as Map)['operations'] as List).single as Map)['operationId'] as String);
+      return applied(request);
+    }));
+    final waiting = _nextProgress(worker, SyncProgress.waitingForTripStart);
+    worker.start();
+    await waiting;
+    worker.stop();
+
+    expect(sent, ['live-arrival']);
+    expect((await queue.pending()).map((item) => item.idempotencyKey), ['waiting-arrival']);
+  });
+
+  test('updates for one trip still go in order: a trip that has not started holds back its own later updates', () async {
+    await queue.enqueue(_event('first', OperationType.arrived));
+    await queue.enqueue(_event('second', OperationType.stopOutcome, payload: {'code': 'FAILED'}));
+    final requests = <String>[];
+    final worker = _worker(queue, MockClient((request) async {
+      requests.add('${request.method} ${request.url.path}');
+      return http.Response(jsonEncode({'run': {'status': 'prepared'}}), 200);
+    }));
+    final waiting = _nextProgress(worker, SyncProgress.waitingForTripStart);
+    worker.start();
+    await waiting;
+    worker.stop();
+
+    expect(requests, ['GET /api/v1/delivery/trips/trip-1']);
+    expect((await queue.pending()).map((item) => item.idempotencyKey), ['first', 'second']);
+  });
 }
 
 SyncEvent _incident(String id) => _event(id, OperationType.incidentReport,
     payload: {'category': 'ROAD', 'description': 'Road closed'});
 
-SyncEvent _event(String id, String type, {Map<String, Object?> payload = const {}}) {
+SyncEvent _event(String id, String type, {Map<String, Object?> payload = const {}, String trip = 'trip-1'}) {
   final occurredAt = DateTime.utc(2026, 10, 3, 8);
   return SyncEvent(
     eventId: id,
     idempotencyKey: id,
     action: type,
     resourceType: 'trip',
-    resourceId: 'trip-1',
+    resourceId: trip,
     occurredAt: occurredAt,
     payload: {
       'operationId': id,
       'type': type,
-      'tripId': 'trip-1',
+      'tripId': trip,
       'runId': 'run-1',
       'occurredAt': occurredAt.toIso8601String(),
       'payload': payload,
