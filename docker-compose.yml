@@ -3,7 +3,6 @@ x-svc-env: &svc-env
   AUTH_DISABLED: "false"
   HTTP_ADDR: :8080
   DATABASE_URL: ${DATABASE_URL:-postgres://waypoint:waypoint@postgres:5432/waypoint?sslmode=disable}
-  REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
   OIDC_ISSUER: ${OIDC_ISSUER:-http://localhost:8090}
   OIDC_JWKS_URL: ${OIDC_JWKS_URL:-http://thunderid:8090/oauth2/jwks}
   OIDC_AUDIENCE: ${OIDC_AUDIENCE:-waypoint-api}
@@ -82,11 +81,6 @@ services:
       timeout: 3s
       retries: 6
       start_period: 5s
-
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "127.0.0.1:6379:6379"
 
   minio:
     image: adobe/s3mock:latest

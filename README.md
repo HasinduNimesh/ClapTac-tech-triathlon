@@ -101,7 +101,6 @@ The edge health check confirms NGINX is responding. Use `docker compose ps` to i
 | Waypoint web/PWA | [localhost](http://localhost) | Default stack |
 | Development OIDC provider | [localhost:8090](http://localhost:8090/.well-known/openid-configuration) | Default stack; sign in through the app |
 | PostgreSQL | `127.0.0.1:5432` | Default stack |
-| Redis | `127.0.0.1:6379` | Default stack |
 | S3-compatible development storage | `http://localhost:9000` | Default stack; S3Mock, not a MinIO console |
 | Swagger UI | [localhost:8092](http://localhost:8092) | Separate [API viewer](#api-reference) |
 | Grafana / Prometheus | [localhost:3001](http://localhost:3001) / [localhost:9090](http://localhost:9090) | `observability` profile |
@@ -121,7 +120,6 @@ Start with [`.env.example`](.env.example). **[`docker-compose.yml`](docker-compo
 | Internal identity endpoints | JWKS: `http://thunderid:8090/oauth2/jwks`; token: `http://thunderid:8090/oauth2/token` | Set directly in Compose. Internal service names resolve inside the Compose network. |
 | Service authentication | `ORDER_M2M_CLIENT_SECRET`, `PLANNING_M2M_CLIENT_SECRET`, `FLEET_M2M_CLIENT_SECRET`, `LOADING_M2M_CLIENT_SECRET`, `DELIVERY_M2M_CLIENT_SECRET`, `SHARED_M2M_CLIENT_SECRET`, `INTEGRATION_M2M_CLIENT_SECRET` | Local defaults are provided. `FLEET_M2M_CLIENT_SECRET` is supported by Compose but is not listed in `.env.example`. Use distinct credentials with a real provider. |
 | Web build | `VITE_API_BASE_URL`, `VITE_OIDC_ISSUER`, `VITE_OIDC_CLIENT_ID`, `VITE_OIDC_REDIRECT_URI` | Current Compose build arguments are fixed to `/api/v1`, the local issuer, `waypoint-web`, and `http://localhost/auth/callback`. Edit/override build arguments and rebuild `web` when changing them. |
-| Cache | `REDIS_URL=redis://redis:6379/0` | Shared cache infrastructure; do not assume every subsystem persists state here. |
 | Evidence storage | `MINIO_ENDPOINT=http://minio:9090`, `MINIO_BUCKET=waypoint-proof` | The service is named `minio`, but local Compose runs `adobe/s3mock`. |
 | Proof retention | `DELIVERY_PROOF_RETENTION_ENABLED=false`, `DELIVERY_PROOF_RETENTION_DAYS=180` | Retention is disabled by default. Review the [retention runbook](docs/operations/proof-retention.md) before enabling deletion. |
 | Optional AI provider | `LLM_BASE_URL`, `LLM_MODEL`, `LLM_API_KEY` | An OpenAI-compatible provider; missing base URL/model produces `agent_unavailable`. Provider keys remain server-side. |
@@ -281,7 +279,6 @@ flowchart TB
     Edge --> Agent["Agent Orchestrator"]
     Domain -->|"owned schemas"| DB[("PostgreSQL 16")]
     Domain -->|"delivery proof bytes"| S3["S3-compatible storage / local S3Mock"]
-    Domain -.-> Redis[("Redis 7 infrastructure")]
     Web --> Local[("IndexedDB / Dexie offline queue")]
     Agent -->|"allowlisted HTTP tools, caller token"| Domain
     Agent -.-> LLM["Optional LLM provider"]

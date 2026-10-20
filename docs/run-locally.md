@@ -38,7 +38,7 @@ Open <http://localhost>. The local identity screen opens at <http://localhost:80
 
 Each account opens only its own workspace. Sign out to switch.
 
-**Ports used:** 80 (NGINX), 5432 (PostgreSQL), 6379 (Redis), 8090 (identity), 9000/9001 (object storage). Stop anything else using them (a local PostgreSQL, IIS) before starting.
+**Ports used:** 80 (NGINX), 5432 (PostgreSQL), 8090 (identity), 9000/9001 (object storage). Stop anything else using them (a local PostgreSQL, IIS) before starting.
 
 ## 3. Create demo data
 

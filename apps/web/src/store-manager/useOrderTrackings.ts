@@ -25,13 +25,32 @@ export type Tracking = {
 };
 
 /** Every order of this outlet with its tracking; orders whose tracking could not be loaded are returned separately. */
-export async function fetchOrderTrackings(token: string): Promise<{ rows: Tracking[]; unavailable: Order[] }> {
+type TrackingSet = { rows: Tracking[]; unavailable: Order[] };
+
+// The page and the notification bell both poll this list; they share one request instead of making two.
+const SHARE_MS = 5_000;
+let shared: { token: string; at: number; promise: Promise<TrackingSet> } | undefined;
+
+async function loadOrderTrackings(token: string): Promise<TrackingSet> {
   const body = await apiJSON<{ items: Order[] }>("/orders", token);
   const settled = await Promise.allSettled(
     (body.items || []).map(async (order) => (await apiJSON<{ tracking: Tracking }>(`/orders/${order.id}/tracking`, token)).tracking),
   );
   return splitTrackingResults(body.items || [], settled);
 }
+
+/** Every order of this outlet with its tracking; orders whose tracking could not be loaded are returned separately. */
+export function fetchOrderTrackings(token: string): Promise<TrackingSet> {
+  if (shared && shared.token === token && Date.now() - shared.at < SHARE_MS) return shared.promise;
+  const entry = { token, at: Date.now(), promise: loadOrderTrackings(token) };
+  shared = entry;
+  // A failed load is never reused.
+  entry.promise.catch(() => { if (shared === entry) shared = undefined; });
+  return entry.promise;
+}
+
+/** Forget the shared result so the next load asks the server again (after the user acted or pressed refresh). */
+export function forgetSharedTrackings() { shared = undefined; }
 
 export function useOrderTrackings() {
   const { user } = useAuth();
@@ -48,12 +67,8 @@ export function useOrderTrackings() {
     if (!quiet) setLoading(true);
     setLoadFailed(false);
     try {
-      const body = await apiJSON<{ items: Order[] }>("/orders", token);
-      const settled = await Promise.allSettled(
-        (body.items || []).map(async (order) => (await apiJSON<{ tracking: Tracking }>(`/orders/${order.id}/tracking`, token)).tracking),
-      );
+      const split = await fetchOrderTrackings(token);
       if (request !== latest.current) return;
-      const split = splitTrackingResults(body.items || [], settled);
       setRows(split.rows);
       setUnavailable(split.unavailable);
     } catch {
@@ -75,6 +90,8 @@ export function useOrderTrackings() {
   }, [rows, reload]);
   useEffect(() => () => { latest.current += 1; }, []);
 
+  const refresh = useCallback((quiet = false) => { forgetSharedTrackings(); return reload(quiet); }, [reload]);
+
   // Orders that exist but whose progress could not be loaded: shown by name, never silently dropped.
-  return { rows, loading, loadFailed, skipped: unavailable.length, unavailable, reload };
+  return { rows, loading, loadFailed, skipped: unavailable.length, unavailable, reload: refresh };
 }
