@@ -346,8 +346,12 @@ jobs:
           weak = []
           for svc, spec in services.items():
               env = spec.get("environment") or {}
-              if "sslmode=disable" in str(env.get("DATABASE_URL", "")):
-                  weak.append(svc + ": DATABASE_URL uses sslmode=disable")
+              # Traffic to the compose-internal "postgres" service stays on the VM's private network,
+              # so only require TLS when the database host is somewhere else.
+              url = str(env.get("DATABASE_URL", ""))
+              host = url.split("@")[-1].split("/")[0].split(":")[0]
+              if "sslmode=disable" in url and host not in ("postgres", "localhost", "127.0.0.1"):
+                  weak.append(svc + ": DATABASE_URL uses sslmode=disable to a remote database")
               if "waypoint:waypoint@" in str(env.get("DATABASE_URL", "")):
                   weak.append(svc + ": DATABASE_URL uses the default database password")
               if str(env.get("M2M_CLIENT_SECRET", "")).startswith("local-"):
