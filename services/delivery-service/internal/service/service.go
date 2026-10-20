@@ -11,6 +11,7 @@ import (
 
 	"github.com/HasinduNimesh/ClapTac-tech-triathlon/pkg/audit"
 	"github.com/HasinduNimesh/ClapTac-tech-triathlon/pkg/authorization"
+	"github.com/HasinduNimesh/ClapTac-tech-triathlon/pkg/cache"
 	"github.com/HasinduNimesh/ClapTac-tech-triathlon/pkg/objectstore"
 	"github.com/HasinduNimesh/ClapTac-tech-triathlon/pkg/telemetry"
 	"github.com/HasinduNimesh/ClapTac-tech-triathlon/pkg/validation"
@@ -27,6 +28,9 @@ type Service struct {
 	Repo    store.Postgres
 	Peers   client.Peers
 	Objects objectstore.Store
+	// Cache holds each active run's latest position for a few seconds so the dispatcher's live view does not read
+	// the database on every refresh. It is optional (nil is fine) and PostgreSQL stays the source of truth.
+	Cache *cache.Cache
 	// ServiceMinutesPerStop is the per-stop service allowance used to project arrival times after a
 	// driver event (see arrival_updates.go). Zero means the 20-minute default.
 	ServiceMinutesPerStop int
@@ -595,6 +599,8 @@ func (s Service) applyComplete(ctx context.Context, profile *authorization.Profi
 	if err != nil {
 		return s.record(ctx, opID, run.ID, "", domain.OpRouteCompleted, domain.ResultConflict, map[string]any{"detail": err.Error()}, err)
 	}
+	// The position is hidden once a run ends, so a remembered one must go with it.
+	s.Cache.Delete(ctx, locationKey(tripID))
 	occurredAt := parseTime(occurred)
 	_ = s.Repo.InsertOp(ctx, domain.SyncOp{OperationID: opID, RunID: run.ID, OperationType: domain.OpRouteCompleted, OccurredAt: &occurredAt, ResultStatus: domain.ResultApplied, ResultPayload: map[string]any{"status": domain.RunCompleted}})
 	telemetry.DeliveryRunsCompleted.Inc()

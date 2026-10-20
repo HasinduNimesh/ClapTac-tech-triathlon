@@ -44,7 +44,7 @@ func main() {
 	h := handler.Handler{
 		Authn:      app.Authenticator,
 		Automation: store.Postgres{Pool: pool},
-		Profiles:   client.Profiles{Shared: peers},
+		Profiles:   app.CachedProfiles(client.Profiles{Shared: peers}),
 		Service:    service.Service{Repo: store.Postgres{Pool: pool}, Peers: peers},
 	}
 	if err := app.Run(func(r chi.Router) { h.Routes(r) }); err != nil {

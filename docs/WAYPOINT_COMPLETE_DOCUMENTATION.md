@@ -151,7 +151,7 @@ Untracked local tooling you may see in a working copy (`.claude/`, `.codex/`, `.
 | Assistants | **Python 3.12** | FastAPI, LangGraph, httpx, PyJWT, prometheus-client |
 | Database | **PostgreSQL 16** | One instance, nine schemas, additive SQL migrations |
 | Object storage | **S3-compatible** | Local: Adobe S3Mock (service is named `minio`). Own minimal SigV4 client in `pkg/objectstore` |
-| Cache | **Redis 7** | Provisioned in Compose and configured (`REDIS_URL`), but **no code reads or writes it** in this checkout |
+| Cache | **Redis 7** | Optional, fail-open (`pkg/cache`): per-user rate limits, remembered user profiles (30 s) and the latest position of each active run (20 s). PostgreSQL remains the source of truth |
 | Identity | **ThunderID** (production) / `tools/dev-oidc` (local) | OIDC authorization code + PKCE for people, client credentials for services |
 | Edge | **NGINX 1.27** | Routing, CSP and security headers, 50 req/s per-visitor API rate limit |
 | Web | **React 18, TypeScript 5, Vite 5, react-router 6, oidc-client-ts, Dexie, Leaflet** | PWA via `vite-plugin-pwa`; map tiles from OpenStreetMap |
@@ -247,7 +247,7 @@ flowchart LR
     subgraph Data
         PG[("postgres 16")]
         S3[("minio = Adobe S3Mock")]
-        REDIS[("redis 7<br/>unused by code")]
+        REDIS[("redis 7<br/>cache + rate limits")]
     end
     subgraph Identity
         THUNDER["thunderid = tools/dev-oidc :8090"]
@@ -2721,7 +2721,7 @@ curl -fsS http://localhost/health/live
 * **Health checks:** `wget http://127.0.0.1:8080/health/ready` every 10 s (6 retries) for backends; the web images check `/` and `/loader-app/`.
 * **Images** are named `${WAYPOINT_IMAGE_PREFIX:-waypoint}/<service>:${WAYPOINT_TAG:-local}`: locally they are built; on the VM they are pulled by commit SHA.
 * **Volumes:** `postgres_data`, `grafana_data`, `agent_traces_data`.
-* **Not used:** `redis` is started but unused by any code; `opensearch` (profile `search`) feeds nothing.
+* **Not used:** `opensearch` (profile `search`) feeds nothing.
 
 ### 10.3 Environments and identity wiring
 
@@ -2960,7 +2960,7 @@ The repository's earlier documents were written while the product was changing q
 **Platform and operations**
 
 * Kubernetes manifests are inputs, not a running environment, and have no `loader-web` workload.
-* `redis` is provisioned but unused; `opensearch` is not connected.
+* `opensearch` is not connected.
 * Local S3Mock has no persistent volume.
 * Business counters reset on restart; the driver-queue alerts depend on a report the Android app does not send.
 * No rollback automation; migrations are forward-only.
@@ -3065,7 +3065,9 @@ These are the rules the codebase deliberately follows. Each exists for a reason 
 | `LOG_LEVEL` | `info` | slog level |
 | `DATABASE_URL` | — | PostgreSQL URL (required for schema-owning services) |
 | `DATABASE_SCHEMA` | per service | Sets `search_path` |
-| `REDIS_URL` | — | Read into config but unused |
+| `REDIS_URL` | — | Redis for rate limits and caches; empty disables them |
+| `PROFILE_CACHE_TTL_SECONDS` | `30` | How long other services remember a user's profile; `0` turns it off |
+| `RATE_LIMIT_USER_PER_MIN` / `RATE_LIMIT_ANON_PER_MIN` | `1200` / `300` | Per-user and per-address requests per minute, per service |
 | `OIDC_ISSUER`, `OIDC_JWKS_URL`, `OIDC_AUDIENCE` | — / — / `waypoint-api` | Token validation |
 | `OIDC_TOKEN_URL`, `M2M_CLIENT_ID`, `M2M_CLIENT_SECRET` | `http://thunderid:8090/oauth2/token` | Client-credentials for service calls |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | empty | Enables trace export |

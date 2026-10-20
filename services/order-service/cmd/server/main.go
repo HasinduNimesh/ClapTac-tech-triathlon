@@ -52,7 +52,7 @@ func main() {
 	}
 	h := handler.Handler{
 		Authn:    app.Authenticator,
-		Profiles: client.Resolver{Shared: shared},
+		Profiles: app.CachedProfiles(client.Resolver{Shared: shared}),
 		Service: service.Service{
 			Repo:     store.Postgres{Pool: pool},
 			Outlets:  shared,

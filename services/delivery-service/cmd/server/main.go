@@ -68,8 +68,8 @@ func main() {
 	}
 	h := handler.Handler{
 		Authn:    app.Authenticator,
-		Profiles: client.Profiles{Shared: peers},
-		Service:  service.Service{Repo: store.Postgres{Pool: pool}, Peers: peers, Objects: objects, ServiceMinutesPerStop: serviceMinutesPerStop(app.Logger)},
+		Profiles: app.CachedProfiles(client.Profiles{Shared: peers}),
+		Service:  service.Service{Repo: store.Postgres{Pool: pool}, Peers: peers, Objects: objects, Cache: app.Cache, ServiceMinutesPerStop: serviceMinutesPerStop(app.Logger)},
 	}
 	if err := app.Run(func(r chi.Router) { h.Routes(r) }); err != nil {
 		log.Fatal(err)

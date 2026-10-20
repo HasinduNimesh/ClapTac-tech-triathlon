@@ -83,8 +83,19 @@ services:
       retries: 6
       start_period: 5s
 
+  # Cache and rate-limit counters only. Nothing here is the source of truth and every service keeps working
+  # (just slower, and without per-user limits) while it is down, so no service waits for it. Set REDIS_PASSWORD
+  # and put it in REDIS_URL (redis://:password@redis:6379/0) outside local development.
   redis:
     image: redis:7-alpine
+    command: redis-server --save "" --appendonly no --maxmemory 128mb --maxmemory-policy allkeys-lru ${REDIS_PASSWORD:+--requirepass ${REDIS_PASSWORD}}
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    healthcheck:
+      test: ["CMD-SHELL", "[ -z \"$$REDIS_PASSWORD\" ] || export REDISCLI_AUTH=\"$$REDIS_PASSWORD\"; redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
     ports:
       - "127.0.0.1:6379:6379"
 
