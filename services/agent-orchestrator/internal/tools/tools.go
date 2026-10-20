@@ -66,7 +66,12 @@ func (t *HTTPTool) Sensitive() bool     { return t.sensitive }
 func (t *HTTPTool) Definition() Definition {
 	d := Definition{Name: t.name, Description: t.description}
 	d.Parameters.Type = "object"
-	d.Parameters.Properties = t.properties
+	// A tool with no arguments must still send "properties": {} (a JSON Schema object). A nil map would be sent as
+	// null, which model providers reject, and every question would fail before it reached the model.
+	d.Parameters.Properties = map[string]Property{}
+	for name, prop := range t.properties {
+		d.Parameters.Properties[name] = prop
+	}
 	d.Parameters.Required = append([]string(nil), t.required...)
 	d.Parameters.AdditionalProperties = false
 	return d
