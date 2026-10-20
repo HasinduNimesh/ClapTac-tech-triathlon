@@ -33,12 +33,26 @@ func (s Service) UpdateLocation(ctx context.Context, profile *authorization.Prof
 	if err := validateLocation(profile, run, latitude, longitude, timestamp, time.Now()); err != nil {
 		return domain.Location{}, err
 	}
-	return s.Repo.SaveLocation(ctx, tripID, profile.VehicleID, latitude, longitude, timestamp)
+	point, err := s.Repo.SaveLocation(ctx, tripID, profile.VehicleID, latitude, longitude, timestamp)
+	if err == nil {
+		s.Cache.SetJSON(ctx, locationKey(tripID), point, locationTTL)
+	}
+	return point, err
 }
+
+// locationTTL is short on purpose: the dispatcher refreshes every 15 to 30 seconds, and the entry is also
+// deleted when the run completes.
+const locationTTL = 20 * time.Second
+
+func locationKey(tripID string) string { return "delivery:location:" + tripID }
 
 func (s Service) TripLocation(ctx context.Context, profile *authorization.Profile, tripID string) (*domain.Location, error) {
 	if profile == nil || !authorization.HasPermission(profile.Roles, authorization.PermDeliveryViewAll) {
 		return nil, fmt.Errorf("forbidden: dispatcher permission required")
+	}
+	var cached domain.Location
+	if s.Cache.GetJSON(ctx, locationKey(tripID), &cached) && cached.TripID == tripID {
+		return &cached, nil
 	}
 	if _, err := s.Repo.GetByTrip(ctx, tripID); err != nil {
 		return nil, fmt.Errorf("not found: trip")

@@ -124,7 +124,7 @@ ClapTac-tech-triathlon/
 │   ├── kgateway/            Gateway notes for the Kubernetes path
 │   ├── observability/       OTel collector, Prometheus rules, Grafana dashboard
 │   ├── agent-manager/       Small Go service that stores and shows agent traces
-│   └── minio/ postgres/ thunder/ opensearch/   Operator notes
+│   └── minio/ postgres/ redis/ thunder/ opensearch/   Operator notes
 ├── tools/
 │   ├── dev-oidc/            Local OIDC provider (ThunderID-compatible) used by Docker Compose
 │   └── playwright-mcp/      Browser-driven workflow test harness (for the /e2e skill)
@@ -151,7 +151,7 @@ Untracked local tooling you may see in a working copy (`.claude/`, `.codex/`, `.
 | Assistants | **Python 3.12** | FastAPI, LangGraph, httpx, PyJWT, prometheus-client |
 | Database | **PostgreSQL 16** | One instance, nine schemas, additive SQL migrations |
 | Object storage | **S3-compatible** | Local: Adobe S3Mock (service is named `minio`). Own minimal SigV4 client in `pkg/objectstore` |
-| Cache | none | Redis was provisioned but no code used it, so it was removed; PostgreSQL does the work |
+| Cache | **Redis 7** | Optional, fail-open (`pkg/cache`): per-user rate limits, remembered user profiles (30 s) and the latest position of each active run (20 s). PostgreSQL remains the source of truth |
 | Identity | **ThunderID** (production) / `tools/dev-oidc` (local) | OIDC authorization code + PKCE for people, client credentials for services |
 | Edge | **NGINX 1.27** | Routing, CSP and security headers, 50 req/s per-visitor API rate limit |
 | Web | **React 18, TypeScript 5, Vite 5, react-router 6, oidc-client-ts, Dexie, Leaflet** | PWA via `vite-plugin-pwa`; map tiles from OpenStreetMap |
@@ -247,6 +247,7 @@ flowchart LR
     subgraph Data
         PG[("postgres 16")]
         S3[("minio = Adobe S3Mock")]
+        REDIS[("redis 7<br/>cache + rate limits")]
     end
     subgraph Identity
         THUNDER["thunderid = tools/dev-oidc :8090"]
@@ -390,7 +391,7 @@ Waypoint has three deployment shapes. Only the first two are exercised.
 flowchart LR
     subgraph L["1. Local developer: docker compose up"]
         L1["nginx :80 (loopback)"] --> L2["all services + web + loader"]
-        L2 --> L3["postgres, S3Mock"]
+        L2 --> L3["postgres, S3Mock, redis"]
         L2 --> L4["dev-oidc :8090"]
     end
     subgraph P["2. Production VM (GitHub Actions deploy)"]
@@ -569,7 +570,7 @@ The dispatcher can search (`GET /audit/events`), export CSV (`/audit/export.csv`
 
 ### 4.8 Configuration model
 
-`pkg/config` reads: `ENVIRONMENT` (default `local`), `HTTP_ADDR` (`:8080`), `AUTH_DISABLED`, `OIDC_ISSUER`, `OIDC_JWKS_URL`, `OIDC_AUDIENCE`, `DATABASE_URL`, `DATABASE_SCHEMA`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `LOG_LEVEL`. Service-specific peers (`*_SERVICE_URL`), machine-client settings (`OIDC_TOKEN_URL`, `M2M_CLIENT_ID`, `M2M_CLIENT_SECRET`), object-store settings (`MINIO_ENDPOINT`, `MINIO_BUCKET`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, `MINIO_REGION`) and feature flags are read in each `main.go`. [Appendix A](#appendix-a--configuration-reference) lists them all.
+`pkg/config` reads: `ENVIRONMENT` (default `local`), `HTTP_ADDR` (`:8080`), `AUTH_DISABLED`, `OIDC_ISSUER`, `OIDC_JWKS_URL`, `OIDC_AUDIENCE`, `DATABASE_URL`, `DATABASE_SCHEMA`, `REDIS_URL`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `LOG_LEVEL`. Service-specific peers (`*_SERVICE_URL`), machine-client settings (`OIDC_TOKEN_URL`, `M2M_CLIENT_ID`, `M2M_CLIENT_SECRET`), object-store settings (`MINIO_ENDPOINT`, `MINIO_BUCKET`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, `MINIO_REGION`) and feature flags are read in each `main.go`. [Appendix A](#appendix-a--configuration-reference) lists them all.
 
 **Important rule:** `docker-compose.yml` decides which values reach which container. Putting a variable in `.env` does not override a value that Compose hardcodes (for example the migrate/seed/bootstrap jobs hardcode the local DB URL, and the bundled identity container hardcodes its issuer/audience).
 
@@ -2699,7 +2700,7 @@ curl -fsS http://localhost/health/live
 |---|---|
 | `http://localhost` | Web app (and `/loader-app/`, `/downloads/`, `/api/v1/…`) |
 | `http://localhost:8090` | Local identity provider (login form, discovery) |
-| `127.0.0.1:5432` | PostgreSQL |
+| `127.0.0.1:5432` / `6379` | PostgreSQL / Redis |
 | `http://localhost:9000` | S3Mock (not a MinIO console) |
 | `http://localhost:8092` | Swagger UI (only with `docker-compose.api-docs.yml`) |
 | `:3001` Grafana, `:9090` Prometheus, `:4318` OTLP | `observability` profile |
@@ -2716,7 +2717,7 @@ curl -fsS http://localhost/health/live
 ### 10.2 Compose stack details
 
 * **Startup chain:** `postgres` (healthy) → `migrate` (`database/apply.sh`) → `seed` (`database/seed.sh`) → `bootstrap` (`scripts/thunder-bootstrap.sh`, also needs `thunderid`) → backend services in health order → `nginx`.
-* **Shared env anchor** `x-svc-env`: `ENVIRONMENT`, `AUTH_DISABLED: "false"`, `HTTP_ADDR :8080`, `DATABASE_URL`, `OIDC_ISSUER`, `OIDC_JWKS_URL`, `OIDC_AUDIENCE`, `OTEL_EXPORTER_OTLP_ENDPOINT`. Each service adds `DATABASE_SCHEMA`, peers' URLs, `OIDC_TOKEN_URL`, `M2M_CLIENT_ID/SECRET` (`waypoint-<service>-service`), `MINIO_*` where needed.
+* **Shared env anchor** `x-svc-env`: `ENVIRONMENT`, `AUTH_DISABLED: "false"`, `HTTP_ADDR :8080`, `DATABASE_URL`, `REDIS_URL`, `OIDC_ISSUER`, `OIDC_JWKS_URL`, `OIDC_AUDIENCE`, `OTEL_EXPORTER_OTLP_ENDPOINT`. Each service adds `DATABASE_SCHEMA`, peers' URLs, `OIDC_TOKEN_URL`, `M2M_CLIENT_ID/SECRET` (`waypoint-<service>-service`), `MINIO_*` where needed.
 * **Health checks:** `wget http://127.0.0.1:8080/health/ready` every 10 s (6 retries) for backends; the web images check `/` and `/loader-app/`.
 * **Images** are named `${WAYPOINT_IMAGE_PREFIX:-waypoint}/<service>:${WAYPOINT_TAG:-local}`: locally they are built; on the VM they are pulled by commit SHA.
 * **Volumes:** `postgres_data`, `grafana_data`, `agent_traces_data`.
@@ -2778,7 +2779,7 @@ Required GitHub **environment** `production` secrets: `AZURE_SSH_HOST`, `AZURE_S
 * `default-deny` for ingress and egress; `allow-dns`.
 * `allow-kgateway-to-backends`: only kgateway and the agent tier may reach backends on 8080.
 * `allow-agent-to-business-services`: the agent tier may call the business services only (no database).
-* Egress allowances: backends to PostgreSQL (5432), the OTel collector (4318), object storage (9000), the identity provider (8090) and to each other on 8080; the agent tier is limited to the business services.
+* Egress allowances: backends to PostgreSQL (5432), Redis (6379), the OTel collector (4318), object storage (9000), the identity provider (8090) and to each other on 8080; the agent tier is limited to the business services.
 
 Overlays `dev`, `staging`, `production` change `ENVIRONMENT`, force `AUTH_DISABLED=false`, and retag images. Secrets (`waypoint-database` with one URL per service, `waypoint-m2m` with distinct client secrets) must be created out of band; the agent orchestrator receives **neither** a database URL nor an M2M secret. **Gaps to close before use:** real images instead of the `…:dev`/`…:production` placeholder tags, no `loader-web` Deployment/route in the base, identity configuration, durable database/object storage, DNS and TLS, and a CNI that actually enforces the network policies.
 
@@ -3064,6 +3065,9 @@ These are the rules the codebase deliberately follows. Each exists for a reason 
 | `LOG_LEVEL` | `info` | slog level |
 | `DATABASE_URL` | — | PostgreSQL URL (required for schema-owning services) |
 | `DATABASE_SCHEMA` | per service | Sets `search_path` |
+| `REDIS_URL` | — | Redis for rate limits and caches; empty disables them |
+| `PROFILE_CACHE_TTL_SECONDS` | `30` | How long other services remember a user's profile; `0` turns it off |
+| `RATE_LIMIT_USER_PER_MIN` / `RATE_LIMIT_ANON_PER_MIN` | `1200` / `300` | Per-user and per-address requests per minute, per service |
 | `OIDC_ISSUER`, `OIDC_JWKS_URL`, `OIDC_AUDIENCE` | — / — / `waypoint-api` | Token validation |
 | `OIDC_TOKEN_URL`, `M2M_CLIENT_ID`, `M2M_CLIENT_SECRET` | `http://thunderid:8090/oauth2/token` | Client-credentials for service calls |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | empty | Enables trace export |

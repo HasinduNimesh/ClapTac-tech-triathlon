@@ -37,7 +37,7 @@ func main() {
 	go flushAuditOutbox(context.Background(), repo, publisher, app.Logger)
 	h := handler.Handler{
 		Authn:    app.Authenticator,
-		Profiles: client.Profiles{SharedURL: sharedURL},
+		Profiles: app.CachedProfiles(client.Profiles{SharedURL: sharedURL}),
 		Store:    repo,
 	}
 	if err := app.Run(func(r chi.Router) { h.Routes(r) }); err != nil {

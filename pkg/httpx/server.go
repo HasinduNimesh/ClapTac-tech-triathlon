@@ -27,6 +27,8 @@ type Options struct {
 	Service string
 	Logger  *slog.Logger
 	Ready   func(http.ResponseWriter, *http.Request)
+	// RateLimit is optional; nil means no per-user limit beyond the edge proxy.
+	RateLimit *RateLimit
 }
 
 const (
@@ -45,6 +47,7 @@ func NewRouter(opts Options) chi.Router {
 	r.Use(accessLog(opts.Logger, opts.Service))
 	r.Use(metricsMiddleware(opts.Service))
 	r.Use(tracingMiddleware(opts.Service))
+	r.Use(opts.RateLimit.middleware(opts.Service))
 
 	r.Get("/health/live", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "live", "service": opts.Service})

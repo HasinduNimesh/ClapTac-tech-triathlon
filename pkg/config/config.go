@@ -16,6 +16,7 @@ type Config struct {
 	OIDCAudience   string
 	DatabaseURL    string
 	DatabaseSchema string
+	RedisURL       string
 	OTLPEndpoint   string
 	LogLevel       string
 }
@@ -31,6 +32,7 @@ func Load(serviceName, defaultSchema string) Config {
 		OIDCAudience:   env("OIDC_AUDIENCE", "waypoint-api"),
 		DatabaseURL:    env("DATABASE_URL", ""),
 		DatabaseSchema: env("DATABASE_SCHEMA", defaultSchema),
+		RedisURL:       env("REDIS_URL", ""),
 		OTLPEndpoint:   env("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
 		LogLevel:       env("LOG_LEVEL", "info"),
 	}
