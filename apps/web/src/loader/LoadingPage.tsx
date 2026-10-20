@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { ApiError, apiJSON } from "../api/client";
+import { apiJSON } from "../api/client";
 import { todayLocal } from "../api/date";
 import { depotLabel, isIncomplete, LoadingTripDetail, LoadingTripSummary, newIdempotencyKey } from "../api/loading";
 import { TruckCheckout } from "../api/delivery";
@@ -11,6 +11,7 @@ import { applyLoadingQueueItem, replayLoadingQueue, shouldQueueLoadingFailure, L
 import { resolveLoadOrderCode } from "./barcodeLookup.mjs";
 import { acquireBarcodeCamera } from "./barcodeCamera.mjs";
 import { reminderForTrip, type PlanReminder } from "../dispatcher/ackTracking.mjs";
+import { describeError } from "../api/friendlyError.mjs";
 
 export function LoadingPage() {
   const { user, profile } = useAuth();
@@ -68,7 +69,7 @@ export function LoadingPage() {
         if (!active) return;
         setSyncState(result);
         setQueueCount((await listLoaderQueue(ownerId)).length);
-      }).catch(e => { if (active) setError(String(e)); });
+      }).catch(e => { if (active) setError(describeError(e)); });
     }).catch(() => { if (active) setOwnerState("blocked"); });
     return () => { active = false; };
   }, [ownerId]);
@@ -110,7 +111,7 @@ export function LoadingPage() {
   }
 
   useEffect(() => {
-    const onOnline = () => { setOnline(true); void syncPending().catch(e => setError(String(e))); };
+    const onOnline = () => { setOnline(true); void syncPending().catch(e => setError(describeError(e))); };
     const onOffline = () => { setOnline(false); setSyncState({ kind: "offline", text: "Connection lost. Loading work will be saved on this device." }); };
     window.addEventListener("online", onOnline);
     window.addEventListener("offline", onOffline);
@@ -186,7 +187,7 @@ export function LoadingPage() {
       await fn();
       if (label) setInfo(t(label));
     } catch (e) {
-      setError(e instanceof ApiError ? `${e.status}: ${e.message}` : String(e));
+      setError(describeError(e));
     }
   }
 
@@ -340,7 +341,7 @@ export function LoadingPage() {
       {!online && <p className="status-syncing" role="status">{t("Offline mode · using the most recently saved trip list and manifest when available. Confirm the plan version again before departure.")}</p>}
       {queueCount > 0 && <div className={syncState.kind === "error" ? "status-bad" : "status-syncing"} role="status">
         <p>{queueCount} {t("loading change(s) saved on this device.")} {syncState.text}</p>
-        <button type="button" className="tap" onClick={() => void syncPending().catch(e => setError(String(e)))} disabled={!online}>{t("Sync saved loading work")}</button>
+        <button type="button" className="tap" onClick={() => void syncPending().catch(e => setError(describeError(e)))} disabled={!online}>{t("Sync saved loading work")}</button>
       </div>}
 
       <form onSubmit={loadTrips} className="row">

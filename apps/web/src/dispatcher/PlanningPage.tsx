@@ -2,7 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { pastArrivals } from "./planTiming.mjs";
 import { PriorityReviews } from "../automations/PriorityReviews";
 import { Link } from "react-router-dom";
-import { ApiError, apiJSON } from "../api/client";
+import { apiJSON } from "../api/client";
 import { todayInSriLanka } from "../api/date.mjs";
 import { newOperationId } from "../api/delivery";
 import { DEPOT_LABELS, depotCode } from "../api/loading";
@@ -17,6 +17,7 @@ import { FRESH_TRIP_BUDGET_MINUTES, normalizePlan, planChecks, tripLoads } from 
 import { LatLng, MapLine, MapMarker, WaypointMap, depotPosition } from "../components/WaypointMap";
 import { Banner, Check, ChipGroup, DpHero, Drawer, Meter, Note, Panel, Stat, StatRow, Tag, brandTone, meterTone } from "./ui";
 import { clock, dateTime, dayLabel, hhmm, isChilled, kg, m3, pct, useApi } from "./useApi";
+import { describeError } from "../api/friendlyError.mjs";
 
 type Tab = "unallocated" | "trips" | "map" | "deferred" | "constraints";
 
@@ -81,7 +82,7 @@ export function PlanningPage() {
   async function run(label: string, fn: () => Promise<void>) {
     setError(""); setInfo("");
     try { await fn(); setInfo(t(label)); }
-    catch (e) { setError(e instanceof ApiError ? `${e.status}: ${e.message}` : String(e)); }
+    catch (e) { setError(describeError(e)); }
   }
 
   async function refresh(id?: string) {
@@ -149,7 +150,7 @@ export function PlanningPage() {
       setFuelAttempt(null); setFuelLiters(""); setFuelReceipt("");
       setInfo(t("Actual fuel entry recorded"));
     } catch (e) {
-      setError(e instanceof ApiError ? `${e.status}: ${e.message}` : String(e));
+      setError(describeError(e));
     } finally { setFuelSubmitting(false); }
   }
 
@@ -531,7 +532,7 @@ function ConfirmedView({ detail, loads, token, onRefresh, onRevise }: { detail: 
         const result = await apiJSON<ReminderResult>(`/planning/plans/${detail.plan.id}/reminders`, token, { method: "POST", body: JSON.stringify(target) });
         if (result.alreadySent) already += 1; else sent += 1;
       } catch (e) {
-        failed.push(`${tripLabel(target.tripId)} ${t(target.audience)}: ${e instanceof ApiError ? e.message : t("Request failed")}`);
+        failed.push(`${tripLabel(target.tripId)} ${t(target.audience)}: ${describeError(e)}`);
       }
     }
     try { await onRefresh(); } catch { /* the notice below still reports what the server said */ }

@@ -1683,8 +1683,18 @@ a.tap.primary {
     justify-content: center;
   }
   .sm-topbar {
-    padding: 0 12px;
+    padding: 8px 12px;
     gap: 8px;
+    height: auto;
+    min-height: 76px;
+    flex-wrap: wrap;
+  }
+  /* Bell, outlet and Sign out wrap under the menu instead of pushing Sign out off the screen. */
+  .sm-topbar-right {
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    min-width: 0;
   }
   .sm-topbar-outlet {
     flex: 1;
@@ -1841,3 +1851,6 @@ a.tap.primary {
 
 /* Keep the habit card clear of the sparkle button. */
 body:has(.sm-ai-fab) .habit-card { bottom: 96px; }
+
+/* Wide tables scroll inside their own box instead of widening the whole page. */
+.table-scroll { overflow-x: auto; max-width: 100%; }

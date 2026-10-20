@@ -2,6 +2,7 @@ import { ApiError, apiJSON } from "../api/client";
 import { drainFIFOQueue } from "../offline/fifoQueue.mjs";
 import { listLoaderQueue, removeLoaderQueueItem } from "./offlineDb";
 import { LoadingQueueOperation } from "./offlineState.mjs";
+import { describeError } from "../api/friendlyError.mjs";
 
 export type LoaderSyncState = { kind: "ok" | "offline" | "error" | "syncing" | "paused"; text: string };
 const active = new Map<string, Promise<LoaderSyncState>>();
@@ -33,13 +34,13 @@ async function drainSerial(token: string, ownerId: string): Promise<LoaderSyncSt
         return { applied: true };
       } catch (error) {
         if (error instanceof ApiError && error.status === 401) return { applied: false, detail: "Sign-in expired. Sign in again; saved loading work is preserved." };
-        if (error instanceof ApiError) return { applied: false, detail: `${error.status}: ${error.message}` };
+        if (error instanceof ApiError) return { applied: false, detail: describeError(error) };
         throw error;
       }
     },
     onFailure: (error: unknown, _item: unknown, count: number): LoaderSyncState => {
       if (error instanceof TypeError || !navigator.onLine) return { kind: "offline", text: `Connection lost · ${count} loading change(s) remain saved on this device` };
-      return { kind: "error", text: `${error instanceof Error ? error.message : String(error)} · ${count} loading change(s) remain saved on this device` };
+      return { kind: "error", text: `${describeError(error)} · ${count} loading change(s) remain saved on this device` };
     },
   });
   if (result.kind === "ok" && (await listLoaderQueue(ownerId)).length > 0) return drainSerial(token, ownerId);

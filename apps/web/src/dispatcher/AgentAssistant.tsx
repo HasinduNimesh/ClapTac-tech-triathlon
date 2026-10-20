@@ -2,6 +2,7 @@ import { FormEvent, useState } from "react";
 import { ApiError, apiJSON } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { useLocale } from "../i18n";
+import { describeError } from "../api/friendlyError.mjs";
 
 type Approval = { id:string; tool:string; args:Record<string,unknown>; args_hash:string; status:string; expires_at:string };
 type ChatResponse = { reply?:string; sources?:string[]; pendingAction?:Approval; verifiedResult?:unknown };
@@ -26,7 +27,7 @@ export function AgentAssistant(){
   }
   async function decide(approved:boolean){if(!approval)return;setBusy(true);setError("");
     try{const result=await apiJSON<{executed:boolean;result?:unknown;approval:Approval}>(`/agent/approvals/${approval.id}/decide`,token,{method:"POST",body:JSON.stringify({approved,reason:approved?"Approved by the signed-in user":"Rejected by the signed-in user"})});setApproval(null);setReply(approved?t("Approved action sent to the business service for authorization and validation."):t("Action rejected; no business service was called."));setVerified(result.result);}
-    catch(err){setError(String(err));}
+    catch(err){setError(describeError(err));}
     finally{setBusy(false);}
   }
   if(!token||!profile)return <section className="card"><h2>{t("Waypoint assistant")}</h2><p>{t("Sign in with a dispatcher or store-manager account to use the assistant.")}</p></section>;

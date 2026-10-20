@@ -8,6 +8,7 @@ import { colomboTime, formatDay, isDeferred, needsReceipt, statusLabel, timeline
 import { StoreManagerHero } from "./StoreManagerHero";
 import { Tracking } from "./useOrderTrackings";
 import { LatLng, MapLine, MapMarker, WaypointMap, depotPosition } from "../components/WaypointMap";
+import { describeError } from "../api/friendlyError.mjs";
 
 function useTracking(orderId?: string) {
   const { user } = useAuth();
@@ -18,7 +19,7 @@ function useTracking(orderId?: string) {
   const load = useCallback(async () => {
     if (!token || !orderId) return;
     try { setTracking((await apiJSON<{ tracking: Tracking }>(`/orders/${encodeURIComponent(orderId)}/tracking`, token)).tracking); setError(""); setLoadedAt(Date.now()); }
-    catch (e) { setError(String(e)); }
+    catch (e) { setError(describeError(e)); }
   }, [token, orderId]);
   useEffect(() => { void load(); const id = window.setInterval(() => void load(), 60_000); return () => window.clearInterval(id); }, [load]);
   return { tracking, error, loadedAt, reload: load };

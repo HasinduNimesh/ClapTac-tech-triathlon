@@ -7,6 +7,7 @@ import { AutomationInbox, ResultView } from "./AutomationInbox";
 import { PriorityReviews } from "./PriorityReviews";
 import { apiBase, days, Definition, Result } from "./types";
 import "./automations.css";
+import { describeError } from "../api/friendlyError.mjs";
 const initial: Definition = { version: 1, name: "Weekly deferred orders", weekday: 5, time: "15:00", timezone: "Asia/Colombo", action: "notify_deferrals" };
 export function AutomationsPage() {
   const { t } = useLocale();
@@ -19,10 +20,10 @@ export function AutomationsPage() {
   const [enabled, setEnabled] = useState(true); const [preview, setPreview] = useState<{ id: string; result: Result } | null>(null);
   const [testAt, setTestAt] = useState("previous"); const [busy, setBusy] = useState(false); const [error, setError] = useState(""); const [notice, setNotice] = useState(""); const [refresh, setRefresh] = useState(0);
   async function load() { const data = await apiJSON<{ items: typeof items; habitEnabled: boolean; demoHistory: boolean }>(`${apiBase}/`, token); setItems(data.items); setEnabled(data.habitEnabled); setDemo(data.demoHistory); }
-  useEffect(() => { if (token) void load().catch(e => setError(String(e))); }, [token]);
+  useEffect(() => { if (token) void load().catch(e => setError(describeError(e))); }, [token]);
   useEffect(() => {if(incoming){setDraft(incoming);setBuilding(true);setPreview(null);navigate(location.pathname,{replace:true,state:null});}},[location.key]);
   function change(next: Definition) { setDraft(next); setPreview(null); setNotice(""); }
-  async function perform(action: () => Promise<void>) { if (busy) return; setBusy(true); setError(""); try { await action(); } catch (e) { setError(String(e)); } finally { setBusy(false); } }
+  async function perform(action: () => Promise<void>) { if (busy) return; setBusy(true); setError(""); try { await action(); } catch (e) { setError(describeError(e)); } finally { setBusy(false); } }
   async function interpret() { const data = await apiJSON<{ definition?: Definition; clarification?: string; source?: string }>("/agent/workflows/draft", token, { method: "POST", body: JSON.stringify({ message }) }); if (data.definition) { change(data.definition);setNotice(`Draft prepared using ${data.source}. Review the schedule below.`); } else {setPreview(null);setNotice(data.clarification || "Please clarify your request.");} }
   async function test() {setPreview(null);setPreview(await apiJSON(`${apiBase}/preview`, token, { method: "POST", body: JSON.stringify({ definition: draft, at: testAt }) }));}
   async function activate() { if (!preview) return; await apiJSON(`${apiBase}/`, token, { method: "POST", body: JSON.stringify({ previewId: preview.id }) });setBuilding(false);setPreview(null);setNotice("Automation is on. It will run at the next scheduled time.");await load(); }

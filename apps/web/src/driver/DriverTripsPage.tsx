@@ -20,6 +20,7 @@ import { StopSyncStatus } from "./StopSyncStatus";
 import { createSingleFlightAction } from "./singleFlightAction.mjs";
 import { navigationTarget } from "./navigation.mjs";
 import { acknowledgedForTrip, reminderForTrip, type PlanReminder } from "../dispatcher/ackTracking.mjs";
+import { describeError } from "../api/friendlyError.mjs";
 
 function stopLabel(stop: DeliveryStop) {
   return stop.outletName || stop.outletId || stop.orderRef || `Stop ${stop.stopSequence}`;
@@ -284,7 +285,7 @@ export function DriverTripsPage() {
         setError(t("Could not reach the delivery service. Showing saved trip data where available."));
         return;
       }
-      setError(e instanceof ApiError ? `${e.status}: ${t(e.message)}` : t("Update failed. Please try again."));
+      setError(describeError(e));
     }
   }
 
@@ -363,7 +364,7 @@ export function DriverTripsPage() {
     try {
       await apiJSON(`/planning/plans/${detail.run.planId}/acknowledgements`,token,{method:"POST",body:JSON.stringify({version:detail.currentPlanVersion,tripId:detail.tripId})});
       setError(""); await openTrip(detail.tripId);
-    } catch(e) { setError(e instanceof ApiError ? `${e.status}: ${t(e.message)}` : t("Update failed. Please try again.")); }
+    } catch(e) { setError(describeError(e)); }
   }
 
   async function checkOutTruck() {
@@ -398,7 +399,7 @@ export function DriverTripsPage() {
       } catch (e) {
         if (e instanceof ApiError) {
           if (e.status === 401) { await setPaused(ownerId, true); setBanner({ kind: "paused", text: "Sync paused (401). Queue kept." }); return; }
-          else if (e.status < 500) { setError(`${e.status}: ${t(e.message)}`); return; }
+          else if (e.status < 500) { setError(describeError(e)); return; }
         }
         await enqueueRecord({ operationId, type: "START", tripId: detail.tripId, createdAt: new Date().toISOString() });
         const started = { ...detail, status: "in_progress", run: { ...detail.run, status: "in_progress" } };
@@ -604,7 +605,7 @@ export function DriverTripsPage() {
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
       setPrivacyNotice(t("Saved delivery data downloaded."));
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(describeError(e));
     }
   }
 
@@ -631,7 +632,7 @@ export function DriverTripsPage() {
       }
       setPrivacyNotice(t("Completed trip cache cleared."));
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(describeError(e));
     }
   }
 

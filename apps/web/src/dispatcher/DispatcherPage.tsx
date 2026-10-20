@@ -37,6 +37,10 @@ export function DispatcherPage() {
   const brandCounts = ["Fresh", "Style", "Tech"].map((brand) => ({ brand, count: queue.filter((o) => o.brand.toLowerCase() === brand.toLowerCase()).length }));
   const timing = splitByDeliveryDate(queue, date);
   const chilled = queue.filter((o) => isChilled(o.temperatureRequirement)).length;
+  // The headline card counts what still needs a plan; its split below it must count the same orders.
+  const unallocatedIds = new Set(unallocated.map((u) => u.orderId));
+  const awaiting = plan.data ? queue.filter((o) => unallocatedIds.has(o.id)) : queue;
+  const awaitingChilled = awaiting.filter((o) => isChilled(o.temperatureRequirement)).length;
   const depotCounts = Object.entries(DEPOT_LABELS).map(([code, label]) => ({ code, label, count: (orders.data?.items || []).filter((o) => sameDepot(outletById.get(o.outletId)?.depot, code)).length }));
   const maxDepot = Math.max(1, ...depotCounts.map((d) => d.count));
   const firstArrival = (plan.data?.allocations || []).map((a) => a.plannedArrivalAt).filter(Boolean).sort()[0];
@@ -68,7 +72,7 @@ export function DispatcherPage() {
       </DpHero>
       <StatRow cols={5}>
         <Stat icon="▣" label={t("Next run")} value={`${dayLabel(plan.data?.plan.deliveryDate || date)}${firstArrival ? `, ${clock(firstArrival)}` : ""}`} sub={depot ? `${DEPOT_LABELS[depot]} ${t("depot")}` : t("All depots")} />
-        <Stat icon="▤" iconTone="red" label={t("Orders awaiting planning")} value={plan.data ? unallocated.length : queue.length} sub={`${chilled} ${t("chilled")} · ${queue.length - chilled} ${t("ambient")}`} subTone="red" />
+        <Stat icon="▤" iconTone="red" label={t("Orders awaiting planning")} value={awaiting.length} sub={`${awaitingChilled} ${t("chilled")} · ${awaiting.length - awaitingChilled} ${t("ambient")}`} subTone="red" />
         <Stat icon="▰" iconTone="green" label={t("Trips ready")} value={readyTrips.length} sub={`${t("of")} ${trips.length} ${t("trips today")}`} />
         <Stat icon="▱" label={t("Available vehicles")} value={`${available.length} / ${fleet.length}`} sub={`${fleet.length - available.length} ${t("in workshop/other")}`} />
         <Stat icon="!" iconTone="red" variant="red" label={t("Urgent exceptions")} value={exceptions.length} sub={<Link to="/dispatcher/notifications" className="dp-link">{t("View all exceptions")} →</Link>} />

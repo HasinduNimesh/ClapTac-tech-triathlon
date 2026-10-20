@@ -1,7 +1,8 @@
 import { FormEvent, useEffect, useState } from "react";
-import { ApiError, apiJSON } from "../api/client";
+import { apiJSON } from "../api/client";
 import { DisruptionRisk } from "../api/planning";
 import { useLocale } from "../i18n";
+import { describeError } from "../api/friendlyError.mjs";
 
 const blank = { scope: "DISTRICT", scopeKey: "", riskType: "HEAVY_RAIN", severity: "MEDIUM", summary: "", source: "Manual dispatcher report", sourceReference: "", confidence: "0.5" };
 
@@ -19,7 +20,7 @@ export function DisruptionRiskPanel({ date, token }: { date: string; token: stri
       setItems(result.items || []);
       setError("");
     } catch (e) {
-      setError(e instanceof ApiError ? `${e.status}: ${e.message}` : String(e));
+      setError(describeError(e));
     }
   }
 
@@ -36,7 +37,7 @@ export function DisruptionRiskPanel({ date, token }: { date: string; token: stri
       setDraft(blank);
       await refresh();
     } catch (e) {
-      setError(e instanceof ApiError ? `${e.status}: ${e.message}` : String(e));
+      setError(describeError(e));
     } finally {
       setBusy(false);
     }
@@ -54,7 +55,7 @@ export function DisruptionRiskPanel({ date, token }: { date: string; token: stri
       setDecisions(current => ({ ...current, [risk.id]: { ...choice, reason: "" } }));
       await refresh();
     } catch (e) {
-      setError(e instanceof ApiError ? `${e.status}: ${e.message}` : String(e));
+      setError(describeError(e));
     } finally {
       setBusy(false);
     }

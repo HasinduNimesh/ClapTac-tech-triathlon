@@ -4,10 +4,16 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { apiJSON } from "../api/client";
 import { apiBase, Result } from "./types";
+/** 2026-10-07 as "7 Oct", the way the rest of the app writes a day; an unreadable value is shown as it came. */
+function dayOf(value: string) {
+  const d = new Date(`${value}T00:00:00+05:30`);
+  return Number.isNaN(d.getTime()) ? value : d.toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "Asia/Colombo" });
+}
+
 export function ResultView({ result }: { result: Result }) {
   const { t } = useLocale();
   return <div><p>{result.message}</p>{result.prefill && <p><strong>{result.prefill.orderUnits}{" "}{t("units")}</strong> · {result.prefill.orderWeightKg}{" "}{t("kg ·")}{" "}{result.prefill.orderVolumeM3} m³ · {result.prefill.temperatureRequirement}</p>}
-    {result.items.length > 0 && <ul>{result.items.map(item => <li key={item.orderId}><strong>{item.outletId}</strong> · {item.orderId}{" "}{t("· run")}{" "}{item.date}</li>)}</ul>}
+    {result.items.length > 0 && <ul>{result.items.map(item => <li key={item.orderId}><strong>{item.outletId}</strong> · {t("deferred on")} {dayOf(item.date)} · {item.count} {t(item.count === 1 ? "deferral in the last 4 weeks" : "deferrals in the last 4 weeks")}</li>)}</ul>}
   </div>;
 }
 export function AutomationInbox({ refresh = 0, runs = false }: { refresh?: number; runs?: boolean }) {
