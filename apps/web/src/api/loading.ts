@@ -74,6 +74,10 @@ export type LoadingTripSummary = {
   loadingStatus?: string;
   loadedCount?: number;
   shortfallCount?: number;
+  /** Short lines still waiting on the dispatcher (undecided, held, or moved but still on the plan). */
+  openShortfallCount?: number;
+  /** True when an open short line is chilled; only that makes a shortfall critical. */
+  openChilledShortfall?: boolean;
   pendingCount?: number;
 };
 

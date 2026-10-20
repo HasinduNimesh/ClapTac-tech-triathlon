@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../api/api_client.dart';
@@ -117,6 +119,59 @@ class LoaderController extends ChangeNotifier {
       loading = false;
       notifyListeners();
     }
+  }
+
+  Timer? _poll;
+
+  /// Re-reads the day from the server every [every] so a plan the dispatcher publishes while this screen is open
+  /// shows up without a manual reload. It stays out of the way: nothing is refreshed while a request is on its
+  /// way, a report form is open, or a load is already running, and there is no spinner.
+  void startAutoRefresh({Duration every = const Duration(seconds: 45)}) {
+    _poll?.cancel();
+    _poll = Timer.periodic(every, (_) => refreshQuietly());
+  }
+
+  void stopAutoRefresh() {
+    _poll?.cancel();
+    _poll = null;
+  }
+
+  @visibleForTesting
+  Future<void> refreshQuietly() async {
+    if (loading || busy || _openReports.isNotEmpty) return;
+    try {
+      final body = await api.get('/loading/trips?date=$date');
+      final fresh = ((body as Map<String, dynamic>)['items'] as List? ?? const []).whereType<Map<String, dynamic>>().map(LoadingTrip.new).toList();
+      final freshDetails = <String, LoadingTrip>{};
+      for (final t in fresh) {
+        freshDetails[t.tripId] = LoadingTrip(await api.get('/loading/trips/${t.tripId}') as Map<String, dynamic>);
+      }
+      final a = await api.get('/loading/alerts?date=$date');
+      // The screen may have changed under us while the requests were out; do not overwrite newer state.
+      if (loading || busy || _openReports.isNotEmpty) return;
+      trips = fresh;
+      details
+        ..clear()
+        ..addAll(freshDetails);
+      alerts = ((a as Map<String, dynamic>)['items'] as List? ?? const []).whereType<Map<String, dynamic>>().map(DockAlert.new).toList();
+      if (selectedTripId.isNotEmpty && !details.containsKey(selectedTripId)) {
+        selectedTripId = trips.isEmpty ? '' : (trips.where((t) => !t.ready).firstOrNull ?? trips.first).tripId;
+      }
+      connectionLost = false;
+      refreshedAt = DateTime.now();
+      notifyListeners();
+    } on ConnectionLostException {
+      connectionLost = true;
+      notifyListeners();
+    } on ApiException {
+      // A failed background refresh must not replace what the loader is looking at with an error.
+    }
+  }
+
+  @override
+  void dispose() {
+    stopAutoRefresh();
+    super.dispose();
   }
 
   Future<void> refreshTrip(String tripId) async {

@@ -229,6 +229,7 @@ func TestDeliveryWorkflow(t *testing.T) {
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0017_master_data_versions.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0022_delivery_plan_version.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0024_trip_messages.sql"))
+	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0078_trip_messages_before_run.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0028_delivery_proof_retention.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0029_delivery_lateness_history_index.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0034_delivery_planned_arrival_snapshot.sql"))
@@ -552,8 +553,18 @@ func TestDeliveryWorkflow(t *testing.T) {
 	if message.status != http.StatusCreated || !strings.Contains(message.body, "Use the south entrance") {
 		t.Fatalf("message send %d %s", message.status, message.body)
 	}
-	if missing := do(t, srv, http.MethodPost, "/api/v1/delivery/trips/trip-nowhere/messages", "usr-dispatcher", []byte(`{"body":"Anyone there?"}`), ""); missing.status != http.StatusNotFound {
-		t.Fatalf("a message to a trip with no run must be a 404, not a server error: %d %s", missing.status, missing.body)
+	// The dispatcher can decide a loading shortfall before the driver has prepared the trip, so there is no run yet.
+	early := do(t, srv, http.MethodPost, "/api/v1/delivery/trips/trip-not-started/messages", "usr-dispatcher", []byte(`{"body":"Partial load accepted"}`), "")
+	if early.status != http.StatusCreated {
+		t.Fatalf("a message to a trip that has no run yet must be kept for the driver, got %d %s", early.status, early.body)
+	}
+	var keptRun *string
+	var keptTrip string
+	if err := pool.QueryRow(ctx, `SELECT run_id::text, trip_id FROM delivery.trip_messages WHERE trip_id='trip-not-started'`).Scan(&keptRun, &keptTrip); err != nil || keptRun != nil || keptTrip != "trip-not-started" {
+		t.Fatalf("the early message should be stored by trip with no run: run=%v trip=%q err=%v", keptRun, keptTrip, err)
+	}
+	if earlyStop := do(t, srv, http.MethodPost, "/api/v1/delivery/trips/trip-not-started/messages", "usr-dispatcher", []byte(`{"stopId":"`+stopID+`","body":"Stop note"}`), ""); earlyStop.status != http.StatusBadRequest {
+		t.Fatalf("a stop note needs a run: %d %s", earlyStop.status, earlyStop.body)
 	}
 	if wrongStop := do(t, srv, http.MethodPost, "/api/v1/delivery/trips/trip-north/messages", "usr-dispatcher", []byte(`{"stopId":"00000000-0000-0000-0000-000000000000","body":"Wrong stop"}`), ""); wrongStop.status != http.StatusBadRequest {
 		t.Fatalf("a stop from another trip must be a 400: %d %s", wrongStop.status, wrongStop.body)

@@ -24,13 +24,19 @@ func (p Postgres) SendTripMessage(ctx context.Context, tripID, stopID, body, act
 		return domain.TripMessage{}, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	// The run is created when the driver prepares the trip, but the dispatcher may decide a loading shortfall earlier.
+	// The message is kept by trip id then, and the driver reads it as soon as the run exists.
+	var run any
 	var runID string
-	if err = tx.QueryRow(ctx, `SELECT id::text FROM delivery.runs WHERE trip_id=$1`, tripID).Scan(&runID); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			// The run is created when the plan is prepared for the driver, so an unknown trip and a trip that has
-			// not reached the driver look the same here. Either way the dispatcher's request is not at fault.
-			return domain.TripMessage{}, fmt.Errorf("not found: this trip has no delivery run to send a message to yet")
+	err = tx.QueryRow(ctx, `SELECT id::text FROM delivery.runs WHERE trip_id=$1`, tripID).Scan(&runID)
+	switch {
+	case err == nil:
+		run = runID
+	case errors.Is(err, pgx.ErrNoRows):
+		if stopID != "" {
+			return domain.TripMessage{}, fmt.Errorf("invalid: stops exist only once the driver has started preparing the trip")
 		}
+	default:
 		return domain.TripMessage{}, err
 	}
 	var stop any
@@ -45,7 +51,7 @@ func (p Postgres) SendTripMessage(ctx context.Context, tripID, stopID, body, act
 		stop = stopID
 	}
 	var m domain.TripMessage
-	err = tx.QueryRow(ctx, `INSERT INTO delivery.trip_messages(run_id,stop_id,body,sent_by) VALUES($1::uuid,$2::uuid,$3,$4) RETURNING id::text,COALESCE(stop_id::text,''),body,sent_by,created_at`, runID, stop, body, actor).Scan(&m.ID, &m.StopID, &m.Body, &m.SentBy, &m.CreatedAt)
+	err = tx.QueryRow(ctx, `INSERT INTO delivery.trip_messages(run_id,trip_id,stop_id,body,sent_by) VALUES($1::uuid,$2,$3::uuid,$4,$5) RETURNING id::text,COALESCE(stop_id::text,''),body,sent_by,created_at`, run, tripID, stop, body, actor).Scan(&m.ID, &m.StopID, &m.Body, &m.SentBy, &m.CreatedAt)
 	if err != nil {
 		return m, err
 	}
@@ -60,7 +66,7 @@ func (p Postgres) SendTripMessage(ctx context.Context, tripID, stopID, body, act
 }
 
 func (p Postgres) ListTripMessages(ctx context.Context, tripID string) ([]domain.TripMessage, error) {
-	rows, err := p.Pool.Query(ctx, `SELECT m.id::text,r.trip_id,COALESCE(m.stop_id::text,''),m.body,m.sent_by,m.created_at,COALESCE(m.acknowledged_by,''),m.acknowledged_at FROM delivery.trip_messages m JOIN delivery.runs r ON r.id=m.run_id WHERE r.trip_id=$1 ORDER BY m.created_at,m.id`, tripID)
+	rows, err := p.Pool.Query(ctx, `SELECT m.id::text,m.trip_id,COALESCE(m.stop_id::text,''),m.body,m.sent_by,m.created_at,COALESCE(m.acknowledged_by,''),m.acknowledged_at FROM delivery.trip_messages m WHERE m.trip_id=$1 ORDER BY m.created_at,m.id`, tripID)
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +89,7 @@ func (p Postgres) AcknowledgeTripMessage(ctx context.Context, tripID, messageID,
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	var m domain.TripMessage
-	err = tx.QueryRow(ctx, `UPDATE delivery.trip_messages SET acknowledged_by=COALESCE(acknowledged_by,$3),acknowledged_at=COALESCE(acknowledged_at,now()) WHERE id=$1::uuid AND run_id=(SELECT id FROM delivery.runs WHERE trip_id=$2) RETURNING id::text,$2,COALESCE(stop_id::text,''),body,sent_by,created_at,acknowledged_by,acknowledged_at`, messageID, tripID, actor).Scan(&m.ID, &m.TripID, &m.StopID, &m.Body, &m.SentBy, &m.CreatedAt, &m.AcknowledgedBy, &m.AcknowledgedAt)
+	err = tx.QueryRow(ctx, `UPDATE delivery.trip_messages SET acknowledged_by=COALESCE(acknowledged_by,$3),acknowledged_at=COALESCE(acknowledged_at,now()) WHERE id=$1::uuid AND trip_id=$2 RETURNING id::text,$2,COALESCE(stop_id::text,''),body,sent_by,created_at,acknowledged_by,acknowledged_at`, messageID, tripID, actor).Scan(&m.ID, &m.TripID, &m.StopID, &m.Body, &m.SentBy, &m.CreatedAt, &m.AcknowledgedBy, &m.AcknowledgedAt)
 	if err != nil {
 		return m, err
 	}

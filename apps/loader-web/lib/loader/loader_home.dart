@@ -25,6 +25,13 @@ class _LoaderHomeState extends State<LoaderHome> {
   void initState() {
     super.initState();
     widget.controller.load();
+    widget.controller.startAutoRefresh();
+  }
+
+  @override
+  void dispose() {
+    widget.controller.stopAutoRefresh();
+    super.dispose();
   }
 
   void _open(LoadingTrip trip) {

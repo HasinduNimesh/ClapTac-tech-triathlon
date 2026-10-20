@@ -59,6 +59,7 @@ func (s Service) List(ctx context.Context, profile *authorization.Profile, date 
 			continue
 		}
 		item := tripSummary(t)
+		item["deliveryDate"] = date
 		for k, v := range planningInfo(t) {
 			item[k] = v
 		}
@@ -67,6 +68,7 @@ func (s Service) List(ctx context.Context, profile *authorization.Profile, date 
 			item["loadingStatus"] = sess.Status
 			item["loadedCount"], item["shortfallCount"], item["pendingCount"] = counts(loads)
 			item["manualEntryCount"] = manualEntryCount(loads)
+			item["openShortfallCount"], item["openChilledShortfall"] = s.openShortfalls(ctx, loads, t.Allocations)
 			item["planRef"] = sess.PlanRef
 			item["preparedPlanVersion"] = sess.PlanVersion
 			item["planChanged"] = sess.Status == domain.SessionInProgress && sess.PlanVersion < t.PlanVersion
@@ -75,6 +77,7 @@ func (s Service) List(ctx context.Context, profile *authorization.Profile, date 
 			item["loadingStatus"] = domain.SessionPending
 			item["loadedCount"], item["shortfallCount"], item["pendingCount"] = 0, 0, len(t.Allocations)
 			item["manualEntryCount"] = 0
+			item["openShortfallCount"], item["openChilledShortfall"] = 0, false
 		}
 		item["acknowledgedVersion"] = acknowledgedVersion(t, profile)
 		item["acknowledgedAt"] = acknowledgedAt(t, profile)
@@ -1107,6 +1110,39 @@ func counts(loads []domain.OrderLoad) (loaded, short, pending int) {
 		}
 	}
 	return
+}
+
+// openShortfalls counts the short lines still waiting on the dispatcher: not decided yet, held, or moved to the next
+// run while the order is still on the confirmed plan. shortfallCount stays the number of short lines reported, so a
+// trip whose shortfalls have all been decided is no longer something the dispatcher has to act on. It also says whether
+// any open line is chilled, which is what makes a shortfall critical (the vehicle being a reefer does not).
+func (s Service) openShortfalls(ctx context.Context, loads []domain.OrderLoad, allocations []domain.PlanningAlloc) (int, bool) {
+	issues := map[string][]domain.Issue{}
+	for _, l := range loads {
+		if l.Status == domain.LoadShortfall {
+			issues[l.ID], _ = s.Repo.ListIssues(ctx, l.ID)
+		}
+	}
+	onPlan := map[string]bool{}
+	for _, a := range allocations {
+		onPlan[a.OrderID] = true
+	}
+	return countOpenShortfalls(loads, issues, onPlan)
+}
+
+func countOpenShortfalls(loads []domain.OrderLoad, issues map[string][]domain.Issue, onPlan map[string]bool) (int, bool) {
+	_, undecided, moveUnpublished := departureBlockers(loads, issues, onPlan)
+	open := map[string]bool{}
+	for _, id := range append(undecided, moveUnpublished...) {
+		open[id] = true
+	}
+	hasChilled := false
+	for _, l := range loads {
+		if open[l.OrderID] && chilled(l.TemperatureRequirement) {
+			hasChilled = true
+		}
+	}
+	return len(open), hasChilled
 }
 
 func actor(p *authorization.Profile) string {
