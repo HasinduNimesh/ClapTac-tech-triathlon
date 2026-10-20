@@ -73,7 +73,7 @@ class SqliteSyncQueue implements SyncQueue {
   @override
   Future<List<SyncEvent>> pending() async {
     final rows = await (await db).query('operations',
-        columns: ['event_json'], where: 'owner_id = ? AND state != ?', whereArgs: [owner, 'synced'], orderBy: 'sequence ASC');
+        columns: ['event_json'], where: 'owner_id = ? AND state NOT IN (?, ?)', whereArgs: [owner, 'synced', 'discarded'], orderBy: 'sequence ASC');
     return [for (final row in rows) _event(row['event_json'] as String)];
   }
 
@@ -82,8 +82,8 @@ class SqliteSyncQueue implements SyncQueue {
   Future<QueuedOperation?> first() async {
     final rows = await (await db).query('operations',
         columns: ['event_json', 'state', 'failure'],
-        where: 'owner_id = ? AND state != ?',
-        whereArgs: [owner, 'synced'],
+        where: 'owner_id = ? AND state NOT IN (?, ?)',
+        whereArgs: [owner, 'synced', 'discarded'],
         orderBy: 'sequence ASC',
         limit: 1);
     if (rows.isEmpty) return null;
@@ -101,8 +101,8 @@ class SqliteSyncQueue implements SyncQueue {
   Future<QueuedOperation?> next({Set<String> skipTrips = const {}}) async {
     final rows = await (await db).query('operations',
         columns: ['event_json', 'state', 'failure'],
-        where: 'owner_id = ? AND state != ?',
-        whereArgs: [owner, 'synced'],
+        where: 'owner_id = ? AND state NOT IN (?, ?)',
+        whereArgs: [owner, 'synced', 'discarded'],
         orderBy: 'sequence ASC');
     final items = [
       for (final row in rows)
@@ -119,6 +119,26 @@ class SqliteSyncQueue implements SyncQueue {
   Future<void> markSynced(String idempotencyKey) => _setState(idempotencyKey, 'synced', '');
 
   Future<void> markBlocked(String idempotencyKey, String reason) => _setState(idempotencyKey, 'blocked', reason);
+
+  /// Drops every unsent update that belongs to one of [tripIds]. The driver chooses this, for trips the server has
+  /// already finished and so will never take: it is not sent and it no longer holds anything up. The row stays in
+  /// the database as `discarded` with the reason, so nothing disappears without a trace. Returns how many were dropped.
+  Future<int> discardTrips(Set<String> tripIds) async {
+    if (tripIds.isEmpty) return 0;
+    final rows = await (await db).query('operations',
+        columns: ['operation_id', 'event_json', 'state', 'failure'],
+        where: 'owner_id = ? AND state NOT IN (?, ?)',
+        whereArgs: [owner, 'synced', 'discarded'],
+        orderBy: 'sequence ASC');
+    var dropped = 0;
+    for (final row in rows) {
+      final item = QueuedOperation(_event(row['event_json'] as String), row['state'] as String, row['failure'] as String);
+      if (!tripIds.contains(tripOf(item))) continue;
+      await _setState(row['operation_id'] as String, 'discarded', 'Discarded by the driver: the trip was already finished on Waypoint');
+      dropped++;
+    }
+    return dropped;
+  }
 
   Future<void> _setState(String operationId, String state, String failure) async {
     await (await db).update('operations', {'state': state, 'failure': failure},

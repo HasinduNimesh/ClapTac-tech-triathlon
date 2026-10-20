@@ -91,6 +91,9 @@ class DriverSession extends ChangeNotifier {
 
   static const planConflictId = 'plan-conflict';
 
+  /// The sync card that offers to discard saved updates for a trip Waypoint has already finished.
+  static const finishedTripUpdatesId = 'finished-trip-updates';
+
   /// Phone settings: low-data mode (DR-6) and the first-run sheet (DR-8). Null in tests that do not need them.
   final DriverPrefs? prefs;
 
@@ -390,7 +393,19 @@ class DriverSession extends ChangeNotifier {
       SyncProgress.offline => ('Waiting for connection', syncDetail ?? 'Saved updates will retry when Waypoint can be reached.', NoteTone.offline),
       SyncProgress.needsAttention => ('Sync needs attention', syncDetail ?? 'A saved update needs review before later updates can sync.', NoteTone.danger),
     };
-    return [UpdateItem(title: title, detail: detail, time: clockLabel(_clock()), tone: tone), ..._messageItems, ...updates];
+    // A sync problem caused by a trip Waypoint has already finished can only be cleared by dropping those updates.
+    final discardable = syncProgress == SyncProgress.needsAttention && hasFinishedTripUpdates;
+    return [
+      UpdateItem(
+        id: discardable ? finishedTripUpdatesId : null,
+        title: title,
+        detail: discardable ? '$detail Tap here to discard them.' : detail,
+        time: clockLabel(_clock()),
+        tone: tone,
+      ),
+      ..._messageItems,
+      ...updates,
+    ];
   }
 
   /// Dispatch's messages as Updates entries, unread ones first. Opening one shows it in full and, when
@@ -434,6 +449,27 @@ class DriverSession extends ChangeNotifier {
   Future<void> retrySync() async {
     await worker?.syncNow();
     await _refreshPending();
+  }
+
+  /// Whether saved updates remain that belong to a trip the server has already finished. They can never be sent,
+  /// so the driver is offered a way to drop them. The trip on screen is never one of them.
+  bool get hasFinishedTripUpdates => _pendingCount > 0 && _finishedTripIds().isNotEmpty;
+
+  Set<String> _finishedTripIds() {
+    final finished = {...?worker?.finishedTrips};
+    finished.remove(_baseTrip?.tripId);
+    return finished;
+  }
+
+  /// Drops the saved updates for trips the server has already finished (see [hasFinishedTripUpdates]). Returns how
+  /// many were dropped. Updates for the current trip are never touched.
+  Future<int> discardFinishedTripUpdates() async {
+    final source = queue;
+    if (source is! SqliteSyncQueue) return 0;
+    final dropped = await source.discardTrips(_finishedTripIds());
+    await worker?.syncNow();
+    await _refreshPending();
+    return dropped;
   }
 
   bool get usesIdentityProvider => auth != null;

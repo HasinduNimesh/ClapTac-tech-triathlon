@@ -375,6 +375,10 @@ class _DriverHomeState extends State<_DriverHome> {
       );
       return;
     }
+    if (id == DriverSession.finishedTripUpdatesId) {
+      _discardFinishedTrips();
+      return;
+    }
     if (id != DriverSession.planConflictId) return;
     Navigator.of(context).push(MaterialPageRoute<void>(
       builder: (context) => PlanConflictScreen(
@@ -401,6 +405,29 @@ class _DriverHomeState extends State<_DriverHome> {
       case TripWrapUp.unsent:
         await askAboutUnsent(context, session, result.unsent);
     }
+  }
+
+  /// Asks first, then drops the saved updates for trips Waypoint has already finished. Those updates can never be
+  /// sent; today's trip is never touched.
+  Future<void> _discardFinishedTrips() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: const Text('Discard old updates?'),
+        content: const Text(
+          'These updates belong to a trip that Waypoint has already finished, so they cannot be sent. '
+          'Today\'s delivery is not affected.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(dialog).pop(false), child: const Text('Keep them')),
+          TextButton(onPressed: () => Navigator.of(dialog).pop(true), child: const Text('Discard')),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final dropped = await session.discardFinishedTripUpdates();
+    if (!mounted) return;
+    _notify(dropped == 1 ? 'Discarded 1 old update.' : 'Discarded $dropped old updates.');
   }
 
   @override
@@ -434,6 +461,7 @@ class _DriverHomeState extends State<_DriverHome> {
               summary: session.summary,
               onFinishTrip: _finishTrip,
               onRetryUpload: () => session.retrySync(),
+              onDiscardFinishedTrips: session.hasFinishedTripUpdates ? _discardFinishedTrips : null,
               onTabSelected: session.selectTab,
             );
         }

@@ -234,6 +234,39 @@ void main() {
     expect(requests, ['GET /api/v1/delivery/trips/trip-1']);
     expect((await queue.pending()).map((item) => item.idempotencyKey), ['first', 'second']);
   });
+
+  test('discarding a finished trip drops its updates only and keeps them out of the queue', () async {
+    await queue.enqueue(_event('old-arrival', OperationType.arrived, trip: 'trip-old'));
+    await queue.enqueue(_event('old-outcome', OperationType.stopOutcome, trip: 'trip-old', payload: {'code': 'FAILED'}));
+    await queue.enqueue(_event('new-arrival', OperationType.arrived, trip: 'trip-new'));
+
+    expect(await queue.discardTrips({}), 0);
+    expect(await queue.discardTrips({'trip-old'}), 2);
+
+    expect((await queue.pending()).map((item) => item.idempotencyKey), ['new-arrival']);
+    expect((await queue.first())!.event.idempotencyKey, 'new-arrival');
+    // It survives a restart as discarded, not as pending, and another driver's queue is untouched.
+    expect((await (await openQueue('driver-one')).pending()).map((item) => item.idempotencyKey), ['new-arrival']);
+    expect(await queue.discardTrips({'trip-old'}), 0);
+  });
+
+  test('the worker reports which trips the server has already finished', () async {
+    await queue.enqueue(_event('old-arrival', OperationType.arrived, trip: 'trip-old'));
+    await queue.enqueue(_event('new-arrival', OperationType.arrived, trip: 'trip-new'));
+    final worker = _worker(queue, MockClient((request) async {
+      if (request.method == 'GET') {
+        return http.Response(jsonEncode({'run': {'status': request.url.path.endsWith('trip-old') ? 'completed' : 'prepared'}}), 200);
+      }
+      return http.Response('{}', 500);
+    }));
+    final done = _nextProgress(worker, SyncProgress.needsAttention);
+    worker.start();
+    await done;
+    await worker.syncNow();
+    worker.stop();
+
+    expect(worker.finishedTrips, {'trip-old'});
+  });
 }
 
 SyncEvent _incident(String id) => _event(id, OperationType.incidentReport,
