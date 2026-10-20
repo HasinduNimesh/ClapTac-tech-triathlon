@@ -51,6 +51,25 @@ def load_catalog(path: str = str(CATALOG_PATH)) -> Catalog:
     return Catalog(version=raw["version"], brands=brands)
 
 
+def catalog_from_products(brand: str, items: list[dict]) -> Catalog:
+    """Builds the catalog from the live product list. Rows that are not a complete, sensible product are skipped,
+    so a bad row can never become an order line."""
+    products = []
+    for raw in items:
+        try:
+            product = Product(
+                id=str(raw["id"]), family=str(raw["family"]).strip().lower(), name=str(raw["name"]),
+                size=str(raw.get("size") or ""), pack=str(raw["pack"]), unitsPerPack=int(raw["unitsPerPack"]),
+                packWeightKg=float(raw["packWeightKg"]), packVolumeM3=float(raw["packVolumeM3"]),
+                temperature=str(raw["temperature"]), aliases=(),
+            )
+        except (KeyError, TypeError, ValueError):
+            continue
+        if product.family and product.unitsPerPack > 0 and product.temperature in ("ambient", "chilled"):
+            products.append(product)
+    return Catalog(version="live", brands={brand: tuple(products)})
+
+
 _UNIT_WORDS = [
     (r"millilitres?|milliliters?|mls?", "ml"),
     (r"litres?|liters?|ltrs?|l", "l"),

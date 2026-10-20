@@ -13,7 +13,7 @@ from langgraph.graph import END, START, StateGraph
 
 from .. import trace
 from ..llm import UNTRUSTED_NOTE
-from .catalog import load_catalog
+from .catalog import Catalog, catalog_from_products
 from .resolve import WEEKDAYS, group_drafts, pick_previous, resolve_item, resolve_needed_by
 
 MAX_ITEMS = 25
@@ -32,6 +32,7 @@ class OrderState(TypedDict, total=False):
     questions: list[dict]
     previous_order: dict | None
     needed_by: str | None
+    catalog: Catalog
 
 
 def _function(families: list[str]) -> dict:
@@ -91,17 +92,20 @@ async def load_context(state: OrderState, config) -> dict:
     # Only this outlet's orders are returned for a Store Manager; keep the last few.
     own = [o for o in orders if o.get("outletId") == state["outlet_id"]]
     own.sort(key=lambda o: str(o.get("createdAt", "")), reverse=True)
+    brand = str(outlet.get("brand", ""))
+    # The live product list, so a product added, renamed or retired in master data is what the assistant works from.
+    catalog = catalog_from_products(brand, await business.products(state["token"], state.get("correlation_id", "")))
     trace.of(config).add(
         trace.KIND_TOOL, "load_context",
-        "Read the outlet's brand to pick the right product catalog, and its recent orders so 'same as last time' can be resolved. "
-        "Both reads use the caller's own token.",
-        "ok", {"brand": str(outlet.get("brand", "")), "recentOrders": len(own[:8])})
-    return {"brand": str(outlet.get("brand", "")), "history": own[:8]}
+        "Read the outlet's brand and live product list, and its recent orders so 'same as last time' can be resolved. "
+        "All reads use the caller's own token.",
+        "ok", {"brand": brand, "products": len(catalog.products(brand)), "recentOrders": len(own[:8])})
+    return {"brand": brand, "history": own[:8], "catalog": catalog}
 
 
 async def read_text(state: OrderState, config) -> dict:
     llm = config["configurable"]["llm"]
-    catalog = load_catalog()
+    catalog = state["catalog"]
     families = catalog.families(state["brand"])
     listing = "; ".join(
         f"{family} ({', '.join(p.name + ' per ' + p.pack + ' of ' + str(p.unitsPerPack) for p in products)})"
@@ -121,7 +125,7 @@ async def read_text(state: OrderState, config) -> dict:
 
 
 def match_products(state: OrderState, config) -> dict:
-    catalog = load_catalog()
+    catalog = state["catalog"]
     families = catalog.families(state["brand"])
     extraction: dict[str, Any] = state.get("extraction") or {}
     rec = trace.of(config)
@@ -182,7 +186,7 @@ def build_graph():
 
 
 def response(state: OrderState) -> dict:
-    catalog = load_catalog()
+    catalog = state["catalog"]
     lines = state.get("lines", [])
     return {
         "drafts": group_drafts(lines),
