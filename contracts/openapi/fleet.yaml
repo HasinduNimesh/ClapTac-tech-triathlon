@@ -52,6 +52,51 @@ paths:
       responses:
         "200": { description: Updated }
         "400": { description: Invalid status }
+  /fleet/incidents:
+    get:
+      operationId: listIncidents
+      security: [{ bearerAuth: [] }]
+      description: "Requires fleet:view or fleet:read-internal. Vehicle incidents such as breakdowns."
+      parameters:
+        - { name: openOnly, in: query, required: false, schema: { type: boolean } }
+      responses:
+        "200": { description: "Incident list" }
+    post:
+      operationId: createIncident
+      security: [{ bearerAuth: [] }]
+      description: "Requires fleet:update. Records a vehicle incident. Send an Idempotency-Key header."
+      responses:
+        "201": { description: "Created" }
+        "400": { description: "Invalid incident" }
+  /fleet/vehicles/{id}/master-data:
+    put:
+      operationId: updateVehicleMasterData
+      security: [{ bearerAuth: [] }]
+      description: "Requires fleet:update. Updates a vehicle's master data."
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: "Updated" }
+        "404": { description: "Vehicle not found" }
+  /fleet/fuel/entries:
+    post:
+      operationId: recordFuel
+      security: [{ bearerAuth: [] }]
+      description: "Requires fleet:update. Records a fuel purchase against a vehicle and week."
+      responses:
+        "201": { description: "Recorded" }
+        "400": { description: "Invalid entry" }
+  /fleet/fuel/ledger:
+    get:
+      operationId: fuelLedger
+      security: [{ bearerAuth: [] }]
+      description: "Requires fleet:view or fleet:read-internal. Weekly fuel quota and use per vehicle."
+      parameters:
+        - { name: weekOf, in: query, required: true, schema: { type: string, format: date } }
+      responses:
+        "200": { description: "Ledger" }
+        "400": { description: "weekOf required" }
+
 components:
   securitySchemes:
     bearerAuth:

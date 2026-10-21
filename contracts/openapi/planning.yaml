@@ -357,6 +357,44 @@ paths:
         "200": { description: Planning state and persisted stop times }
         "401": { description: Unauthenticated }
         "403": { description: Missing internal-read scope }
+  /planning/plans/{id}/revise:
+    post:
+      operationId: revisePlan
+      security: [{ bearerAuth: [] }]
+      description: "Requires plan:update. Reopens a locked (confirmed) plan so it can be changed; the plan goes back to validated. No confirmation is asked, so clients must confirm with the user first. A later reset deletes the plan's trips and allocations."
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: "Plan reopened" }
+        "404": { description: "Plan not found" }
+        "409": { description: "Plan is not published" }
+  /planning/disruption-risks:
+    get:
+      operationId: listDisruptionRisks
+      security: [{ bearerAuth: [] }]
+      description: "Requires plan:view. Open and recent disruption risks (weather, road, vehicle) that may affect a plan."
+      parameters:
+        - { name: date, in: query, required: false, schema: { type: string, format: date } }
+      responses:
+        "200": { description: "Risk list" }
+    post:
+      operationId: createDisruptionRisk
+      security: [{ bearerAuth: [] }]
+      description: "Requires plan:update. Records a disruption risk."
+      responses:
+        "201": { description: "Created" }
+        "400": { description: "Invalid risk" }
+  /planning/disruption-risks/{riskId}/override:
+    post:
+      operationId: overrideDisruptionRisk
+      security: [{ bearerAuth: [] }]
+      description: "Requires plan:update. A dispatcher accepts or overrides a risk with a reason."
+      parameters:
+        - { name: riskId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: "Override recorded" }
+        "404": { description: "Risk not found" }
+
 components:
   securitySchemes:
     bearerAuth:
