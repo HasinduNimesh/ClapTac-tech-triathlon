@@ -51,6 +51,8 @@ func main() {
 		AccessKey: getenv("MINIO_ACCESS_KEY", "s3mock"),
 		SecretKey: getenv("MINIO_SECRET_KEY", "s3mock"),
 		Region:    getenv("MINIO_REGION", "us-east-1"),
+		// Set MINIO_AUTO_CREATE_BUCKET=false for a hosted store whose key cannot create buckets (Cloudflare R2).
+		SkipBucketCreate: os.Getenv("MINIO_AUTO_CREATE_BUCKET") == "false",
 	})
 	if os.Getenv("MINIO_ENDPOINT") == "" {
 		if err := objectstore.RequireDurable(app.Config.IsLocal(), ""); err != nil {
