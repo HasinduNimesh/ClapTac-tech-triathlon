@@ -379,7 +379,7 @@ func writeErr(w http.ResponseWriter, err error) bool {
 	case strings.HasPrefix(msg, "conflict"):
 		apierrors.Conflict(w, msg)
 	default:
-		apierrors.Internal(w, "unexpected error")
+		apierrors.InternalCause(w, err)
 	}
 	return true
 }

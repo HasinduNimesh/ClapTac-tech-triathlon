@@ -2,6 +2,7 @@ package errors
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 )
 
@@ -55,6 +56,17 @@ func NotFound(w http.ResponseWriter, detail string) {
 
 func Internal(w http.ResponseWriter, detail string) {
 	Write(w, http.StatusInternalServerError, "Internal Server Error", detail)
+}
+
+// InternalCause answers 500 and records why. The caller sees only "unexpected error"; the real error is written to
+// the service log, because a 500 whose cause is not logged cannot be diagnosed afterwards.
+func InternalCause(w http.ResponseWriter, err error) {
+	msg := err.Error()
+	if len(msg) > 400 {
+		msg = msg[:400]
+	}
+	slog.Error("internal_error", "error", msg)
+	Internal(w, "unexpected error")
 }
 
 func Conflict(w http.ResponseWriter, detail string) {

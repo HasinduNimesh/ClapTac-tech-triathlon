@@ -405,7 +405,7 @@ func writeServiceError(w http.ResponseWriter, err error) bool {
 			apierrors.BadRequest(w, err.Error())
 			return true
 		}
-		apierrors.Internal(w, "unexpected error")
+		apierrors.InternalCause(w, err)
 	}
 	return true
 }

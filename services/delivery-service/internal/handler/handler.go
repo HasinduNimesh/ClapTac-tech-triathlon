@@ -416,7 +416,7 @@ func writeErr(w http.ResponseWriter, err error) bool {
 	case strings.Contains(msg, "object store"):
 		apierrors.Internal(w, msg)
 	default:
-		apierrors.Internal(w, "unexpected error")
+		apierrors.InternalCause(w, err)
 	}
 	return true
 }
