@@ -53,7 +53,9 @@ def _function(families: list[str]) -> dict:
                         "required": ["text", "family", "size", "quantity", "quantityUnit", "asUsual"],
                         "properties": {
                             "text": {"type": "string", "description": "The words the person used for this item, copied exactly."},
-                            "family": {"type": "string", "enum": families + ["unknown"], "description": "Product family from the list, or unknown."},
+                            # No enum: a long list of values from the live catalog is rejected by some providers (HTTP 400).
+                            # The allowed families are in the prompt, and code maps any other word to "not in catalog".
+                            "family": {"type": "string", "description": "Product family from the allowed list exactly as written there, or unknown."},
                             "size": {"type": ["string", "null"], "description": "Only a size the person literally wrote, like '1 L' or '500 ml'. Null for vague words like 'big'."},
                             "quantity": {"type": ["number", "null"], "description": "Number the person wrote, or null."},
                             "quantityUnit": {"type": "string", "enum": ["pack", "item", "unspecified"], "description": "pack for crates, cases, bags, trays, cartons, bales, bundles; item for single bottles, cups, pieces."},
