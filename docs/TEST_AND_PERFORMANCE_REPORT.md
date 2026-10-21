@@ -13,7 +13,7 @@ This report says what has been tested, what the results were, how fast the syste
 | Browser end-to-end on production (4 roles, phone) | Passed on 20 Oct (order → plan → load → shortfall decision → driver delivery with offline sync → receipt → audit). Re-run on 21 Oct: order placement passed; the plan-to-delivery steps wait for a date without a published plan (section 6) |
 | Every page, desktop and 375 px | 19 pages × 2 widths: no console errors, no 5xx, no raw JSON; **one** sideways-scroll defect found and fixed (section 7) |
 | Forced failures (500 / 409 / offline) | Plain messages on all pages (PR #158) |
-| Latency, signed-in users | Dispatcher: p50 232 ms, p95 650 ms, p99 936 ms. Store manager: p50 218 ms, p95 413 ms, p99 553 ms (section 4) |
+| Latency, signed-in users | Dispatcher: p50 232 ms, p95 650 ms, p99 936 ms. Store manager: p50 218 ms, p95 413 ms, p99 553 ms (section 4). **A short burst of HTTP 500 errors occurred during the dispatcher run (section 6, item 1)** |
 | Latency, public pages and sign-in gate | p50 ≈ 110 ms, p95 ≈ 200 ms, p99 ≈ 400–480 ms at 12 concurrent users, 0 failed requests |
 | Capacity limit | **Not measured.** Production is a 2-CPU VM that is shared with another application; only a gentle load was applied (section 5) |
 
@@ -85,8 +85,8 @@ Measured from Colombo, includes ~100 ms network round trip. Dispatcher: 78 page 
 |---|---|---|---|---|---|---|
 | GET /delivery/trips | 10 | 676 | 1,118 | 1,118 | 1,118 | 0 |
 | GET /delivery/trips/:id | 10 | 513 | 960 | 960 | 960 | 0 |
-| GET /planning/plans | 105 | 539 | 936 | 1,037 | 1,099 | 32 (4xx, "no plan for that date") |
-| GET /loading/trips | 82 | 430 | 885 | 1,115 | 1,115 | 25 (4xx, "no trips for that date") |
+| GET /planning/plans | 105 | 539 | 936 | 1,037 | 1,099 | 32 (**HTTP 500**, one burst; see section 6) |
+| GET /loading/trips | 82 | 430 | 885 | 1,115 | 1,115 | 25 (**HTTP 500**, same burst) |
 | GET /fleet/incidents | 195 | 268 | 500 | 629 | 650 | 0 |
 | GET /fleet/fuel/ledger | 10 | 194 | 392 | 392 | 392 | 0 |
 | GET /orders | 98 | 232 | 379 | 468 | 468 | 0 |
@@ -102,7 +102,7 @@ Measured from Colombo, includes ~100 ms network round trip. Dispatcher: 78 page 
 | GET /orders/cutoff | 10 | 164 | 263 | 263 | 263 | 0 |
 | GET /shared/profiles/me | 78 | 111 | 142 | 308 | 308 | 0 |
 
-(Other endpoints, with 9–10 calls each, answered at p95 below 320 ms.) All values in milliseconds. No 5xx responses.
+(Other endpoints, with 9–10 calls each, answered at p95 below 320 ms.) All values in milliseconds. Latency percentiles are for successful calls only. **The run also hit 500 responses** on `GET /planning/plans`, `GET /loading/trips` and the planning service's internal trip calls — about 94 in a burst lasting under a minute (Prometheus: 94 server errors in that 5-minute window, none since); see section 6, item 1.
 
 ### 4.2 Store manager, per endpoint
 
@@ -143,7 +143,7 @@ The "all requests" tail comes from downloading the main JavaScript bundle on eve
 
 ## 5. What the load test did and did not cover
 
-Done: sustained read traffic on the public surface (12 users, 6.5 minutes) and signed-in read traffic from two roles at once for ~105 s each (≈ 25 calls per second together), with no errors and no 5xx.
+Done: sustained read traffic on the public surface (12 users, 6.5 minutes) and signed-in read traffic from one dispatcher and one store-manager browser for ~105 s each (about 12 calls per second each, run one after the other), with no errors from the store manager and a short burst of 500 errors on the dispatcher side (section 6, item 1).
 
 Not done on purpose: the production VM has two CPUs, is shared with another application and was already near its CPU limit, and the product is in live use. A stress test, spike test or soak test would risk an outage. Those tests need a separate staging copy of the stack (section 8).
 
@@ -157,11 +157,12 @@ Keep `PEAK` low against production. The script aborts itself when failures excee
 
 ## 6. Known gaps found during this run
 
-1. **"Revise published plan" has no confirmation.** It reopens a locked plan with one click. The plan can then be reset and generated again, and a reset deletes the plan's trips and allocations; nothing checks whether a trip has already run. It should ask for confirmation, and a reset should be refused once a trip has started. For this reason the plan-to-delivery steps were not repeated for a date that already has a delivered trip; they will be run on a date without a plan.
-2. **No order cancellation** in the product; a mistaken order can only be deferred by the dispatcher.
-3. **Hashed JavaScript files have no long-term cache header** (only ETag and Last-Modified), so a returning browser revalidates every file. Adding `Cache-Control: public, max-age=31536000, immutable` for `/assets/` is a one-line change in the web server configuration.
-4. Fractional order quantities (2.5) are silently rounded down; error sentences are English only; the driver app shows "5 units on board" after a 4-unit partial load.
-5. Two moderate npm advisories (react-router) await a planned major upgrade.
+1. **A burst of HTTP 500 errors, cause unknown.** At 09:58 (Colombo) during the dispatcher latency run, `GET /planning/plans`, `GET /loading/trips` and the planning service's internal trip calls answered 500 for about a minute (94 responses across the services in Prometheus; none before or since, and the same pages answered 200 immediately afterwards). The failures returned in 10–70 ms, so they were not timeouts, and the database log shows nothing. The services logged the status but **not the reason**, so the cause could not be found. This needs: (a) logging the underlying error whenever a request ends in 5xx, and (b) a repeat of the run in staging while watching the new "Server errors" panel. Until then, treat the planning/loading read path as not proven under rapid repeated page loads. (An earlier version of this report called these responses expected empty-state 4xx; that was wrong. A date with no plan correctly answers 404.)
+2. **"Revise published plan" has no confirmation.** It reopens a locked plan with one click. The plan can then be reset and generated again, and a reset deletes the plan's trips and allocations; nothing checks whether a trip has already run. It should ask for confirmation, and a reset should be refused once a trip has started. For this reason the plan-to-delivery steps were not repeated for a date that already has a delivered trip; they will be run on a date without a plan.
+3. **No order cancellation** in the product; a mistaken order can only be deferred by the dispatcher.
+4. **Hashed JavaScript files have no long-term cache header** (only ETag and Last-Modified), so a returning browser revalidates every file. Adding `Cache-Control: public, max-age=31536000, immutable` for `/assets/` is a one-line change in the web server configuration.
+5. Fractional order quantities (2.5) are silently rounded down; error sentences are English only; the driver app shows "5 units on board" after a 4-unit partial load.
+6. Two moderate npm advisories (react-router) await a planned major upgrade.
 
 ## 7. Defects found and fixed in this campaign (all verified on production unless noted)
 
