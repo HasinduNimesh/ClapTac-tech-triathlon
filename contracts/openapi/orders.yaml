@@ -209,6 +209,60 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "409": { description: No receipt or idempotency conflict }
+  /orders/export:
+    get:
+      operationId: exportOrdersJson
+      security: [{ bearerAuth: [] }]
+      description: "Requires order:view-all. JSON export for the operations team; see docs/api/order-import-export-v1.md."
+      responses:
+        "200": { description: "Orders export" }
+        "403": { description: "Role not allowed" }
+  /orders/export.csv:
+    get:
+      operationId: exportOrdersCsv
+      security: [{ bearerAuth: [] }]
+      description: "Requires order:view-all. CSV export; see docs/api/order-import-export-v1.md."
+      responses:
+        "200": { description: "text/csv" }
+        "403": { description: "Role not allowed" }
+  /orders/import:
+    post:
+      operationId: importOrdersJson
+      security: [{ bearerAuth: [] }]
+      description: "Requires order:view-all. Imports a JSON batch; see docs/api/order-import-export-v1.md."
+      responses:
+        "200": { description: "Import result" }
+        "400": { description: "Invalid batch" }
+        "403": { description: "Role not allowed" }
+  /orders/import.csv:
+    post:
+      operationId: importOrdersCsv
+      security: [{ bearerAuth: [] }]
+      description: "Requires order:view-all. Imports a CSV batch; see docs/api/order-import-export-v1.md."
+      responses:
+        "200": { description: "Import result" }
+        "400": { description: "Invalid file" }
+        "403": { description: "Role not allowed" }
+  /orders/suggestion:
+    get:
+      operationId: suggestOrder
+      security: [{ bearerAuth: [] }]
+      description: "Requires order:create. Suggests quantities for the signed-in outlet from its recent orders. The caller still submits the order."
+      responses:
+        "200": { description: "Suggested lines" }
+        "403": { description: "Role not allowed" }
+  /orders/{id}/custody:
+    post:
+      operationId: recordCustody
+      security: [{ bearerAuth: [] }]
+      description: "Records a custody event for an order (hand-over between loader, driver and store). Requires one of order:view-own, order:view-all, loading:update, delivery:update or receipt:confirm."
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: "Recorded" }
+        "403": { description: "Not allowed for this order" }
+        "404": { description: "Order not found" }
+
 components:
   securitySchemes:
     bearerAuth:

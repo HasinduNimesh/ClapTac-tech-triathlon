@@ -347,6 +347,70 @@ paths:
         "200": { description: Delivery outcome and metadata summary }
         "401": { description: Unauthenticated }
         "403": { description: Missing internal-read scope }
+  /delivery/trips/{tripId}/messages:
+    get:
+      operationId: listTripMessages
+      security: [{ bearerAuth: [] }]
+      description: "Messages from the dispatcher to the driver of a trip. Works before a delivery run exists (messages are stored by trip)."
+      parameters:
+        - { name: tripId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: "Message list" }
+    post:
+      operationId: sendTripMessage
+      security: [{ bearerAuth: [] }]
+      description: "Requires delivery:view-all. The dispatcher sends a message to the trip's driver, for example the decision on a loading shortfall."
+      parameters:
+        - { name: tripId, in: path, required: true, schema: { type: string } }
+      responses:
+        "201": { description: "Sent" }
+        "404": { description: "Trip not found" }
+  /delivery/trips/{tripId}/messages/{messageId}/ack:
+    post:
+      operationId: ackTripMessage
+      security: [{ bearerAuth: [] }]
+      description: "The driver acknowledges a message."
+      parameters:
+        - { name: tripId, in: path, required: true, schema: { type: string } }
+        - { name: messageId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: "Acknowledged" }
+        "404": { description: "Not found" }
+  /delivery/trips/{tripId}/lateness-history:
+    get:
+      operationId: tripLatenessHistory
+      security: [{ bearerAuth: [] }]
+      description: "Requires delivery:view-all. How the estimated arrival of each stop moved during the run."
+      parameters:
+        - { name: tripId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: "History" }
+  /delivery/trips/{tripId}/distance:
+    get:
+      operationId: tripDistance
+      security: [{ bearerAuth: [] }]
+      description: "Requires delivery:view-all. Distance driven so far, from driver location updates."
+      parameters:
+        - { name: tripId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: "Distance" }
+  /delivery/internal/outlets/last-served:
+    get:
+      operationId: outletsLastServed
+      security: [{ bearerAuth: [] }]
+      description: "Service-to-service (internal scope). Last delivered date per outlet; used by the planner's fairness rules."
+      responses:
+        "200": { description: "Map of outlet to date" }
+  /delivery/internal/outlets/last-attempted:
+    get:
+      operationId: outletsLastAttempted
+      security: [{ bearerAuth: [] }]
+      description: "Service-to-service (internal scope). Last attempted date per outlet before a date."
+      parameters:
+        - { name: before, in: query, required: false, schema: { type: string, format: date } }
+      responses:
+        "200": { description: "Map of outlet to date" }
+
 components:
   schemas:
     SyncConflict:

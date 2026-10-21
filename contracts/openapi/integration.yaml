@@ -23,6 +23,23 @@ paths:
       security: [{ bearerAuth: [] }]
       responses:
         "202": { description: Adapter placeholder }
+  /integrations/notifications/status:
+    post:
+      operationId: smsStatusCallback
+      security: []
+      description: "Provider callback (Twilio). No bearer token; the X-Twilio-Signature header is verified."
+      responses:
+        "200": { description: "Accepted" }
+        "403": { description: "Bad signature" }
+  /integrations/notifications/gateway:
+    post:
+      operationId: smsGatewayWebhook
+      security: []
+      description: "Provider callback (cellular gateway). No bearer token; the X-CG-Signature header is an HMAC of the body. SMS_SENT marks a text sent and SMS_FAILED marks it failed. The gateway sends no delivery receipt, so SENT is final."
+      responses:
+        "200": { description: "Accepted or ignored" }
+        "401": { description: "Bad signature" }
+
 components:
   securitySchemes:
     bearerAuth:

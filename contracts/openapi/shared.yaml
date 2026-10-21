@@ -212,6 +212,110 @@ paths:
       responses:
         "204": { description: Deleted }
         "404": { description: Not found or not owned by the caller }
+  /shared/products:
+    get:
+      operationId: listProducts
+      security: [{ bearerAuth: [] }]
+      description: "Requires outlets:read-internal, order:view-all or order:view-own. The product list the caller can order from (a store manager gets their own outlet's range). The order helper reads this list too, so master-data changes reach it at once."
+      responses:
+        "200": { description: "Product list" }
+  /shared/outlets/{id}/access-instructions/confirm:
+    post:
+      operationId: confirmAccessInstructions
+      security: [{ bearerAuth: [] }]
+      description: "Requires order:view-own. The store manager confirms the outlet's delivery access instructions."
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: "Confirmed" }
+        "403": { description: "Not your outlet" }
+  /shared/outlets/{id}/notification-preferences:
+    get:
+      operationId: getNotificationPreferences
+      security: [{ bearerAuth: [] }]
+      description: "Requires master-data:update. SMS consent and alert choices for an outlet."
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: "Preferences" }
+    put:
+      operationId: putNotificationPreferences
+      security: [{ bearerAuth: [] }]
+      description: "Requires master-data:update. Sets SMS consent, phone and alert choices."
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: "Saved" }
+        "400": { description: "Invalid phone or locale" }
+  /shared/calendar/{date}:
+    put:
+      operationId: putCalendarDay
+      security: [{ bearerAuth: [] }]
+      description: "Requires master-data:update. Marks a date as an operating or non-operating day."
+      parameters:
+        - { name: date, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: "Saved" }
+  /shared/policies/current:
+    get:
+      operationId: getCurrentPolicy
+      security: [{ bearerAuth: [] }]
+      description: "Requires master-data:update or policy:read-internal. The active planning and cutoff policy."
+      responses:
+        "200": { description: "Policy" }
+    put:
+      operationId: putCurrentPolicy
+      security: [{ bearerAuth: [] }]
+      description: "Requires master-data:update. Publishes a new policy version."
+      responses:
+        "200": { description: "Saved" }
+        "400": { description: "Invalid policy" }
+  /shared/policies/preview:
+    post:
+      operationId: previewPolicy
+      security: [{ bearerAuth: [] }]
+      description: "Requires master-data:update. Shows the effect of a policy change without saving it."
+      responses:
+        "200": { description: "Preview" }
+  /shared/audit/events:
+    get:
+      operationId: searchAuditEvents
+      security: [{ bearerAuth: [] }]
+      description: "Requires audit:read. Search the audit log."
+      parameters:
+        - { name: q, in: query, required: false, schema: { type: string } }
+        - { name: action, in: query, required: false, schema: { type: string } }
+        - { name: actorId, in: query, required: false, schema: { type: string } }
+        - { name: resourceType, in: query, required: false, schema: { type: string } }
+        - { name: resourceId, in: query, required: false, schema: { type: string } }
+        - { name: from, in: query, required: false, schema: { type: string, format: date-time } }
+        - { name: to, in: query, required: false, schema: { type: string, format: date-time } }
+        - { name: limit, in: query, required: false, schema: { type: integer } }
+        - { name: offset, in: query, required: false, schema: { type: integer } }
+      responses:
+        "200": { description: "Events, newest first" }
+        "403": { description: "Role not allowed" }
+  /shared/audit/kpis:
+    get:
+      operationId: auditKpis
+      security: [{ bearerAuth: [] }]
+      description: "Requires audit:read. Headline counts for the audit page."
+      responses:
+        "200": { description: "KPIs" }
+  /shared/internal/notifications/enqueue:
+    post:
+      operationId: enqueueNotification
+      security: [{ bearerAuth: [] }]
+      description: "Service-to-service (audit:write scope). Queues an in-app notice and, with consent, an SMS."
+      responses:
+        "200": { description: "Queued or duplicate" }
+  /shared/internal/notifications/status:
+    post:
+      operationId: updateNotificationStatus
+      security: [{ bearerAuth: [] }]
+      description: "Service-to-service (notifications:write scope). Records a provider status for a queued SMS."
+      responses:
+        "200": { description: "Updated" }
 
 components:
   securitySchemes:
