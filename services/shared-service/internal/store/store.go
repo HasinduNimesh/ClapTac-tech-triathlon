@@ -348,9 +348,14 @@ type NotificationOutboxStats struct {
 	AwaitingOldestSeconds float64
 }
 
+// awaitingStatusPredicate picks the messages that still owe a final provider status. A text sent through the cellular
+// gateway (provider id "cg:...") is final at SENT: the gateway reports only SMS_SENT and SMS_FAILED and never a
+// delivery receipt, so counting those as waiting made the "status has not arrived" alert fire for every message.
+const awaitingStatusPredicate = `(status='QUEUED' OR (status='SENT' AND COALESCE(provider_message_id,'') NOT LIKE 'cg:%'))`
+
 func (s Store) NotificationOutboxStats(ctx context.Context) (NotificationOutboxStats, error) {
 	var stats NotificationOutboxStats
-	err := s.Pool.QueryRow(ctx, `SELECT count(*) FILTER(WHERE status IN ('PENDING','SENDING')),COALESCE(extract(epoch from(now()-min(created_at) FILTER(WHERE status='PENDING'))),0),count(*) FILTER(WHERE status IN ('QUEUED','SENT')),COALESCE(extract(epoch from(now()-min(updated_at) FILTER(WHERE status IN ('QUEUED','SENT')))),0) FROM shared.notification_outbox`).Scan(&stats.Pending, &stats.OldestAgeSeconds, &stats.AwaitingStatus, &stats.AwaitingOldestSeconds)
+	err := s.Pool.QueryRow(ctx, `SELECT count(*) FILTER(WHERE status IN ('PENDING','SENDING')),COALESCE(extract(epoch from(now()-min(created_at) FILTER(WHERE status='PENDING'))),0),count(*) FILTER(WHERE `+awaitingStatusPredicate+`),COALESCE(extract(epoch from(now()-min(updated_at) FILTER(WHERE `+awaitingStatusPredicate+`))),0) FROM shared.notification_outbox`).Scan(&stats.Pending, &stats.OldestAgeSeconds, &stats.AwaitingStatus, &stats.AwaitingOldestSeconds)
 	return stats, err
 }
 
