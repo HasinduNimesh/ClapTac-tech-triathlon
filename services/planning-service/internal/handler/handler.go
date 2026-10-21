@@ -403,7 +403,7 @@ func writeErr(w http.ResponseWriter, err error) bool {
 	case strings.HasPrefix(msg, "forbidden"):
 		apierrors.Forbidden(w, "acknowledgement requires an authenticated field role")
 	default:
-		apierrors.Internal(w, "unexpected error")
+		apierrors.InternalCause(w, err)
 	}
 	return true
 }

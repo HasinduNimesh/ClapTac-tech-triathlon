@@ -34,6 +34,8 @@ func Setup(serviceName, schema string) (*App, error) {
 		return nil, err
 	}
 	logger := logging.New(serviceName, cfg.LogLevel)
+	// Code that logs through the package-level slog functions then writes the same JSON lines, tagged with the service.
+	slog.SetDefault(logger)
 	var authenticator auth.Authenticator
 	if cfg.AuthDisabled {
 		logger.Warn("authentication_disabled", "environment", cfg.Environment)
