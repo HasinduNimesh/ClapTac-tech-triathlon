@@ -22,7 +22,7 @@ export function AgentAssistant(){
   async function send(e:FormEvent){
     e.preventDefault();setBusy(true);setError("");setReply("");setApproval(null);setVerified(undefined);setSources([]);
     try{const result=await apiJSON<ChatResponse>("/agent/chat",token,{method:"POST",body:JSON.stringify({message:question})});setReply(result.reply||"");setSources(result.sources||[]);setApproval(result.pendingAction||null);setVerified(result.verifiedResult);}
-    catch(err){const status=err instanceof ApiError?err.status:0;setError(status===503?t("The assistant is unavailable right now. Orders, planning, loading and delivery remain available."):String(err));}
+    catch(err){const status=err instanceof ApiError?err.status:0;setError(status===503?t("The assistant is unavailable right now. Orders, planning, loading and delivery remain available."):describeError(err));}
     finally{setBusy(false);}
   }
   async function decide(approved:boolean){if(!approval)return;setBusy(true);setError("");

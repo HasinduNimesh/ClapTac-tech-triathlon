@@ -46,7 +46,8 @@ class OpenAICompatible:
         if len(resp.content) > MAX_PROVIDER_RESPONSE:
             raise LLMUnavailable("assistant response exceeded size limit")
         if resp.status_code < 200 or resp.status_code >= 300:
-            raise LLMUnavailable(f"assistant provider returned HTTP {resp.status_code}")
+            snippet = " ".join(resp.text.split())[:200]
+            raise LLMUnavailable(f"assistant provider returned HTTP {resp.status_code}: {snippet}")
         try:
             message = resp.json()["choices"][0]["message"]
             calls = message.get("tool_calls") or []

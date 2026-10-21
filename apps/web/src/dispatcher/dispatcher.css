@@ -618,3 +618,11 @@
 
 /* W1 live queue badge in the hero */
 .dp-live-queue { margin-top: 12px; align-self: flex-start; }
+
+/* The legacy frames (Master data, Audit) hold plain forms: on a phone their labels and fields stay inside the screen. */
+@media (max-width: 480px) {
+  .dp-legacy { padding: 14px; }
+  .dp-legacy label, .dp-legacy input, .dp-legacy select, .dp-legacy textarea, .dp-legacy fieldset { max-width: 100%; min-width: 0; box-sizing: border-box; }
+  .dp-legacy .row, .dp-legacy .grid { min-width: 0; }
+  .dp-legacy .row > * { min-width: 0; }
+}

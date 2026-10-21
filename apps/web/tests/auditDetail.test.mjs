@@ -26,3 +26,8 @@ test("a store sees a shortfall as a sentence", () => {
   assert.equal(shortfallText([{ type: "DAMAGED", affectedUnits: 3 }, { type: "MISSING", affectedUnits: 2 }]), "3 units damaged; 2 units missing");
   assert.equal(shortfallText(undefined), "");
 });
+
+test("a time in the state is written as a time, not as ISO text", () => {
+  assert.equal(auditDetail({ new_state: { scheduledAt: "2026-10-20T16:35:00Z", status: "completed" } }), "Scheduled at: 20 Oct, 22:05 · Status: completed");
+  assert.equal(auditDetail({ new_state: { note: "2026-13-45T99:99:99Z" } }), "Note: 2026-13-45T99:99:99Z");
+});

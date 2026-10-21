@@ -215,3 +215,45 @@ func containsAudit(events []audit.Event, want string) bool {
 	}
 	return false
 }
+
+func TestRepeatedToolCallWithdrawsToolsAndTheModelAnswers(t *testing.T) {
+	fleet := &fakeTool{name: "GetFleetSummary", result: map[string]any{"items": []any{map[string]any{"id": "VEH035"}}}}
+	model := &fakeLLM{calls: []llm.Completion{
+		{ToolName: "GetFleetSummary", ToolArgs: map[string]any{}},
+		{ToolName: "GetFleetSummary", ToolArgs: map[string]any{}},
+		{Text: "The fleet has VEH035; availability by date is not in that data."},
+	}}
+	rec := request(t, testRouter(Handler{Authn: testAuth{}, Profiles: testProfiles{}, LLM: model, Tools: []tools.Tool{fleet}}), http.MethodPost, "/api/v1/agent/chat", "dispatch", `{"message":"Which vehicles are available tomorrow?"}`)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "VEH035") {
+		t.Fatalf("the model should have been allowed to answer: %d %s", rec.Code, rec.Body)
+	}
+	if fleet.calls != 1 {
+		t.Fatalf("the same call must not be made twice, was made %d times", fleet.calls)
+	}
+	if len(model.prompts) != 3 || len(model.prompts[2].Tools) != 0 {
+		t.Fatalf("tools must be withdrawn after a repeat: prompts=%d", len(model.prompts))
+	}
+}
+
+func TestServiceRejectionIsExplainedToTheModelNotThrownAway(t *testing.T) {
+	plan := &fakeTool{name: "GetPlan", err: statusErr(http.StatusBadRequest)}
+	model := &fakeLLM{calls: []llm.Completion{
+		{ToolName: "GetPlan", ToolArgs: map[string]any{"planId": "PLAN000008"}},
+		{Text: "I can look plans up by date. Which date?"},
+	}}
+	rec := request(t, testRouter(Handler{Authn: testAuth{}, Profiles: testProfiles{}, LLM: model, Tools: []tools.Tool{plan}}), http.MethodPost, "/api/v1/agent/chat", "dispatch", `{"message":"What does plan PLAN000008 contain?"}`)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Which date") {
+		t.Fatalf("a 400 from a tool should reach the model, not end the answer: %d %s", rec.Code, rec.Body)
+	}
+	last := model.prompts[len(model.prompts)-1]
+	if len(last.Results) != 1 || !strings.Contains(fmtAny(last.Results[0].Data["error"]), "HTTP 400") {
+		t.Fatalf("the model was not told what went wrong: %+v", last.Results)
+	}
+}
+
+type statusErr int
+
+func (e statusErr) Error() string   { return "rejected" }
+func (e statusErr) StatusCode() int { return int(e) }
+
+func fmtAny(v any) string { s, _ := v.(string); return s }
