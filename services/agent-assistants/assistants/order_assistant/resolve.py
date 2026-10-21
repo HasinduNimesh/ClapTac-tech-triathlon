@@ -58,7 +58,7 @@ def _packs(product: Product, quantity, unit: str) -> tuple[int | None, int | Non
 
 def resolve_item(item: dict, families: dict[str, list[Product]]) -> tuple[dict | None, dict | None]:
     source = str(item.get("text") or "").strip()[:200]
-    family = str(item.get("family") or "unknown")
+    family = str(item.get("family") or "unknown").strip().lower()
     candidates = families.get(family, [])
     if not candidates:
         return None, _question("not_in_catalog", source, f'"{source}" is not in your product list. Add it by hand if needed.', [])

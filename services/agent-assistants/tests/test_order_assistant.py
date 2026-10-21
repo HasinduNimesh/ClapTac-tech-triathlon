@@ -36,9 +36,9 @@ class OrderAssistantTest(unittest.TestCase):
         self.assertEqual(body["drafts"][0]["totals"], {"orderUnits": 12, "orderWeightKg": 74.2, "orderVolumeM3": 0.122})
         self.assertFalse(body["submitted"])
         # The model only ever sees the families of this outlet's brand.
-        families = llm.calls[0]["function"]["parameters"]["properties"]["items"]["items"]["properties"]["family"]["enum"]
-        self.assertIn("yoghurt", families)
-        self.assertNotIn("laptops", families)
+        system = llm.calls[0]["system"]
+        self.assertIn("yoghurt (", system)
+        self.assertNotIn("laptops", system)
 
     def test_big_milk_asks_which_size(self):
         body, _, _ = run(extraction([item("2 crates of milk, the big ones", "milk", 2)]))
@@ -146,9 +146,15 @@ class LiveCatalogTest(unittest.TestCase):
     def test_basmati_is_not_turned_into_samba(self):
         body, llm, _ = run(extraction([item("basmati rice 2 bales", "basmati", 2)]), products=LIVE)
         self.assertEqual([(l["productId"], l["quantity"]) for l in body["lines"]], [("P-BASMATI", 2)])
-        families = llm.calls[0]["function"]["parameters"]["properties"]["items"]["items"]["properties"]["family"]["enum"]
-        self.assertIn("basmati", families)
-        self.assertIn("biscuits", families)
+        # The live families are in the prompt, not in a schema enum (a long enum made the provider answer HTTP 400).
+        family = llm.calls[0]["function"]["parameters"]["properties"]["items"]["items"]["properties"]["family"]
+        self.assertNotIn("enum", family)
+        self.assertIn("basmati (", llm.calls[0]["system"])
+        self.assertIn("biscuits (", llm.calls[0]["system"])
+
+    def test_a_family_word_in_other_case_still_matches(self):
+        body, _, _ = run(extraction([item("basmati rice 2 bales", " Basmati ", 2)]), products=LIVE)
+        self.assertEqual([l["productId"] for l in body["lines"]], ["P-BASMATI"])
 
     def test_a_product_in_master_data_but_not_in_the_old_copy_can_be_ordered(self):
         body, _, _ = run(extraction([item("marie biscuits 80 g 3 cases", "biscuits", 3, size="80 g")]), products=LIVE)
