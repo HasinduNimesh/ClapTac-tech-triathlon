@@ -147,7 +147,8 @@ def create_app(cfg=None, *, authenticator=None, business=None, llm=None, trace_s
             telemetry.ASSISTANT_REQUESTS.labels(assistant, "invalid").inc()
             rec.add(trace_module.KIND_GUARDRAIL, "validate_request", f"The request was rejected before any model call: {exc}.", "rejected")
             return problem(400, "Bad Request", str(exc))
-        except LLMUnavailable:
+        except LLMUnavailable as exc:
+            logging.getLogger(SERVICE).warning("llm_unavailable assistant=%s reason=%s", assistant, exc)
             telemetry.ASSISTANT_REQUESTS.labels(assistant, "unavailable").inc()
             rec.add(trace_module.KIND_ERROR, "llm_unavailable",
                     "The model provider is not configured or failed, so the person is told to fill in the form by hand instead of getting a guess.", "error")
