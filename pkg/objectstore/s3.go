@@ -51,7 +51,10 @@ type S3 struct {
 	AccessKey string
 	SecretKey string
 	Region    string
-	HTTP      *http.Client
+	// SkipBucketCreate stops Put from asking the store to create the bucket first. A hosted store such as
+	// Cloudflare R2 with a key limited to one bucket answers that request AccessDenied, so every upload would fail.
+	SkipBucketCreate bool
+	HTTP             *http.Client
 }
 
 func (s S3) http() *http.Client {
@@ -62,8 +65,10 @@ func (s S3) http() *http.Client {
 }
 
 func (s S3) Put(ctx context.Context, key, contentType string, body []byte) error {
-	if err := s.ensureBucket(ctx); err != nil {
-		return err
+	if !s.SkipBucketCreate {
+		if err := s.ensureBucket(ctx); err != nil {
+			return err
+		}
 	}
 	return s.do(ctx, http.MethodPut, key, contentType, body)
 }

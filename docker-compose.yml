@@ -193,6 +193,11 @@ services:
       M2M_CLIENT_SECRET: ${LOADING_M2M_CLIENT_SECRET:-local-loading-m2m}
       MINIO_ENDPOINT: ${MINIO_ENDPOINT:-http://minio:9090}
       MINIO_BUCKET: ${MINIO_BUCKET:-waypoint-proof}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-s3mock}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-s3mock}
+      MINIO_REGION: ${MINIO_REGION:-us-east-1}
+      # false for a hosted store (Cloudflare R2) whose key cannot create buckets; the local mock needs true.
+      MINIO_AUTO_CREATE_BUCKET: ${MINIO_AUTO_CREATE_BUCKET:-true}
     healthcheck: *backend-healthcheck
     depends_on:
       bootstrap: { condition: service_completed_successfully }
@@ -217,6 +222,11 @@ services:
       M2M_CLIENT_SECRET: ${DELIVERY_M2M_CLIENT_SECRET:-local-delivery-m2m}
       MINIO_ENDPOINT: ${MINIO_ENDPOINT:-http://minio:9090}
       MINIO_BUCKET: ${MINIO_BUCKET:-waypoint-proof}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-s3mock}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-s3mock}
+      MINIO_REGION: ${MINIO_REGION:-us-east-1}
+      # false for a hosted store (Cloudflare R2) whose key cannot create buckets; the local mock needs true.
+      MINIO_AUTO_CREATE_BUCKET: ${MINIO_AUTO_CREATE_BUCKET:-true}
       DELIVERY_PROOF_RETENTION_ENABLED: ${DELIVERY_PROOF_RETENTION_ENABLED:-false}
       DELIVERY_PROOF_RETENTION_DAYS: ${DELIVERY_PROOF_RETENTION_DAYS:-180}
     healthcheck: *backend-healthcheck
