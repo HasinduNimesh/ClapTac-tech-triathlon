@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -215,13 +216,17 @@ func (h Handler) importCSV(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"version": 1, "sourceSystem": source, "created": created, "duplicates": duplicates, "items": results})
 }
 
-// cutoff tells apps the order cutoff the service applies, as HH:MM Sri Lanka time.
+// cutoff reports policy and the service clock, so clients need not trust the device clock.
 func (h Handler) cutoff(w http.ResponseWriter, r *http.Request) {
 	local := h.Service.CutoffLocalTime()
 	if len(local) > 5 {
 		local = local[:5]
 	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{"cutoff": map[string]string{"localTime": local, "timezone": "Asia/Colombo"}})
+	w.Header().Set("Cache-Control", "no-store")
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"cutoff":     map[string]string{"localTime": local, "timezone": "Asia/Colombo"},
+		"serverTime": h.Service.CurrentTime().UTC().Format(time.RFC3339Nano),
+	})
 }
 
 func (h Handler) forecast(w http.ResponseWriter, r *http.Request) {

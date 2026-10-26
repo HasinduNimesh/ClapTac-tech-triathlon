@@ -2418,7 +2418,7 @@ All routes are under `/api/v1/<domain>` and take `Authorization: Bearer <access 
 
 | Method and path | Permission | Purpose |
 |---|---|---|
-| `GET /cutoff` | `order:view-own` or `order:view-all` | The current cut-off as `{cutoff: {localTime, timezone}}` (for example `16:00`, `Asia/Colombo`) |
+| `GET /cutoff` | `order:view-own` or `order:view-all` | The current cut-off as `{cutoff: {localTime, timezone}, serverTime}` (for example `16:00`, `Asia/Colombo`, and an RFC 3339 UTC service timestamp); `Cache-Control: no-store`. UI cutoff status uses service time plus monotonic elapsed time, never the device wall clock. |
 | `GET /forecast` | `order:view-all` | 10-week demand forecast, drift, capacity pressure |
 | `GET /export.csv`, `GET /export?version=1` | `order:view-all` | Export orders (CSV v1 or JSON v1) |
 | `POST /import.csv?version=1&sourceSystem=` , `POST /import?version=1` | `order:view-all` | Import confirmed orders (≤ 500 rows, ≤ 2 MiB, idempotent per `(sourceSystem, externalOrderId)`) |
