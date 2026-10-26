@@ -1,3 +1,4 @@
+import { recoveryLabels } from "./recovery/labels.mjs";
 import { automationLabels } from "./automations/labels.mjs";
 import { storeWorkspaceLabels } from "./store-manager/storeWorkspaceLabels.mjs";
 import { orderBrowserLabels } from "./store-manager/orderBrowserLabels.mjs";
@@ -1735,3 +1736,6 @@ Object.assign(labels.si, productSearchLabels.si);
 Object.assign(labels.ta, productSearchLabels.ta);
 Object.assign(labels.si, vehicleBrowserLabels.si);
 Object.assign(labels.ta, vehicleBrowserLabels.ta);
+
+Object.assign(labels.si, recoveryLabels.si);
+Object.assign(labels.ta, recoveryLabels.ta);

@@ -22,7 +22,7 @@ Resource authorization
 
 Frontend role checks are UX only. JWT proves `sub` only for RBAC; `shared.users.role` is authoritative.
 
-Machine clients use client credentials. Planning is scoped to `orders:read-internal fleet:read-internal outlets:read-internal deliveries:read-internal audit:write policy:read-internal`. Fleet uses `audit:write` to drain its transactional master-data audit outbox. Loading is scoped to `plans:read-internal orders:read-internal audit:write`. Delivery is scoped to `loading:read-internal outlets:read-internal audit:write`. Secrets live on Kubernetes Secret `waypoint-m2m` with per-service keys (`ORDER_M2M_CLIENT_SECRET`, `PLANNING_M2M_CLIENT_SECRET`, `FLEET_M2M_CLIENT_SECRET`, `LOADING_M2M_CLIENT_SECRET`, `DELIVERY_M2M_CLIENT_SECRET`), not a ConfigMap.
+Machine clients use client credentials. Planning is scoped to `orders:read-internal fleet:read-internal fleet:update outlets:read-internal deliveries:read-internal deliveries:recover-internal audit:write policy:read-internal`. Fleet uses `audit:write` to drain its transactional master-data audit outbox. Loading is scoped to `plans:read-internal orders:read-internal audit:write`. Delivery is scoped to `loading:read-internal outlets:read-internal audit:write`. Secrets live on Kubernetes Secret `waypoint-m2m` with per-service keys (`ORDER_M2M_CLIENT_SECRET`, `PLANNING_M2M_CLIENT_SECRET`, `FLEET_M2M_CLIENT_SECRET`, `LOADING_M2M_CLIENT_SECRET`, `DELIVERY_M2M_CLIENT_SECRET`), not a ConfigMap.
 
 ## Authorization layers
 
@@ -34,3 +34,5 @@ Machine clients use client credentials. Planning is scoped to `orders:read-inter
 ## AUTH_DISABLED
 
 Allowed only when `ENVIRONMENT=local`. Staging and production fail process start if `AUTH_DISABLED=true`.
+
+The planning client also requires `deliveries:recover-internal` for `POST /api/v1/delivery/internal/recovery/suspend`. Grant this only to the planning machine client; human roles do not receive it. It closes the broken vehicle’s original stops to late arrival/completion events before a recovery publication.

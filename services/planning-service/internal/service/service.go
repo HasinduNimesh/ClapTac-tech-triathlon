@@ -1125,6 +1125,7 @@ func (s Service) applyWeekFuel(ctx context.Context, pl domain.Plan, vehicles []d
 	if err != nil {
 		others = nil
 	}
+	signalAvailable := err == nil
 	used := map[string]float64{}
 	vehByID := map[string]domain.Vehicle{}
 	for _, v := range vehicles {
@@ -1133,6 +1134,7 @@ func (s Service) applyWeekFuel(ctx context.Context, pl domain.Plan, vehicles []d
 	for _, op := range others {
 		orders, err := s.Peers.Orders(ctx, op.DeliveryDate)
 		if err != nil {
+			signalAvailable = false
 			continue
 		}
 		byID := map[string]domain.Order{}
@@ -1142,8 +1144,12 @@ func (s Service) applyWeekFuel(ctx context.Context, pl domain.Plan, vehicles []d
 			}
 			byID[o.ID] = o
 		}
-		allocs, _ := s.Repo.ListAllocations(ctx, op.ID)
-		trips, _ := s.Repo.ListTrips(ctx, op.ID)
+		allocs, allocationsErr := s.Repo.ListAllocations(ctx, op.ID)
+		trips, tripsErr := s.Repo.ListTrips(ctx, op.ID)
+		if allocationsErr != nil || tripsErr != nil {
+			signalAvailable = false
+			continue
+		}
 		tripNo := map[string]int{}
 		for _, tr := range trips {
 			tripNo[tr.ID] = tr.TripNumber
@@ -1152,6 +1158,7 @@ func (s Service) applyWeekFuel(ctx context.Context, pl domain.Plan, vehicles []d
 		for _, a := range allocs {
 			o, ok := byID[a.OrderID]
 			if !ok {
+				signalAvailable = false
 				continue
 			}
 			v := vehByID[a.VehicleID]
@@ -1186,7 +1193,7 @@ func (s Service) applyWeekFuel(ctx context.Context, pl domain.Plan, vehicles []d
 			vehicles[i].WeekFuelUsedL = vehicles[i].WeekFuelActualL
 		}
 	}
-	return actualErr == nil && err == nil
+	return actualErr == nil && signalAvailable
 }
 
 func currentPlanFuel(pl domain.Plan, world allocate.Input, allocs []domain.Allocation, trips []domain.Trip) map[string]float64 {

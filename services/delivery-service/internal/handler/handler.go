@@ -91,6 +91,7 @@ func (h Handler) Routes(r chi.Router) {
 		r.With(sync).Post("/telemetry/offline-queue", h.offlineQueueHealth)
 		r.With(sync).Post("/sync", h.sync)
 		h.conflictRoutes(r)
+		r.With(authorization.RequireWith(h.Authn, h.Profiles, "deliveries:recover-internal")).Post("/internal/recovery/suspend", h.suspendRecovery)
 		r.With(internal).Get("/internal/orders/{orderId}", h.internalOrder)
 		r.With(internal).Get("/internal/outlets/last-served", h.outletLastServed)
 		r.With(internal).Get("/internal/outlets/last-attempted", h.outletLastAttempted)

@@ -395,6 +395,85 @@ paths:
         "200": { description: "Override recorded" }
         "404": { description: "Risk not found" }
 
+  /planning/recovery:
+    get:
+      operationId: listRecoveryCases
+      security: [{ bearerAuth: [] }]
+      description: Requires plan:view or order:view-own. Store responses include only authorized outlets, with local totals and preferences. Returns items and serverNow.
+      parameters:
+        - { name: date, in: query, required: true, schema: { type: string, format: date } }
+      responses:
+        "200": { description: Recovery cases and authoritative server time }
+    post:
+      operationId: createRecoveryCase
+      security: [{ bearerAuth: [] }]
+      description: Requires plan:update and a dispatcher profile. Analyze an open breakdown on a published plan using idle vehicles at the same depot. Supersedes earlier pending cases for this incident.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [planId, incidentId, readyAt]
+              properties:
+                planId: { type: string, format: uuid }
+                incidentId: { type: string }
+                readyAt: { type: string, format: date-time, description: Depot cargo handover at least five minutes ahead and within 24 hours, on the plan date. }
+      responses:
+        "201": { description: Persisted case with up to three ranked candidates and expiry; snapshot retained by server }
+        "400": { description: Invalid handover time }
+        "403": { description: Dispatcher required }
+        "409": { description: Missing current data or no remaining deliveries }
+  /planning/recovery/{caseId}/preference:
+    put:
+      operationId: saveRecoveryPreference
+      security: [{ bearerAuth: [] }]
+      description: Requires order:view-own and ownership of outletId. Saves a preference only; does not change allocations.
+      parameters:
+        - { name: caseId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [outletId, candidateId]
+              properties:
+                outletId: { type: string }
+                candidateId: { type: string }
+                note: { type: string, maxLength: 500 }
+      responses:
+        "200": { description: Preference saved }
+        "403": { description: Outlet outside caller scope }
+        "409": { description: Expired, superseded, approved or changed plan }
+  /planning/recovery/{caseId}/approve:
+    post:
+      operationId: approveRecoveryPlan
+      security: [{ bearerAuth: [] }]
+      description: >-
+        Requires plan:update and a dispatcher profile. Rechecks the snapshot, marks the source in workshop,
+        suspends its remaining delivery stops through delivery-service and atomically publishes the chosen plan.
+        Repeating an approved selection returns its existing publication. Source suspension survives failures;
+        retry approval or generate fresh options. No replacement trip departs automatically.
+      parameters:
+        - { name: caseId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [candidateId, note, readyConfirmed]
+              properties:
+                candidateId: { type: string }
+                note: { type: string, minLength: 5, maxLength: 1000 }
+                readyConfirmed: { type: boolean, const: true }
+      responses:
+        "200": { description: Approved case and published version }
+        "403": { description: Dispatcher required }
+        "409": { description: Changed data, expired options or different option already approved }
+        "502": { description: Workshop update failed; retryable }
+
 components:
   securitySchemes:
     bearerAuth:
