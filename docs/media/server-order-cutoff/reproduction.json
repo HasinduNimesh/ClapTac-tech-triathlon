@@ -1,0 +1,35 @@
+{
+  "sourceCommit": "7a9ec2176a88e91e8fbd77b9f8cecc8d703ea84e",
+  "method": "Actual React form with mocked authentication and cutoff API; Playwright fixed browser time. Host OS clock unchanged.",
+  "serviceClock": "2026-10-26T15:00:00+05:30",
+  "observations": [
+    {
+      "browserTime": "15:00 Asia/Colombo",
+      "response": {
+        "status": 200,
+        "date": "Mon, 26 Oct 2026 09:30:00 GMT",
+        "body": {
+          "cutoff": {
+            "localTime": "16:00",
+            "timezone": "Asia/Colombo"
+          }
+        }
+      },
+      "title": "Order by 4:00 PM today for the next run."
+    },
+    {
+      "browserTime": "17:00 Asia/Colombo",
+      "response": {
+        "status": 200,
+        "date": "Mon, 26 Oct 2026 09:30:00 GMT",
+        "body": {
+          "cutoff": {
+            "localTime": "16:00",
+            "timezone": "Asia/Colombo"
+          }
+        }
+      },
+      "title": "Today's 4:00 PM cutoff has passed."
+    }
+  ]
+}
