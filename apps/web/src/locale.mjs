@@ -1,6 +1,7 @@
 import { automationLabels } from "./automations/labels.mjs";
 import { storeWorkspaceLabels } from "./store-manager/storeWorkspaceLabels.mjs";
 import { orderBrowserLabels } from "./store-manager/orderBrowserLabels.mjs";
+import { productSearchLabels } from "./store-manager/productSearchLabels.mjs";
 import { dispatcherWorkspaceLabels } from "./dispatcher/dispatcherLabels.mjs";
 import { auditGapLabels } from "./auditGapLabels.mjs";
 export const labels = {
@@ -1729,3 +1730,5 @@ Object.assign(labels.si, auditGapLabels.si);
 Object.assign(labels.ta, auditGapLabels.ta);
 Object.assign(labels.si, orderBrowserLabels.si);
 Object.assign(labels.ta, orderBrowserLabels.ta);
+Object.assign(labels.si, productSearchLabels.si);
+Object.assign(labels.ta, productSearchLabels.ta);
