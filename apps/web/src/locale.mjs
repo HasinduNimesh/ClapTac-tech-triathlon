@@ -1,3 +1,4 @@
+import { handoverLabels } from "./handovers/labels.mjs";
 import { taskLabels } from "./tasks/labels.mjs";
 import { recoveryLabels } from "./recovery/labels.mjs";
 import { automationLabels } from "./automations/labels.mjs";
@@ -1743,3 +1744,6 @@ Object.assign(labels.ta, recoveryLabels.ta);
 
 Object.assign(labels.si, taskLabels.si);
 Object.assign(labels.ta, taskLabels.ta);
+
+Object.assign(labels.si, handoverLabels.si);
+Object.assign(labels.ta, handoverLabels.ta);
