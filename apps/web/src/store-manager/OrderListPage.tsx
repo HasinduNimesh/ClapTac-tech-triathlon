@@ -1,4 +1,7 @@
+import { useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import { OrderBrowserPanel } from "./OrderBrowserPanel";
+import { browseOrders } from "./orderBrowser.mjs";
 import { useLocale } from "../i18n";
 import { LiveLocationMap } from "../components/LiveLocationMap";
 import { OrderItems } from "../components/OrderItems";
@@ -15,8 +18,17 @@ export function OrderListPage() {
   const { t } = useLocale();
   const { rows, loading, loadFailed, unavailable, reload } = useOrderTrackings();
   const [params, setParams] = useSearchParams();
-
-  const selected = rows.find((row) => row.order.id === params.get("order")) ?? rows[0];
+  const [ordersOpen, setOrdersOpen] = useState(() => window.matchMedia("(min-width: 1200px)").matches);
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  const sortedRows = useMemo(() => browseOrders(rows), [rows]);
+  const selected = rows.find((row) => row.order.id === params.get("order")) ?? sortedRows[0];
+  function selectOrder(id: string) {
+    setParams((previous) => { const next = new URLSearchParams(previous); next.set("order", id); return next; }, { replace: true });
+    if (!window.matchMedia("(min-width: 1200px)").matches) {
+      setOrdersOpen(false);
+      toggleRef.current?.focus();
+    }
+  }
   const temperature = (value: string) => (value === "chilled" ? t("Chilled") : t("Ambient"));
   const crumbs = [{ label: t("Store"), to: "/store-manager" }, { label: t("Your orders") }];
 
@@ -76,21 +88,16 @@ export function OrderListPage() {
         )}
         {!loadFailed && <UnavailableOrders orders={unavailable} onRetry={() => void reload()} />}
 
-        <div className="sm-order-tabs" role="group" aria-label={t("Choose an order")}>
-          {rows.map((row) => (
-            <button
-              key={row.order.id}
-              type="button"
-              className={`sm-order-tab${row.order.id === order.id ? " active" : ""}`}
-              aria-pressed={row.order.id === order.id}
-              onClick={() => setParams({ order: row.order.id }, { replace: true })}
-            >
-              {row.order.orderRef} · {t(statusLabel(row.stage))}
-            </button>
-          ))}
+        <div className="sm-orders-toolbar">
+          <p>{t("Viewing")} <strong>{order.orderRef}</strong></p>
+          <button ref={toggleRef} type="button" className="sm-orders-toggle" aria-expanded={ordersOpen} aria-controls="store-order-browser" onClick={() => setOrdersOpen(!ordersOpen)}>
+            {t(ordersOpen ? "Hide orders" : "Show orders")} <span className="sm-order-total">{rows.length}</span><span aria-hidden="true">{ordersOpen ? "›" : "‹"}</span>
+          </button>
         </div>
 
-        <div className="sm-order-detail-grid">
+        <div className={`sm-orders-workspace${ordersOpen ? " sm-orders-workspace--open" : ""}`}>
+          <OrderBrowserPanel rows={rows} selectedId={order.id} onSelect={selectOrder} open={ordersOpen} />
+          <div className="sm-order-detail-grid">
           <section className="sm-form-card" aria-labelledby="order-summary-heading">
             <div className="sm-order-detail-head">
               <div>
@@ -186,6 +193,7 @@ export function OrderListPage() {
               )}
             </section>
           </div>
+        </div>
         </div>
       </div>
     </>
