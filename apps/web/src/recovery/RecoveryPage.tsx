@@ -1,6 +1,7 @@
+import { useSearchParams } from "react-router-dom";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, apiJSON } from "../api/client";
-import { todayInSriLanka } from "../api/date.mjs";
+import { requestedDate, todayInSriLanka } from "../api/date.mjs";
 import { useLocale } from "../i18n";
 import { errorText, useToken } from "../dispatcher/useApi";
 import { RecoveryCandidate, RecoveryCase } from "./types";
@@ -14,7 +15,8 @@ type Incident = { id: string; vehicleId: string; date: string; type: string; sta
 export function RecoveryPage({ dispatcher = false }: { dispatcher?: boolean }) {
   const { t } = useLocale();
   const token = useToken();
-  const [date, setDate] = useState(todayInSriLanka);
+  const [params] = useSearchParams();
+  const [date, setDate] = useState(() => requestedDate(params.get("date")) || todayInSriLanka());
   const [cases, setCases] = useState<RecoveryCase[]>([]);
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [planId, setPlanId] = useState("");

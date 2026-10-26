@@ -12,6 +12,7 @@ import { LoginPage } from "./routes/LoginPage";
 import { NotFoundPage } from "./routes/NotFoundPage";
 import { LocaleProvider, useLocale } from "./i18n";
 
+const PriorityTasksPage = lazy(() => import("./tasks/PriorityTasksPage").then((m) => ({ default: m.PriorityTasksPage })));
 const RecoveryPage = lazy(() => import("./recovery/RecoveryPage").then((m) => ({ default: m.RecoveryPage })));
 const DispatcherPage = lazy(() => import("./dispatcher/DispatcherPage").then((m) => ({ default: m.DispatcherPage })));
 const AuditPage = lazy(() => import("./dispatcher/AuditPage").then((m) => ({ default: m.AuditPage })));
@@ -53,6 +54,7 @@ function AppRoutes() {
         <Route path="/" element={<HomePage />} />
         <Route element={<RoleGate role="STORE_MANAGER"><StoreManagerLayout /></RoleGate>}>
           <Route path="/store-manager" element={<StoreManagerDashboardPage />} />
+          <Route path="/store-manager/tasks" element={<PriorityTasksPage />} />
           <Route path="/store-manager/recovery" element={<RecoveryPage />} />
           <Route path="/store-manager/automations" element={<AutomationsPage />} />
           <Route path="/store-manager/orders" element={<OrderListPage />} />
@@ -71,6 +73,7 @@ function AppRoutes() {
           <Route path="/dispatcher/orders" element={<OrderQueuePage />} />
           <Route path="/dispatcher/automations" element={<AutomationsPage />} />
           <Route path="/dispatcher/planning" element={<PlanningPage />} />
+          <Route path="/dispatcher/tasks" element={<PriorityTasksPage dispatcher />} />
           <Route path="/dispatcher/recovery" element={<RecoveryPage dispatcher />} />
           <Route path="/dispatcher/live" element={<LiveOperationsPage />} />
           <Route path="/dispatcher/fleet" element={<FleetPage />} />

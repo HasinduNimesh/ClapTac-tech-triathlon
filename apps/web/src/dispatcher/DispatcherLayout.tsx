@@ -83,6 +83,7 @@ export function DispatcherLayout() {
         {item("/dispatcher/orders", t("Order queue"), iconQueue, 15, 12, queueCount)}
         {item("/dispatcher/planning", t("Plan and allocate"), iconRoute, 20, 20)}
         {item("/dispatcher/live", t("Live operations"), iconTruck, 20, 20, incidents.data?.items?.length)}
+        {item("/dispatcher/tasks", t("Priority tasks"), iconQueue, 15, 12)}
         {item("/dispatcher/recovery", t("Recovery workspace"), iconRoute, 20, 20)}
         {item("/dispatcher/fleet", t("Fleet"), iconFleet, 20, 20)}
       </nav>

@@ -1,0 +1,11 @@
+import type { Incident } from '../dispatcher/types';
+import type { LoadingTripSummary, DockAlert } from '../api/loading';
+import type { PlanDetail } from '../api/planning';
+import type { RecoveryCase } from '../recovery/types';
+import type { Tracking } from '../store-manager/useOrderTrackings';
+export type TaskSource = {recovery?: RecoveryCase[]; incidents?: Incident[]; trips?: LoadingTripSummary[]; dockAlerts?: DockAlert[]; plan?: PlanDetail | null; rows?: Tracking[]};
+export type Task = {id:string; kind:string; priority:string; title:string; reason:string; reference:string; to:string; action:string; dueAt?:string; source:keyof TaskSource};
+export const PRIORITIES: string[];
+export function generateTasks(role: 'dispatcher' | 'store', source: TaskSource, serverTime: string, outletIds?: string[], t?: (key:string)=>string): Task[];
+export function sortTasks(tasks: Task[], sort?: string): Task[];
+export function filterTasks(tasks: Task[], options?: {query?:string; priority?:string; kind?:string; sort?:string}): Task[];
