@@ -53,6 +53,10 @@ export function StoreManagerLayout() {
           <span className="sm-nav-icon" aria-hidden="true"><img src={iconBox} alt="" width={20} height={20} /></span>
           {t("Orders")}
         </Link>
+        <NavLink to="/store-manager/recovery" className={({ isActive }) => `sm-nav-item${isActive ? " active" : ""}`} onClick={() => setNavOpen(false)}>
+          <span className="sm-nav-icon" aria-hidden="true"><img src={iconHistory} alt="" width={20} height={20} /></span>
+          {t("Recovery workspace")}
+        </NavLink>
       </nav>
 
       <hr className="sm-sidebar-hr sm-sidebar-hr--mid" />

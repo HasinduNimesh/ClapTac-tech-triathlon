@@ -411,6 +411,36 @@ paths:
       responses:
         "200": { description: "Map of outlet to date" }
 
+  /delivery/internal/recovery/suspend:
+    post:
+      operationId: suspendBreakdownDeliveryStops
+      security: [{ bearerAuth: [] }]
+      description: Requires machine scope deliveries:recover-internal. Permanently blocks new arrival and completion mutations on the old trip/order pairs, including offline sync. Idempotent; completed stops cannot be suspended. Suspension remains if planning publication needs a retry.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [caseId, stops]
+              properties:
+                caseId: { type: string }
+                stops:
+                  type: array
+                  minItems: 1
+                  maxItems: 100
+                  items:
+                    type: object
+                    required: [tripId, orderId]
+                    properties:
+                      tripId: { type: string }
+                      orderId: { type: string }
+      responses:
+        "200": { description: Original stops suspended }
+        "400": { description: Invalid request }
+        "403": { description: Missing internal recovery scope }
+        "409": { description: A delivery already completed; refresh recovery }
+
 components:
   schemas:
     SyncConflict:

@@ -118,6 +118,7 @@ func TestOutletLastAttemptedScopedByDate(t *testing.T) {
 	root := repoRoot(t)
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0001_init.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0012_delivery.sql"))
+	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0080_delivery_recovery_suspensions.sql"))
 
 	pool, err := db.Open(ctx, dsn, "delivery")
 	if err != nil {
@@ -226,6 +227,7 @@ func TestDeliveryWorkflow(t *testing.T) {
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0005_outlets_expand.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0009_loading.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0012_delivery.sql"))
+	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0080_delivery_recovery_suspensions.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0017_master_data_versions.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0022_delivery_plan_version.sql"))
 	applySQL(t, ctx, dsn, filepath.Join(root, "database", "migrations", "0024_trip_messages.sql"))

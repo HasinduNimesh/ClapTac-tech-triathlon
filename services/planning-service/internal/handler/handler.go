@@ -53,6 +53,7 @@ var _ Planner = service.Service{}
 
 func (h Handler) Routes(r chi.Router) {
 	r.Route("/api/v1/planning", func(r chi.Router) {
+		h.recoveryRoutes(r)
 		r.With(authorization.RequireWith(h.Authn, h.Profiles, "automations:read-internal")).Get("/internal/automation-snapshot", h.automationSnapshot)
 		r.With(authorization.RequireWith(h.Authn, h.Profiles, authorization.PermPlanCreate)).Post("/plans", h.create)
 		r.With(authorization.RequireWith(h.Authn, h.Profiles, authorization.PermPlanView)).Get("/plans", h.getByDate)

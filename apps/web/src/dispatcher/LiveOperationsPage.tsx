@@ -557,6 +557,7 @@ function RecoveryDrawer({ incident, plan, rows, onClose, onDone }: { incident: I
         {step === 3 && <><span className="muted dp-spacer" style={{ fontSize: "0.8125rem" }}>ⓘ {t("Nothing is sent until you confirm.")}</span><button type="button" className="dp-btn" disabled={busy || !anyChoice} onClick={() => void confirmAll()}>{workshopPending ? `↻ ${t("Retry workshop update")}` : `✓ ${t("Confirm replacement and publish version")}`}</button></>}
       </>}>
       {error && <p className="dp-note dp-note--red" role="alert">{error}</p>}
+      <Link className="dp-btn dp-btn--secondary" to="/dispatcher/recovery">{t("Compare recovery plans and store preferences")}</Link>
       {workshopPending && incident && <p className="dp-note dp-note--red" role="alert" data-testid="workshop-pending"><strong>{t("Recovery is not complete")}</strong> {incident.vehicleId} {t("could not be marked as in the workshop, so it can still be planned. The replacement is not confirmed until this succeeds.")}{doneTrips.length > 0 && <> {t("Trips already published:")} {doneTrips.join(", ")}.</>}</p>}
       {incident && step === 1 && <>
         <div className="dp-banner" style={{ alignItems: "flex-start" }}>

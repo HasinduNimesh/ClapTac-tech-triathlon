@@ -115,7 +115,7 @@ func TestDriverEventsPublishArrivalPredictionsAndNotifyTheStore(t *testing.T) {
 	dsn := "postgres://waypoint:waypoint@" + host + ":" + port.Port() + "/waypoint?sslmode=disable"
 	root := repoRoot(t)
 	for _, migration := range []string{
-		"0001_init.sql", "0002_identity.sql", "0005_outlets_expand.sql", "0009_loading.sql", "0012_delivery.sql",
+		"0001_init.sql", "0002_identity.sql", "0005_outlets_expand.sql", "0009_loading.sql", "0012_delivery.sql", "0080_delivery_recovery_suspensions.sql",
 		"0017_master_data_versions.sql", "0022_delivery_plan_version.sql", "0024_trip_messages.sql", "0078_trip_messages_before_run.sql",
 		"0028_delivery_proof_retention.sql", "0029_delivery_lateness_history_index.sql", "0034_delivery_planned_arrival_snapshot.sql",
 		"0030_outlet_access_instructions.sql", "0031_cold_chain_readings.sql", "0038_delivery_proof_receiver_name.sql",

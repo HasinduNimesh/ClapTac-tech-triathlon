@@ -862,6 +862,13 @@ func (s Service) mutableStop(ctx context.Context, profile *authorization.Profile
 	if err != nil {
 		return run, stop, fmt.Errorf("not found")
 	}
+	held, err := s.Repo.RecoverySuspended(ctx, tripID, stop.OrderID)
+	if err != nil {
+		return run, stop, err
+	}
+	if held {
+		return run, stop, fmt.Errorf("conflict: this stop is suspended for breakdown recovery; contact dispatch")
+	}
 	return run, stop, nil
 }
 
