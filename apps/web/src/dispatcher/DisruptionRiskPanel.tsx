@@ -1,6 +1,8 @@
 import { FormEvent, useEffect, useState } from "react";
 import { apiJSON } from "../api/client";
-import { DisruptionRisk } from "../api/planning";
+import { DisruptionRisk, DistrictWeather, WeatherForecast } from "../api/planning";
+import { pendingWeatherSuggestions, suggestionAsRisk } from "./disruptionMap.mjs";
+import { RISK_TYPE_LABELS } from "./DisruptionLayer";
 import { useLocale } from "../i18n";
 import { describeError } from "../api/friendlyError.mjs";
 
@@ -9,6 +11,7 @@ const blank = { scope: "DISTRICT", scopeKey: "", riskType: "HEAVY_RAIN", severit
 export function DisruptionRiskPanel({ date, token }: { date: string; token: string }) {
   const { t } = useLocale();
   const [items, setItems] = useState<DisruptionRisk[]>([]);
+  const [forecast, setForecast] = useState<WeatherForecast | null>(null);
   const [draft, setDraft] = useState(blank);
   const [decisions, setDecisions] = useState<Record<string, { decision: string; severity: string; reason: string }>>({});
   const [error, setError] = useState("");
@@ -25,6 +28,29 @@ export function DisruptionRiskPanel({ date, token }: { date: string; token: stri
   }
 
   useEffect(() => { void refresh(); }, [date, token]);
+  useEffect(() => {
+    let live = true;
+    setForecast(null);
+    apiJSON<WeatherForecast>(`/planning/disruption-risks/weather?date=${encodeURIComponent(date)}`, token)
+      .then(result => { if (live) setForecast(result); })
+      .catch(() => { if (live) setForecast(null); });
+    return () => { live = false; };
+  }, [date, token]);
+
+  // A forecast suggestion becomes a normal risk only when the dispatcher adds it; its source stays on the record.
+  async function addSuggestion(district: DistrictWeather) {
+    if (!forecast) return;
+    setBusy(true);
+    try {
+      await apiJSON<DisruptionRisk>("/planning/disruption-risks", token, { method: "POST", body: JSON.stringify(suggestionAsRisk(district, forecast)) });
+      await refresh();
+    } catch (e) {
+      setError(describeError(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  const suggestions = pendingWeatherSuggestions(forecast, items);
 
   async function createRisk(event: FormEvent) {
     event.preventDefault();
@@ -65,6 +91,17 @@ export function DisruptionRiskPanel({ date, token }: { date: string; token: stri
     <h3 id="disruption-risks-heading">{t("Road and weather disruption risks")} · {date}</h3>
     <p className="muted">{t("Date-specific advisory signals with source and confidence. They inform dispatcher review only; vehicle, depot, capacity, and delivery-window constraints remain authoritative.")}</p>
     {error && <p className="status-bad" role="alert">{error}</p>}
+    <div className="card" aria-labelledby="weather-suggestions-heading">
+      <h4 id="weather-suggestions-heading">{t("Rain forecast suggestions")}</h4>
+      <p className="muted">{t("From the Open-Meteo forecast at each district centre. Nothing changes until you add a suggestion as a risk.")}</p>
+      {!forecast ? <p>{t("Loading the rain forecast…")}</p>
+        : forecast.error ? <p>{t("Rain forecast unavailable for this date; recorded risks are still shown.")}</p>
+        : suggestions.length === 0 ? <p>{t("No heavy rain is forecast for the delivery districts on this date.")}</p>
+        : <ul>{suggestions.map(d => <li key={d.district} className="row" style={{ alignItems: "center" }}>
+          <span><strong>{d.district} · {t(RISK_TYPE_LABELS[d.suggestion.riskType])} · {t(d.suggestion.severity.toLowerCase())}</strong><br /><span className="muted">{d.suggestion.summary} · {t("Confidence")}: {Math.round(d.suggestion.confidence * 100)}%</span></span>
+          <button type="button" disabled={busy} onClick={() => void addSuggestion(d)}>{t("Add as risk")}</button>
+        </li>)}</ul>}
+    </div>
     {items.length === 0 ? <p>{t("No disruption risks are recorded for this date.")}</p> : <ul>
       {items.map(risk => {
         const choice = decisions[risk.id] || { decision: "ACKNOWLEDGED", severity: "", reason: "" };

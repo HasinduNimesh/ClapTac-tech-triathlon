@@ -20,6 +20,8 @@ export type MapMarker = {
   onClick?: () => void;
 };
 export type MapLine = { id: string; points: LatLng[]; color: string; dashed?: boolean; weight?: number };
+/** A shaded circle under the trips, such as a district with a road or weather risk. It never moves the view. */
+export type MapArea = { id: string; at: LatLng; radiusM: number; color: string; title: string; dashed?: boolean };
 
 export function along(a: LatLng, b: LatLng, t: number): LatLng {
   return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
@@ -38,7 +40,7 @@ function icon(m: MapMarker) {
  * OpenStreetMap map with Waypoint markers. Positions passed in may be
  * approximate; callers say so next to the map.
  */
-export function WaypointMap({ markers, lines, height = 520, label, fitKey, maxZoom = 13, follow = false }: { markers: MapMarker[]; lines: MapLine[]; height?: number; label: string; fitKey?: string; maxZoom?: number; follow?: boolean }) {
+export function WaypointMap({ markers, lines, areas = [], height = 520, label, fitKey, maxZoom = 13, follow = false }: { markers: MapMarker[]; lines: MapLine[]; areas?: MapArea[]; height?: number; label: string; fitKey?: string; maxZoom?: number; follow?: boolean }) {
   const host = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
   const layer = useRef<L.LayerGroup | null>(null);
@@ -60,6 +62,9 @@ export function WaypointMap({ markers, lines, height = 520, label, fitKey, maxZo
     const m = map.current, g = layer.current;
     if (!m || !g) return;
     g.clearLayers();
+    for (const area of areas) {
+      L.circle(area.at, { radius: area.radiusM, color: area.color, weight: 2, opacity: 0.8, fillColor: area.color, fillOpacity: 0.14, dashArray: area.dashed ? "6 6" : undefined }).bindTooltip(area.title).addTo(g);
+    }
     for (const line of lines) {
       if (line.points.length < 2) continue;
       L.polyline(line.points, { color: line.color, weight: line.weight ?? 4, opacity: 0.85, dashArray: line.dashed ? "4 8" : undefined }).addTo(g);
@@ -77,7 +82,7 @@ export function WaypointMap({ markers, lines, height = 520, label, fitKey, maxZo
       // A moving truck that leaves the view is followed, without changing the zoom the person chose.
       m.panTo(markers[0].at);
     }
-  }, [markers, lines, fitKey, maxZoom, follow]);
+  }, [markers, lines, areas, fitKey, maxZoom, follow]);
 
   return <div ref={host} role="region" aria-label={label} style={{ height, width: "100%", borderRadius: 8, overflow: "hidden", background: "#eef0ee" }} />;
 }

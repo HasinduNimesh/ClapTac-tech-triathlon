@@ -14,6 +14,7 @@ import (
 	"github.com/HasinduNimesh/ClapTac-tech-triathlon/services/planning-service/internal/handler"
 	"github.com/HasinduNimesh/ClapTac-tech-triathlon/services/planning-service/internal/service"
 	"github.com/HasinduNimesh/ClapTac-tech-triathlon/services/planning-service/internal/store"
+	"github.com/HasinduNimesh/ClapTac-tech-triathlon/services/planning-service/internal/weather"
 )
 
 func main() {
@@ -46,6 +47,8 @@ func main() {
 		Automation: store.Postgres{Pool: pool},
 		Profiles:   app.CachedProfiles(client.Profiles{Shared: peers}),
 		Service:    service.Service{Repo: store.Postgres{Pool: pool}, Peers: peers},
+		// Rain forecasts for suggested disruption risks; WEATHER_API_URL=off turns the lookup off.
+		Weather: &weather.Client{BaseURL: weatherURL(), APIKey: os.Getenv("WEATHER_API_KEY")},
 	}
 	if err := app.Run(func(r chi.Router) { h.Routes(r) }); err != nil {
 		log.Fatal(err)
@@ -57,4 +60,11 @@ func getenv(k, d string) string {
 		return v
 	}
 	return d
+}
+
+func weatherURL() string {
+	if v := getenv("WEATHER_API_URL", "https://api.open-meteo.com/v1/forecast"); v != "off" {
+		return v
+	}
+	return ""
 }
