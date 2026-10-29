@@ -1257,6 +1257,7 @@ a.tap.primary {
 }
 
 .sm-order-form-main {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 24px;

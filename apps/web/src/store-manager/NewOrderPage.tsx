@@ -16,6 +16,8 @@ import type { CatalogProduct, DraftLine, FormFill } from "./orderDraft.mjs";
 import { addProduct, linesSource, pickable, reasonSentence, removeLine, requestLines, setPacks, suggestionLines, totals } from "./orderLines.mjs";
 import type { SuggestedLine, Suggestion } from "./orderLines.mjs";
 import { describeError } from "../api/friendlyError.mjs";
+import { searchProducts } from "./productSearch.mjs";
+import "./productSearch.css";
 
 function failureMessage(error: unknown, fallback: string) {
   // A refusal from the server says why in plain words; the fallback (check your connection) is only for a request that never got an answer.
@@ -41,6 +43,8 @@ export function NewOrderPage() {
   const [products, setProducts] = useState<CatalogProduct[] | null>(null);
   const [pickId, setPickId] = useState("");
   const [pickQty, setPickQty] = useState("1");
+  const [productQuery, setProductQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
   // Items that came from "Suggest an order", with why each quantity was chosen.
   const [suggested, setSuggested] = useState<{ reasons: Record<string, SuggestedLine>; coverDays: number; deliveryDate: string; limitedHistory: boolean } | null>(null);
   const [suggesting, setSuggesting] = useState(false);
@@ -93,11 +97,20 @@ export function NewOrderPage() {
     setTotalsOnly(false);
     setError("");
     setFilledFrom("");
+    setProductQuery("");
+    setPickId("");
+    setPickQty("1");
   }
 
   const preview = totals(lines);
   const usingItems = !totalsOnly;
-  const options: CatalogProduct[] = products ? pickable(products, temp, lines) : [];
+  const eligible = products ? pickable(products, temp, lines) : [];
+  const options = searchProducts(eligible, productQuery);
+  const selectedId = options.some((p) => p.id === pickId) ? pickId : "";
+  // A hidden or maxed-out product must never remain queued behind the picker.
+  useEffect(() => {
+    if (pickId && !selectedId) setPickId("");
+  }, [pickId, selectedId]);
   const productsDown = products !== null && products.length === 0;
   async function suggestOrder() {
     if (suggesting || !user?.access_token || !products) return;
@@ -256,10 +269,29 @@ export function NewOrderPage() {
                 <>
                   <p className="sm-form-card-sub muted">{t("Pick the products and how many boxes of each. Weight and volume are worked out from the product list, and they are what planning checks against the vehicle.")}</p>
                   {productsDown && <p className="status-bad" role="status">{t("The product list is not available right now. Enter the totals instead.")}</p>}
+                  <div className="sm-field sm-product-search">
+                    <label htmlFor="item-search">{t("Search products")}</label>
+                    <div className="sm-product-search-controls">
+                      <input ref={searchRef} id="item-search" type="search" value={productQuery}
+                        placeholder={t("Name, code, family, size or pack")}
+                        aria-controls="item-product" aria-describedby="item-search-results"
+                        disabled={products === null || productsDown}
+                        onChange={(e) => setProductQuery(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }} />
+                      {productQuery && <button type="button" className="sm-btn-secondary" onClick={() => { setProductQuery(""); searchRef.current?.focus(); }}>{t("Clear search")}</button>}
+                    </div>
+                    <p id="item-search-results" className="sm-field-hint muted" role="status">
+                      {products !== null && !productsDown && (options.length > 0
+                        ? t("{count} of {total} available products").replace("{count}", String(options.length)).replace("{total}", String(eligible.length))
+                        : eligible.length > 0
+                          ? t("No products match your search. Try another name or clear the search.")
+                          : t("No more products are available for this goods type."))}
+                    </p>
+                  </div>
                   <div className="sm-field-row">
                     <div className="sm-field">
                       <label htmlFor="item-product">{t("Product")}</label>
-                      <select id="item-product" value={pickId} onChange={(e) => setPickId(e.target.value)} disabled={products === null || productsDown}>
+                      <select id="item-product" value={selectedId} onChange={(e) => setPickId(e.target.value)} disabled={products === null || options.length === 0}>
                         <option value="">{products === null ? t("Loading products…") : t("Choose a product")}</option>
                         {options.map((p) => <option key={p.id} value={p.id}>{p.name} · {p.pack}</option>)}
                       </select>
@@ -270,7 +302,7 @@ export function NewOrderPage() {
                     </div>
                   </div>
                   <div className="dp-row" style={{ gap: 8, flexWrap: "wrap" }}>
-                    <button type="button" className="sm-btn-secondary" onClick={addItem} disabled={!pickId}>{t("Add item")}</button>
+                    <button type="button" className="sm-btn-secondary" onClick={addItem} disabled={!selectedId}>{t("Add item")}</button>
                     <button type="button" className="sm-btn-secondary" onClick={() => void suggestOrder()} disabled={suggesting || products === null || productsDown}>{suggesting ? t("Working out a suggestion…") : t("Suggest an order")}</button>
                   </div>
                   {lines.length === 0 ? <p className="muted" style={{ margin: "12px 0 0" }}>{t("No items added yet.")}</p> : (

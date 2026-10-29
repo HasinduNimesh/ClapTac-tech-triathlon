@@ -1,0 +1,14 @@
+.sm-product-search-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.sm-product-search-controls input {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.sm-product-search .sm-field-hint {
+  margin: 0;
+}
