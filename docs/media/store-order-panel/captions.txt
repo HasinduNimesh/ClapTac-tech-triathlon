@@ -1,0 +1,10 @@
+PR screenshots: aeshan/store-order-panel
+
+Captured from the actual React page with 80 synthetic orders and mocked authentication/tracking. No live backend or production data.
+
+01 — Desktop: scrollable right-side panel, newest first, status colors and goods labels.
+02 — Sort by: oldest first.
+03 — Combined filters: deferred + chilled (4 of 80 orders).
+04 — Collapsed panel returns space to order details.
+05 — Mobile: panel starts collapsed.
+06 — Mobile: expanded order browser; selecting an order collapses it.

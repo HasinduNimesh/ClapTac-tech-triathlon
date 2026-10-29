@@ -47,6 +47,7 @@ export type OrderLine = {
 
 export type Order = {
   id: string;
+  createdAt?: string;
   orderRef: string;
   outletId: string;
   brand: string;
