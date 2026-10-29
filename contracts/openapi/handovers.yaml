@@ -1,0 +1,147 @@
+openapi: 3.1.0
+info:
+  title: Waypoint Shift Handovers
+  version: 1.0.0
+servers:
+  - url: /api/v1
+security:
+  - bearerAuth: []
+paths:
+  /shared/handovers:
+    parameters:
+      - $ref: '#/components/parameters/Role'
+      - $ref: '#/components/parameters/Scope'
+    get:
+      summary: Read published handovers for an authorized role and audience
+      description: Dispatcher role permits fleet scope only. Store managers must belong to the requested outlet. Responses are not cached. Ordered by publication time and ID descending.
+      parameters:
+        - in: query
+          name: offset
+          schema: { type: integer, minimum: 0, maximum: 10000, default: 0 }
+      responses:
+        '200':
+          description: A page of up to 20 immutable reports
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Handover' }
+                  hasMore: { type: boolean }
+                  serverTime: { type: string, format: date-time }
+        '400': { description: Invalid history offset }
+        '401': { description: Authentication required }
+        '403': { description: Role or audience not authorized }
+        '500': { description: History unavailable }
+    post:
+      summary: Publish a reviewed handover snapshot with an idempotent publication ID
+      description: The client prepares the report from existing role-authorized task APIs. This is an authored snapshot, not server-certified live operational truth. Server identity and publication time are authoritative. The snapshot must be at most five minutes old and no more than 30 seconds in the future. An exact retry of a committed report remains valid after its snapshot ages. Publication and its audit event commit atomically. There is no update or delete endpoint.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [id, snapshot]
+              properties:
+                id: { type: string, format: uuid }
+                snapshot: { $ref: '#/components/schemas/Snapshot' }
+      responses:
+        '201':
+          description: Published report, also returned on an exact retry
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  handover: { $ref: '#/components/schemas/Handover' }
+        '400': { description: Invalid JSON, fields, task IDs, action paths, priorities or timestamps }
+        '401': { description: Authentication required }
+        '403': { description: Role or audience not authorized }
+        '409': { description: Stale snapshot or publication ID already used for different content or identity }
+        '500': { description: Publication rolled back }
+  /shared/handovers/{id}/acknowledge:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string, format: uuid }
+      - $ref: '#/components/parameters/Role'
+      - $ref: '#/components/parameters/Scope'
+    post:
+      summary: A different authorized person acknowledges receiving a published brief
+      description: First acknowledgement wins under a row lock. The same actor can retry idempotently. The author cannot self-acknowledge. Acknowledgement and audit event commit atomically. No underlying operational records change.
+      responses:
+        '200':
+          description: Acknowledged report
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  handover: { $ref: '#/components/schemas/Handover' }
+        '400': { description: Invalid ID }
+        '401': { description: Authentication required }
+        '403': { description: Role or audience not authorized }
+        '404': { description: No handover in the authorized audience }
+        '409': { description: Self acknowledgement or already acknowledged by another person }
+        '500': { description: Acknowledgement rolled back }
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer }
+  parameters:
+    Role:
+      in: query
+      name: role
+      required: true
+      schema: { type: string, enum: [dispatcher, store] }
+    Scope:
+      in: query
+      name: scope
+      required: true
+      description: fleet for dispatchers, one authorized outlet ID for store managers
+      schema: { type: string }
+  schemas:
+    Task:
+      type: object
+      additionalProperties: false
+      required: [id, priority, title, reason, reference, action, to]
+      properties:
+        id: { type: string, maxLength: 200 }
+        priority: { type: string, enum: [Critical, High, Normal] }
+        title: { type: string, maxLength: 600 }
+        reason: { type: string, maxLength: 3000 }
+        reference: { type: string, maxLength: 600 }
+        action: { type: string, maxLength: 300 }
+        to:
+          type: string
+          description: Allowlisted task-workflow path for this role. No external links.
+        dueAt: { type: string, format: date-time }
+    Snapshot:
+      type: object
+      additionalProperties: false
+      required: [title, notes, asOf, tasks]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 100 }
+        notes: { type: string, maxLength: 4000 }
+        asOf: { type: string, format: date-time }
+        tasks:
+          type: array
+          maxItems: 500
+          items: { $ref: '#/components/schemas/Task' }
+    Handover:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        role: { type: string, enum: [dispatcher, store] }
+        scope: { type: string }
+        authorId: { type: string }
+        authorName: { type: string }
+        snapshot: { $ref: '#/components/schemas/Snapshot' }
+        publishedAt: { type: string, format: date-time }
+        acknowledgedBy: { type: string }
+        acknowledgedName: { type: string }
+        acknowledgedAt: { type: string, format: date-time }
