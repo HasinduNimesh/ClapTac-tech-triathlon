@@ -9,6 +9,8 @@ import { tripLoads } from "./planModel";
 import { Availability, Incident, Vehicle, availabilityOf, isRefrigerated } from "./types";
 import { DpHero, Drawer, Meter, Note, Panel, Stat, StatRow, Tag } from "./ui";
 import { dateTime, dayLabel, kg, m3, pct, useApi } from "./useApi";
+import { browseVehicles, vehicleNumber, type VehicleSort } from "./vehicleBrowser.mjs";
+import { VehicleSearchControls } from "./VehicleSearchControls";
 
 const STEP = 24;
 
@@ -17,6 +19,7 @@ export function FleetPage() {
   const { depot: shellDepot } = useDepot();
   const date = todayInSriLanka();
   const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<VehicleSort>("number-asc");
   const [depot, setDepot] = useState(shellDepot);
   const [type, setType] = useState("");
   const [state, setState] = useState("");
@@ -24,6 +27,7 @@ export function FleetPage() {
   const [limit, setLimit] = useState(STEP);
   const [selected, setSelected] = useState<Vehicle | null>(null);
   useEffect(() => { setDepot(shellDepot); }, [shellDepot]);
+  useEffect(() => { setLimit(STEP); }, [query, sort, depot, type, state, cooling]);
   const vehicles = useApi<{ items: Vehicle[] }>("/fleet/vehicles");
   const availability = useApi<{ items: Availability[] }>(`/fleet/availability?date=${date}`);
   const incidents = useApi<{ items: Incident[] }>("/fleet/incidents?openOnly=true");
@@ -41,15 +45,13 @@ export function FleetPage() {
   const all = vehicles.data?.items || [];
   const scoped = all.filter((v) => !depot || sameDepot(v.homeDepot, depot));
   const types = [...new Set(all.map((v) => v.type))].sort();
-  const rows = scoped.filter((v) => {
-    const q = query.trim().toLowerCase();
-    if (q && !v.id.toLowerCase().includes(q)) return false;
+  const rows = browseVehicles(scoped.filter((v) => {
     if (type && v.type !== type) return false;
     if (state && status(v) !== state) return false;
     if (cooling === "reefer" && !isRefrigerated(v)) return false;
     if (cooling === "ambient" && isRefrigerated(v)) return false;
     return true;
-  });
+  }), query, sort);
   const lowFuel = scoped.filter((v) => v.weeklyFuelQuotaL > 0 && (v.weeklyFuelQuotaL - fuelUsed(v.id)) / v.weeklyFuelQuotaL < 0.2);
   const available = scoped.filter((v) => status(v) === "available");
   const workshop = scoped.filter((v) => status(v) === "workshop");
@@ -69,12 +71,13 @@ export function FleetPage() {
       </StatRow>
       <div className="dp-body">
         <Panel>
+          <VehicleSearchControls query={query} onQuery={setQuery} sort={sort} onSort={setSort} count={rows.length} total={scoped.length} />
           <div className="dp-filters" style={{ paddingTop: 20 }}>
-            <label className="dp-field dp-field--wide">{t("Search vehicle")}<input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("Vehicle ID…")} /></label>
             <label className="dp-field">{t("Depot")}<select value={depot} onChange={(e) => setDepot(e.target.value)}><option value="">{t("All depots")}</option>{Object.entries(DEPOT_LABELS).map(([code, label]) => <option key={code} value={code}>{label}</option>)}</select></label>
             <label className="dp-field">{t("Vehicle type")}<select value={type} onChange={(e) => setType(e.target.value)}><option value="">{t("All types")}</option>{types.map((v) => <option key={v} value={v}>{t(v)}</option>)}</select></label>
             <label className="dp-field">{t("Availability")}<select value={state} onChange={(e) => setState(e.target.value)}><option value="">{t("All states")}</option><option value="available">{t("Available")}</option><option value="assigned">{t("Assigned")}</option><option value="workshop">{t("Workshop")}</option></select></label>
             <label className="dp-field">{t("Cooling")}<select value={cooling} onChange={(e) => setCooling(e.target.value)}><option value="">{t("All capabilities")}</option><option value="reefer">{t("Refrigerated")}</option><option value="ambient">{t("Ambient")}</option></select></label>
+            <button type="button" className="dp-btn dp-btn--secondary" onClick={() => { setQuery(""); setDepot(shellDepot); setType(""); setState(""); setCooling(""); }}>{t("Clear filters")}</button>
           </div>
         </Panel>
         <Note title={t("Allocation checks apply to every vehicle")}>{t("Match depot, cooling, weight, volume and delivery windows. Check weekly fuel and the maximum trips per vehicle set in Master data.")}</Note>
@@ -91,7 +94,7 @@ export function FleetPage() {
             return (
               <article key={v.id} className="dp-vehicle">
                 <div className="dp-row dp-row--between" style={{ alignItems: "flex-start" }}>
-                  <div><p className="dp-vehicle-id">{v.id}</p><p className="muted" style={{ margin: 0, fontSize: "0.8125rem" }}>{`${t(v.fuelType)} · ${v.kmPerL} km/L`}</p></div>
+                  <div><p className="dp-vehicle-id">{vehicleNumber(v.id)}</p><p className="muted" style={{ margin: 0, fontSize: "0.8125rem" }}>{`${t(v.fuelType)} · ${v.kmPerL} km/L`}</p></div>
                   {tag(s)}
                 </div>
                 <div className="dp-row dp-row--between" style={{ alignItems: "flex-start" }}>
@@ -99,10 +102,10 @@ export function FleetPage() {
                   <Tag tone={isRefrigerated(v) ? "cool" : "primary"}>{isRefrigerated(v) ? t("Refrigerated") : t("Ambient")}</Tag>
                 </div>
                 <dl className="dp-kv dp-kv--plain"><div><dt>{t("Weight limit")}</dt><dd>{kg(v.weightCapacityKg)}</dd></div><div><dt>{t("Volume limit")}</dt><dd>{m3(v.volumeCapacityM3)}</dd></div></dl>
-                <Meter label={t("Weekly fuel remaining")} valueText={`${Math.round(remaining)} / ${Math.round(v.weeklyFuelQuotaL)} L`} pct={fuelPct} tone={fuelPct < 20 ? "amber" : undefined} ariaLabel={`${t("Weekly fuel remaining")} ${v.id}`} />
+                <Meter label={t("Weekly fuel remaining")} valueText={`${Math.round(remaining)} / ${Math.round(v.weeklyFuelQuotaL)} L`} pct={fuelPct} tone={fuelPct < 20 ? "amber" : undefined} ariaLabel={`${t("Weekly fuel remaining")} ${vehicleNumber(v.id)}`} />
                 <div className="dp-row dp-row--between">
                   <div><p style={{ margin: 0, fontWeight: 600 }}>{trips.length} {t("of")} 2 {t("trips")}</p><p className="muted" style={{ margin: 0, fontSize: "0.75rem" }}>{s === "workshop" ? t("Unavailable for allocation") : trips.length ? trips.map((l) => `${t("Trip")} ${l.tripNumber}`).join(" + ") : t("No trips assigned")}</p></div>
-                  <button type="button" className="dp-btn dp-btn--secondary dp-btn--sm" onClick={() => setSelected(v)} aria-label={`${t("View vehicle")} ${v.id}`}>{t("View vehicle")}</button>
+                  <button type="button" className="dp-btn dp-btn--secondary dp-btn--sm" onClick={() => setSelected(v)} aria-label={`${t("View vehicle")} ${vehicleNumber(v.id)}`}>{t("View vehicle")}</button>
                 </div>
               </article>
             );
@@ -111,7 +114,7 @@ export function FleetPage() {
         {rows.length > limit && <div className="dp-row" style={{ justifyContent: "center" }}><button type="button" className="dp-btn dp-btn--secondary" onClick={() => setLimit(limit + STEP)}>{t("Show more vehicles")} ({rows.length - limit})</button></div>}
         {!vehicles.loading && rows.length === 0 && <p className="dp-empty">{t("No vehicles match these filters.")}</p>}
       </div>
-      <Drawer open={Boolean(selected)} onClose={() => setSelected(null)} narrow title={selected?.id || ""} sub={selected ? `${t(selected.type)} · ${DEPOT_LABELS[selected.homeDepot] || selected.homeDepot} ${t("depot")}` : undefined}
+      <Drawer open={Boolean(selected)} onClose={() => setSelected(null)} narrow title={vehicleNumber(selected?.id)} sub={selected ? `${t(selected.type)} · ${DEPOT_LABELS[selected.homeDepot] || selected.homeDepot} ${t("depot")}` : undefined}
         footer={<Link to="/dispatcher/master-data" className="dp-btn dp-btn--secondary">{t("Edit in master data")}</Link>}>
         {selected && <>
           <div className="dp-row">{tag(status(selected))}<Tag tone={isRefrigerated(selected) ? "cool" : "primary"}>{isRefrigerated(selected) ? t("Refrigerated") : t("Ambient")}</Tag></div>

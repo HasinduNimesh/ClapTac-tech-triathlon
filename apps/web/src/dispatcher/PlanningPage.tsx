@@ -18,6 +18,8 @@ import { LatLng, MapLine, MapMarker, WaypointMap, depotPosition } from "../compo
 import { Banner, Check, ChipGroup, DpHero, Drawer, Meter, Note, Panel, Stat, StatRow, Tag, brandTone, meterTone } from "./ui";
 import { clock, dateTime, dayLabel, hhmm, isChilled, kg, m3, pct, useApi } from "./useApi";
 import { describeError } from "../api/friendlyError.mjs";
+import { browseVehicles, vehicleNumber, type VehicleSort } from "./vehicleBrowser.mjs";
+import { VehicleSearchControls } from "./VehicleSearchControls";
 
 type Tab = "unallocated" | "trips" | "map" | "deferred" | "constraints";
 
@@ -51,6 +53,8 @@ export function PlanningPage() {
   const [assignOrder, setAssignOrder] = useState<string>("");
   const [assignReason, setAssignReason] = useState("");
   const [vehicleId, setVehicleId] = useState("");
+  const [vehicleQuery, setVehicleQuery] = useState("");
+  const [vehicleSort, setVehicleSort] = useState<VehicleSort>("number-asc");
   const [tripNumber, setTripNumber] = useState("1");
   const [deferOrder, setDeferOrder] = useState<string>("");
   const [reason, setReason] = useState("MANUAL_DISPATCHER_DEFERRAL");
@@ -121,6 +125,7 @@ export function PlanningPage() {
 
   async function assign(e: FormEvent) {
     e.preventDefault();
+    if (!selectedVehicleId) return;
     await run("Assigned", async () => {
       await apiJSON(`/planning/plans/${planId}/allocations`, token, { method: "POST", body: JSON.stringify({ orderId: assignOrder, vehicleId, tripNumber: Number(tripNumber), reason: assignReason }) });
       await refresh(planId);
@@ -173,7 +178,10 @@ export function PlanningPage() {
   const deferOrderData = ordersById.get(deferOrder);
   const deferUnalloc = detail?.unallocated.find((u) => u.orderId === deferOrder);
   const assignOrderData = ordersById.get(assignOrder);
-  const assignVehicle = detail?.vehicles.find((v) => v.id === vehicleId);
+  const assignmentVehicles = browseVehicles(detail?.vehicles || [], vehicleQuery, vehicleSort);
+  const selectedVehicleId = assignmentVehicles.some((v) => v.id === vehicleId) ? vehicleId : "";
+  useEffect(() => { if (vehicleId && !selectedVehicleId) setVehicleId(""); }, [vehicleId, selectedVehicleId]);
+  const assignVehicle = detail?.vehicles.find((v) => v.id === selectedVehicleId);
   const assignLoad = loads.find((l) => l.vehicle?.id === vehicleId && String(l.tripNumber) === tripNumber);
   const depotOf = (o?: PlanOrder) => (o ? outletById.get(o.outletId)?.depot : undefined);
   const outletLabel = (o?: PlanOrder) => { if (!o) return "—"; const outlet = outletById.get(o.outletId); return `${o.outletId}${outlet?.name ? ` ${outlet.name}` : ""}`; };
@@ -268,7 +276,7 @@ export function PlanningPage() {
                               <td><span className="dp-cell-main">{t(u.reasonCode)}</span>{typeof u.details?.primaryBlockedVehicleTrips === "number" && typeof u.details?.vehicleTripsEvaluated === "number" && <span className="dp-cell-sub">{t("blocked")} {u.details.primaryBlockedVehicleTrips}/{u.details.vehicleTripsEvaluated} {t("vehicle-trips tried")}</span>}{(u.details?.otherLimitingFactors || []).map((f) => <span className="dp-cell-sub" key={f.reasonCode}>{t(f.reasonCode)} · {f.vehicleTripsBlocked}</span>)}</td>
                               <td>{order?.outletDeferralCount || 0}</td>
                               <td><div className="dp-row" style={{ gap: 6 }}>
-                                <button type="button" className="dp-btn dp-btn--sm" onClick={() => { setAssignOrder(u.orderId); setVehicleId(""); }} aria-label={`${t("Assign")} ${u.orderRef || u.orderId}`}>{t("Assign")}</button>
+                                <button type="button" className="dp-btn dp-btn--sm" onClick={() => { setAssignOrder(u.orderId); setVehicleId(""); setVehicleQuery(""); setVehicleSort("number-asc"); }} aria-label={`${t("Assign")} ${u.orderRef || u.orderId}`}>{t("Assign")}</button>
                                 <button type="button" className="dp-btn dp-btn--secondary dp-btn--sm" onClick={() => { setDeferOrder(u.orderId); setReason(DEFER_REASONS.includes(u.reasonCode) ? u.reasonCode : "MANUAL_DISPATCHER_DEFERRAL"); }} aria-label={`${t("Defer")} ${u.orderRef || u.orderId}`}>{t("Defer")}</button>
                               </div></td>
                             </tr>
@@ -289,7 +297,7 @@ export function PlanningPage() {
                     <thead><tr><th>{t("Trip no.")}</th><th>{t("Vehicle")}</th><th>{t("Orders")}</th><th>{t("Load utilization")}</th><th>{t("Trip time")}</th><th>{t("Status")}</th><th>{t("Stops")}</th></tr></thead>
                     <tbody>
                       {loads.map((load) => {
-                        const label = load.vehicle?.id || "—";
+                        const label = vehicleNumber(load.vehicle?.id) || "—";
                         const open = expanded === load.tripId;
                         const allocations = detail.allocations.filter((a) => a.tripId === load.tripId).sort((a, b) => a.sequence - b.sequence);
                         return [
@@ -333,7 +341,7 @@ export function PlanningPage() {
                   const stops = detail.allocations.filter((a) => a.tripId === load.tripId).sort((a, b) => a.sequence - b.sequence);
                   const points = stops.map((a) => at(ordersById.get(a.orderId)?.outletId)).filter((p): p is LatLng => Boolean(p));
                   lines.push({ id: load.tripId, points: depotAt ? [depotAt, ...points] : points, color, weight: 3 });
-                  stops.forEach((a) => { const order = ordersById.get(a.orderId); const p = at(order?.outletId); if (p) markers.push({ id: a.id, at: p, kind: "stop", color, label: `${load.vehicle?.id || ""}·${a.sequence}`, title: `${load.vehicle?.id} ${t("Trip")} ${load.tripNumber} · ${a.sequence}. ${outletLabel(order)}` }); });
+                  stops.forEach((a) => { const order = ordersById.get(a.orderId); const p = at(order?.outletId); if (p) markers.push({ id: a.id, at: p, kind: "stop", color, label: `${vehicleNumber(load.vehicle?.id)}·${a.sequence}`, title: `${vehicleNumber(load.vehicle?.id)} ${t("Trip")} ${load.tripNumber} · ${a.sequence}. ${outletLabel(order)}` }); });
                 });
                 for (const u of detail.unallocated) { const order = ordersById.get(u.orderId); const p = at(order?.outletId); if (p) markers.push({ id: `u-${u.orderId}`, at: p, kind: "stop", color: "#c03221", title: `${u.orderRef || order?.orderRef} · ${t("Unallocated")} · ${t(u.reasonCode)}` }); }
                 for (const d of depots) markers.push({ id: `depot-${d}`, at: depotPosition(d)!, kind: "depot", color: "#232d42", label: `${DEPOT_LABELS[d] || d}`, title: `${DEPOT_LABELS[d] || d}` });
@@ -372,13 +380,13 @@ export function PlanningPage() {
                   <div className="dp-table-wrap"><table className="dp-table">
                     <thead><tr><th>{t("Vehicle")}</th><th>{t("Other confirmed plans")}</th><th>{t("This plan estimate")}</th><th>{t("Actual to date")}</th><th>{t("Weekly quota")}</th><th>{t("Forecast / status")}</th></tr></thead>
                     <tbody>{detail.vehicles.map((vehicle) => { const actual = vehicle.weekFuelActualL || 0; const planned = (vehicle.weekFuelPlannedL || 0) + (vehicle.planFuelL || 0); const forecast = Math.max(actual, planned); const over = forecast > vehicle.weeklyFuelQuotaL; return (
-                      <tr key={vehicle.id} className={over ? "is-alert" : undefined}><td>{vehicle.id}</td><td>{(vehicle.weekFuelPlannedL || 0).toFixed(1)} L</td><td>{(vehicle.planFuelL || 0).toFixed(1)} L</td><td>{actual.toFixed(1)} L</td><td>{vehicle.weeklyFuelQuotaL.toFixed(1)} L</td><td>{forecast.toFixed(1)} L · <Tag tone={over ? "red" : "green"}>{over ? t("over quota") : t("within quota")}</Tag></td></tr>
+                      <tr key={vehicle.id} className={over ? "is-alert" : undefined}><td>{vehicleNumber(vehicle.id)}</td><td>{(vehicle.weekFuelPlannedL || 0).toFixed(1)} L</td><td>{(vehicle.planFuelL || 0).toFixed(1)} L</td><td>{actual.toFixed(1)} L</td><td>{vehicle.weeklyFuelQuotaL.toFixed(1)} L</td><td>{forecast.toFixed(1)} L · <Tag tone={over ? "red" : "green"}>{over ? t("over quota") : t("within quota")}</Tag></td></tr>
                     ); })}</tbody>
                   </table></div>
                   <h2 className="dp-panel-title">{t("Record actual fuel use")}</h2>
                   <p className="muted" style={{ margin: 0 }}>{t("Fuel entries are append-only. Select the date the consumption occurred; future dates are rejected.")}</p>
                   <form onSubmit={recordFuel} className="dp-filters">
-                    <label className="dp-field">{t("Vehicle")}<select value={fuelVehicleId} onChange={(e) => setFuelVehicleId(e.target.value)} required><option value="">{t("Select vehicle")}</option>{detail.vehicles.map((v) => <option key={v.id} value={v.id}>{v.id}</option>)}</select></label>
+                    <label className="dp-field">{t("Vehicle")}<select value={fuelVehicleId} onChange={(e) => setFuelVehicleId(e.target.value)} required><option value="">{t("Select vehicle")}</option>{detail.vehicles.map((v) => <option key={v.id} value={v.id}>{vehicleNumber(v.id)}</option>)}</select></label>
                     <label className="dp-field">{t("Consumption date")}<input type="date" value={fuelDate} onChange={(e) => { setFuelDate(e.target.value); if (e.target.value) void loadFuelLedger(e.target.value); }} required /></label>
                     <label className="dp-field">{t("Liters used")}<input type="number" min="0.001" max="10000" step="0.001" value={fuelLiters} onChange={(e) => setFuelLiters(e.target.value)} required /></label>
                     <label className="dp-field">{t("Receipt reference or note")}<input value={fuelReceipt} onChange={(e) => setFuelReceipt(e.target.value)} maxLength={120} required /></label>
@@ -387,7 +395,7 @@ export function PlanningPage() {
                   {fuelLedger && <p className="muted" style={{ margin: 0 }}>{t("Actual fuel ledger for the selected date’s week:")} {fuelLedger.weekStart} {t("to")} {fuelLedger.weekEnd}.</p>}
                   {fuelLedger?.entries?.length ? <div className="dp-table-wrap"><table className="dp-table">
                     <thead><tr><th>{t("Date")}</th><th>{t("Vehicle")}</th><th>{t("Liters")}</th><th>{t("Receipt / note")}</th><th>{t("Recorded by")}</th></tr></thead>
-                    <tbody>{fuelLedger.entries.map((entry) => <tr key={entry.id}><td>{entry.date}</td><td>{entry.vehicleId}</td><td>{entry.liters.toFixed(3)} L</td><td>{entry.receiptRef || entry.note || "—"}</td><td>{entry.recordedBy}</td></tr>)}</tbody>
+                    <tbody>{fuelLedger.entries.map((entry) => <tr key={entry.id}><td>{entry.date}</td><td>{vehicleNumber(entry.vehicleId)}</td><td>{entry.liters.toFixed(3)} L</td><td>{entry.receiptRef || entry.note || "—"}</td><td>{entry.recordedBy}</td></tr>)}</tbody>
                   </table></div> : null}
                   <DisruptionRiskPanel date={date} token={token} />
                 </div>
@@ -448,15 +456,16 @@ export function PlanningPage() {
       </Drawer>
 
       <Drawer open={Boolean(assignOrder && detail)} onClose={() => setAssignOrder("")} title={t("Manual adjustment")} sub={t("You are making manual changes to the plan. All compatibility and capacity checks run again when you assign.")}
-        footer={<><button type="button" className="dp-btn dp-btn--secondary" onClick={() => setAssignOrder("")}>{t("Cancel")}</button><button type="submit" form="assign-form" className="dp-btn">{t("Apply adjustment")}</button></>}>
+        footer={<><button type="button" className="dp-btn dp-btn--secondary" onClick={() => setAssignOrder("")}>{t("Cancel")}</button><button type="submit" form="assign-form" className="dp-btn" disabled={!selectedVehicleId}>{t("Apply adjustment")}</button></>}>
         {assignOrderData && detail && <form id="assign-form" className="dp-stack" onSubmit={assign}>
           <div className="dp-subcard">
             <div className="dp-row dp-row--between"><p className="dp-stat-value" style={{ margin: 0 }}>{assignOrderData.orderRef}</p><Tag tone={isChilled(assignOrderData.temperatureRequirement) ? "cool" : "primary"}>{isChilled(assignOrderData.temperatureRequirement) ? t("Chilled") : t("Ambient")}</Tag></div>
             <p className="muted" style={{ margin: 0 }}>{outletLabel(assignOrderData)} · {kg(assignOrderData.orderWeightKg)} · {m3(assignOrderData.orderVolumeM3)}</p>
             <p className="muted" style={{ margin: 0 }}>{t("Delivery window")}: {(() => { const o = outletById.get(assignOrderData.outletId); return o ? `${hhmm(o.windowOpenTime)}–${hhmm(o.windowCloseTime)}` : "—"; })()}</p>
           </div>
-          <div className="dp-filters">
-            <label className="dp-field">{t("Vehicle")}<select aria-label={t("Assignment vehicle")} value={vehicleId} onChange={(e) => setVehicleId(e.target.value)} required><option value="">{t("Vehicle")}</option>{detail.vehicles.map((v) => <option key={v.id} value={v.id}>{v.id} · {v.type}/{v.temp} · {t(v.status)}</option>)}</select></label>
+          <VehicleSearchControls query={vehicleQuery} onQuery={setVehicleQuery} sort={vehicleSort} onSort={setVehicleSort} count={assignmentVehicles.length} total={detail.vehicles.length} />
+          <div className="dp-filters dp-assignment-fields">
+            <label className="dp-field">{t("Vehicle")}<select aria-label={t("Assignment vehicle")} value={selectedVehicleId} onChange={(e) => setVehicleId(e.target.value)} required disabled={assignmentVehicles.length === 0}><option value="">{t("Vehicle")}</option>{assignmentVehicles.map((v) => <option key={v.id} value={v.id}>{vehicleNumber(v.id)} · {t(v.type)} / {t(v.temp)} · {t(v.status)}</option>)}</select></label>
             <label className="dp-field">{t("Trip number")}<select aria-label={t("Trip number")} value={tripNumber} onChange={(e) => setTripNumber(e.target.value)}><option value="1">{t("Trip")} 1</option><option value="2">{t("Trip")} 2</option></select></label>
           </div>
           <label className="dp-field">{t("Reason for this manual assignment")}<input aria-label={t("Reason for this manual assignment")} placeholder={t("Why are you assigning this manually?")} value={assignReason} onChange={(e) => setAssignReason(e.target.value)} required minLength={3} maxLength={500} /></label>
@@ -469,7 +478,7 @@ export function PlanningPage() {
             const parkingOk = !isVanOnly(outletById.get(assignOrderData.outletId)) || /^van$/i.test(assignVehicle.type);
             return (
               <div className="dp-trip-card" style={{ fontSize: "0.875rem" }}>
-                <div className="dp-row dp-row--between"><strong>{assignVehicle.id} · {t("Trip")} {tripNumber}</strong><Tag tone={wPct > 100 || vPct > 100 || !coolingOk || !parkingOk ? "red" : "green"}>{wPct > 100 || vPct > 100 || !coolingOk || !parkingOk ? t("Attention") : t("On track")}</Tag></div>
+                <div className="dp-row dp-row--between"><strong>{vehicleNumber(assignVehicle.id)} · {t("Trip")} {tripNumber}</strong><Tag tone={wPct > 100 || vPct > 100 || !coolingOk || !parkingOk ? "red" : "green"}>{wPct > 100 || vPct > 100 || !coolingOk || !parkingOk ? t("Attention") : t("On track")}</Tag></div>
                 <Meter label={t("Weight after this order")} valueText={`${wPct}%`} pct={wPct} tone={meterTone(wPct)} ariaLabel={t("Weight after this order")} />
                 <Meter label={t("Volume after this order")} valueText={`${vPct}%`} pct={vPct} tone={meterTone(vPct)} ariaLabel={t("Volume after this order")} />
                 <ul className="dp-checks">
@@ -521,7 +530,7 @@ function ConfirmedView({ detail, loads, token, onRefresh, onRevise }: { detail: 
   const unackedTargets = unacknowledgedTargets(rows);
   const unackedCount = unackedTargets.length;
   const legacyAcks = planLevelAcks(acks);
-  const tripLabel = (tripId: string) => { const tr = detail.trips.find((x) => x.id === tripId); return tr ? `${tr.vehicleId} · ${t("Trip")} ${tr.tripNumber}` : tripId; };
+  const tripLabel = (tripId: string) => { const tr = detail.trips.find((x) => x.id === tripId); return tr ? `${vehicleNumber(tr.vehicleId)} · ${t("Trip")} ${tr.tripNumber}` : tripId; };
   async function sendReminders(targets: { tripId: string; audience: "DRIVER" | "LOADER" }[]) {
     if (!detail.publication?.version || targets.length === 0) return;
     setReminding(true); setReminderNotice(null);
@@ -560,7 +569,7 @@ function ConfirmedView({ detail, loads, token, onRefresh, onRevise }: { detail: 
       <Panel title={t("Plan summary")} sub={t("Key trips in this plan. Loaders and drivers get exactly this version; any later change creates a new one.")} flush>
         <div className="dp-table-wrap"><table className="dp-table">
           <thead><tr><th>{t("Trip no.")}</th><th>{t("Vehicle")}</th><th>{t("Orders")}</th><th>{t("Load utilization")}</th><th>{t("Trip time")}</th><th>{t("Status")}</th></tr></thead>
-          <tbody>{loads.map((load) => <tr key={load.tripId}><td>{detail.plan.planRef}-{load.tripNumber}</td><td><span className="dp-cell-main">{load.vehicle?.id}</span><span className="dp-cell-sub">{load.vehicle ? `${load.vehicle.type} · ${load.vehicle.temp}` : ""}</span></td><td>{load.orderCount}</td><td>{load.weightPct}% / {load.volumePct}%</td><td>{load.tripMinutes != null ? `${load.tripMinutes}${load.fresh ? ` / ${FRESH_TRIP_BUDGET_MINUTES}` : ""} ${t("min")}` : "—"}</td><td><Tag tone="green">{t("Locked")}</Tag></td></tr>)}</tbody>
+          <tbody>{loads.map((load) => <tr key={load.tripId}><td>{detail.plan.planRef}-{load.tripNumber}</td><td><span className="dp-cell-main">{vehicleNumber(load.vehicle?.id)}</span><span className="dp-cell-sub">{load.vehicle ? `${load.vehicle.type} · ${load.vehicle.temp}` : ""}</span></td><td>{load.orderCount}</td><td>{load.weightPct}% / {load.volumePct}%</td><td>{load.tripMinutes != null ? `${load.tripMinutes}${load.fresh ? ` / ${FRESH_TRIP_BUDGET_MINUTES}` : ""} ${t("min")}` : "—"}</td><td><Tag tone="green">{t("Locked")}</Tag></td></tr>)}</tbody>
         </table></div>
         <div className="dp-panel-body" style={{ paddingTop: 16 }}>
           <Note title={t("What happens next?")}>{t("Drivers and loaders can now view their trips, load lists and assigned orders in their apps. You can monitor progress in the Live operations dashboard.")}</Note>
@@ -597,7 +606,7 @@ function ConfirmedView({ detail, loads, token, onRefresh, onRevise }: { detail: 
           <thead><tr><th>{t("Trip")}</th><th>{t("Vehicle")}</th><th>{t("Plan version")}</th><th>{t("Driver")}</th><th>{t("Loader")}</th></tr></thead>
           <tbody>{rows.map((row) => (
             <tr key={row.trip.id}>
-              <td>{row.trip.tripNumber}</td><td>{row.trip.vehicleId}</td><td>v{detail.publication?.version}</td>
+              <td>{row.trip.tripNumber}</td><td>{vehicleNumber(row.trip.vehicleId)}</td><td>v{detail.publication?.version}</td>
               {statusCell(row.driver, row.trip.id)}
               {statusCell(row.loader, row.trip.id)}
             </tr>

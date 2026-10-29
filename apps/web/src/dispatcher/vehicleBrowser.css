@@ -1,0 +1,19 @@
+.dp-vehicle-search-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+}
+.dp-vehicle-search-controls .dp-field {
+  flex: 1 1 240px;
+}
+.dp-vehicle-search p {
+  margin: 8px 0 0;
+  font-size: 0.8125rem;
+}
+.dp-assignment-fields {
+  grid-template-columns: minmax(0, 2fr) minmax(100px, 1fr);
+}
+@media (max-width: 480px) {
+  .dp-assignment-fields { grid-template-columns: minmax(0, 1fr); }
+}
