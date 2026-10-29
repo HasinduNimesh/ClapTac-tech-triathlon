@@ -53,6 +53,10 @@ export function StoreManagerLayout() {
           <span className="sm-nav-icon" aria-hidden="true"><img src={iconBox} alt="" width={20} height={20} /></span>
           {t("Orders")}
         </Link>
+        <NavLink to="/store-manager/tasks" className={({ isActive }) => `sm-nav-item${isActive ? " active" : ""}`} onClick={() => setNavOpen(false)}>
+          <span className="sm-nav-icon" aria-hidden="true"><img src={iconCategory} alt="" width={20} height={20} /></span>
+          {t("Priority tasks")}
+        </NavLink>
         <NavLink to="/store-manager/recovery" className={({ isActive }) => `sm-nav-item${isActive ? " active" : ""}`} onClick={() => setNavOpen(false)}>
           <span className="sm-nav-icon" aria-hidden="true"><img src={iconHistory} alt="" width={20} height={20} /></span>
           {t("Recovery workspace")}

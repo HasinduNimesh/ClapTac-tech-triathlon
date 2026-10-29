@@ -1,9 +1,9 @@
 import { FormEvent, useEffect, useState } from "react";
 import { pastArrivals } from "./planTiming.mjs";
 import { PriorityReviews } from "../automations/PriorityReviews";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { apiJSON } from "../api/client";
-import { todayInSriLanka } from "../api/date.mjs";
+import { requestedDate, todayInSriLanka } from "../api/date.mjs";
 import { newOperationId } from "../api/delivery";
 import { DEPOT_LABELS, depotCode } from "../api/loading";
 import { DEFER_REASONS, FuelLedger, Plan, PlanDetail, PlanOrder, ReminderResult } from "../api/planning";
@@ -43,7 +43,8 @@ export function PlanningPage() {
   const { user } = useAuth();
   const { t } = useLocale();
   const token = user?.access_token || "";
-  const [date, setDate] = useState(todayInSriLanka);
+  const [params] = useSearchParams();
+  const [date, setDate] = useState(() => requestedDate(params.get("date")) || todayInSriLanka());
   const [detail, setDetail] = useState<PlanDetail | null>(null);
   const [loadingPlan, setLoadingPlan] = useState(true);
   const [error, setError] = useState("");

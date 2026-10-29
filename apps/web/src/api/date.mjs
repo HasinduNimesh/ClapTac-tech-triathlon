@@ -16,3 +16,10 @@ export function todayInSriLanka(now = Date.now()) {
 export function todayLocal(now = new Date()) {
   return [now.getFullYear(), String(now.getMonth() + 1).padStart(2, "0"), String(now.getDate()).padStart(2, "0")].join("-");
 }
+
+/** Valid date carried by operational task links; reject impossible calendar dates. */
+export function requestedDate(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value || "")) return undefined;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value ? value : undefined;
+}

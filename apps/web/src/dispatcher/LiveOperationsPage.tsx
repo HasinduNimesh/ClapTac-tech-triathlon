@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { apiJSON } from "../api/client";
-import { todayInSriLanka } from "../api/date.mjs";
+import { requestedDate, todayInSriLanka } from "../api/date.mjs";
 import { DeliveryStop, DeliveryTripDetail, DeliveryTripSummary, LatenessProbability, LiveLocation } from "../api/delivery";
 import { DEPOT_LABELS, LoadingTripSummary, depotCode, sameDepot } from "../api/loading";
 import { DisruptionRisk, PlanDetail } from "../api/planning";
@@ -49,7 +49,8 @@ export function LiveOperationsPage() {
   const { t } = useLocale();
   const token = useToken();
   const { depot } = useDepot();
-  const [date, setDate] = useState(todayInSriLanka);
+  const [params] = useSearchParams();
+  const [date, setDate] = useState(() => requestedDate(params.get("date")) || todayInSriLanka());
   const [view, setView] = useState<"list" | "map">("list");
   const [filter, setFilter] = useState<"all" | "risk" | "silent" | "chilled">("all");
   const [rows, setRows] = useState<Row[]>([]);
