@@ -1,0 +1,26 @@
+{
+  "observations": [
+    {
+      "browserTime": "15:00 Asia/Colombo",
+      "serverTime": "2026-10-26T15:00:00+05:30",
+      "title": "Order by 4:00 PM today for the next run."
+    },
+    {
+      "browserTime": "17:00 Asia/Colombo",
+      "serverTime": "2026-10-26T15:00:00+05:30",
+      "title": "Order by 4:00 PM today for the next run."
+    }
+  ],
+  "checks": [
+    "Device times 15:00 and 17:00 yield identical pre-cutoff notice with service time 15:00",
+    "America/New_York browser timezone and device year 2036 do not alter Colombo cutoff",
+    "Open page crosses 15:59:59 to 16:00 using monotonic elapsed time",
+    "Device wall-clock jump backwards to 2010 does not reverse cutoff",
+    "Server 17:00 remains after-cutoff with incorrect device date",
+    "Missing/invalid/unavailable service timestamp is neutral",
+    "Unanswered refreshes expire the clock sample after 90 seconds",
+    "Focus, online and visibility events resynchronize",
+    "Changed policy cutoff 15:30 is honored"
+  ],
+  "browserErrors": []
+}

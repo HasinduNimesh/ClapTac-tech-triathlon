@@ -21,14 +21,25 @@ export function formatCutoff(localTime, locale = "en") {
   return new Intl.DateTimeFormat(tag, { hour: "numeric", minute: "2-digit", hour12: true, timeZone: "UTC" }).format(new Date(Date.UTC(2000, 0, 1, Math.floor(total / 60), total % 60)));
 }
 
-/** True once today's cutoff has passed in Sri Lanka. Undefined when the cutoff is not known. */
-export function cutoffHasPassed(localTime, now = new Date()) {
+/** True once cutoff has passed in Sri Lanka, using an explicitly supplied server-derived time. */
+export function cutoffHasPassed(localTime, now) {
   const cutoff = minutesOfDay(localTime);
-  if (cutoff === undefined) return undefined;
+  if (cutoff === undefined || !(now instanceof Date) || !Number.isFinite(now.getTime())) return undefined;
   const parts = new Intl.DateTimeFormat("en-GB", { timeZone: COLOMBO, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(now);
   const hour = Number(parts.find((p) => p.type === "hour")?.value);
   const minute = Number(parts.find((p) => p.type === "minute")?.value);
   return hour * 60 + minute >= cutoff;
+}
+
+/** Advance a fresh server timestamp with monotonic elapsed time, never the device wall clock. */
+export function serverTimeAt(serverTime, receivedAt, monotonicNow) {
+  // An explicit offset is required: a timezone-less timestamp would use the device's timezone.
+  if (typeof serverTime !== "string" || !/T.*(?:Z|[+-]\d{2}:\d{2})$/i.test(serverTime)) return undefined;
+  const timestamp = Date.parse(serverTime);
+  const elapsed = monotonicNow - receivedAt;
+  // Do not extrapolate through a prolonged network outage or an invalid monotonic sample.
+  if (!Number.isFinite(timestamp) || !Number.isFinite(receivedAt) || !Number.isFinite(monotonicNow) || elapsed < 0 || elapsed > 90_000) return undefined;
+  return new Date(timestamp + elapsed);
 }
 
 /** Fills the {time} placeholder of a translated sentence. */

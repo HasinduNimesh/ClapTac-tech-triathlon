@@ -103,15 +103,22 @@ paths:
       description: >
         The daily order cutoff the service applies, as HH:MM in Sri Lanka time: the planning policy's
         (a dispatcher can change it), or 16:00 when the policy cannot be read. Screens that tell people
-        the cutoff read it from here. Requires order:view-own or order:view-all.
+        the cutoff read it from here. serverTime uses the same service clock as delivery-date
+        adjustment; clients must not use their device wall clock to decide whether cutoff has passed.
+        Responses must not be cached. Requires order:view-own or order:view-all.
       responses:
         "200":
           description: Cutoff
+          headers:
+            Cache-Control:
+              schema: { type: string, example: no-store }
           content:
             application/json:
               schema:
                 type: object
+                required: [cutoff, serverTime]
                 properties:
+                  serverTime: { type: string, format: date-time, example: "2026-10-26T09:30:00Z" }
                   cutoff:
                     type: object
                     properties:

@@ -2,7 +2,7 @@ import { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useLocale } from "../i18n";
 import { cutoffHasPassed, formatCutoff, withTime } from "./cutoff.mjs";
-import { useOrderCutoff } from "./useOrderCutoff";
+import { useOrderCutoffStatus } from "./useOrderCutoff";
 import heroBg from "../assets/store-manager/hero-bg.png";
 import iconHistory from "../assets/store-manager/icon-history.svg";
 
@@ -39,9 +39,9 @@ export function CutoffNotice() {
   const { t, locale } = useLocale();
   // The cutoff is a policy a dispatcher can change, so it is read from the order service. Until it is
   // known (or if it cannot be read) no time is stated.
-  const local = useOrderCutoff();
+  const { localTime: local, now } = useOrderCutoffStatus();
   const time = formatCutoff(local, locale);
-  const passed = cutoffHasPassed(local);
+  const passed = cutoffHasPassed(local, now);
   const title = time === undefined || passed === undefined
     ? t("Orders placed after the daily cutoff move to the next operating day.")
     : passed ? withTime(t("Today's {time} cutoff has passed."), time) : withTime(t("Order by {time} today for the next run."), time);

@@ -37,6 +37,14 @@ type Service struct {
 
 var validReceiptIssueTypes = map[string]bool{"MISSING": true, "DAMAGED": true, "QUANTITY_MISMATCH": true, "OTHER": true}
 
+// CurrentTime is the service clock used by delivery-date adjustment and exposed to cutoff notices.
+func (s Service) CurrentTime() time.Time {
+	if s.Now != nil {
+		return s.Now()
+	}
+	return time.Now()
+}
+
 // CutoffLocalTime is the daily order cutoff in Sri Lanka time that orders are held to: the planning
 // policy's (which a dispatcher can change), or 16:00 when the policy cannot be read. Screens that tell
 // people the cutoff read it from here so they never state a time the service is not applying.
@@ -602,10 +610,7 @@ func (s Service) Get(profile *authorization.Profile, id string) (domain.Order, e
 // deliveryDate is the date an order requested for requested will actually be delivered: moved past the daily
 // cutoff and any non-operating days, using the configured operating calendar when it can be read.
 func (s Service) deliveryDate(requested time.Time) (time.Time, time.Time) {
-	now := time.Now()
-	if s.Now != nil {
-		now = s.Now()
-	}
+	now := s.CurrentTime()
 	if s.Cutoff != nil {
 		cutoffTime := s.CutoffLocalTime()
 		calendar := s.Cutoff

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -42,7 +43,8 @@ func TestCutoffEndpointReportsTheCutoffTheServiceApplies(t *testing.T) {
 		}
 		defer res.Body.Close()
 		var out struct {
-			Cutoff struct {
+			ServerTime string `json:"serverTime"`
+			Cutoff     struct {
 				LocalTime string `json:"localTime"`
 				Timezone  string `json:"timezone"`
 			} `json:"cutoff"`
@@ -50,6 +52,14 @@ func TestCutoffEndpointReportsTheCutoffTheServiceApplies(t *testing.T) {
 		_ = json.NewDecoder(res.Body).Decode(&out)
 		if res.StatusCode == http.StatusOK && out.Cutoff.Timezone != "Asia/Colombo" {
 			t.Fatalf("timezone = %q", out.Cutoff.Timezone)
+		}
+		if res.StatusCode == http.StatusOK {
+			if _, err := time.Parse(time.RFC3339Nano, out.ServerTime); err != nil {
+				t.Fatalf("serverTime must be an unambiguous timestamp: %q", out.ServerTime)
+			}
+			if res.Header.Get("Cache-Control") != "no-store" {
+				t.Fatal("cutoff clock responses must not be cached")
+			}
 		}
 		return res.StatusCode, out.Cutoff.LocalTime
 	}
@@ -69,5 +79,27 @@ func TestCutoffEndpointReportsTheCutoffTheServiceApplies(t *testing.T) {
 	}
 	if code, local := ask(service.Service{}, "usr-store-manager"); code != http.StatusOK || local != "16:00" {
 		t.Fatalf("no policy configured means the 16:00 default: %d %q", code, local)
+	}
+}
+
+func TestCutoffUsesServiceClockAndRefreshesItsTimestamp(t *testing.T) {
+	now := time.Date(2026, 10, 26, 15, 59, 59, 0, time.FixedZone("Colombo", 19800))
+	h := Handler{Service: service.Service{Policy: policyStub{cutoff: "16:00"}, Now: func() time.Time { return now }}}
+	for _, expected := range []string{"2026-10-26T10:29:59Z", "2026-10-26T10:30:00Z"} {
+		r := httptest.NewRequest(http.MethodGet, "/api/v1/orders/cutoff", nil)
+		// A client-supplied clock must not influence the service timestamp.
+		r.Header.Set("Date", "Tue, 01 Jan 2036 22:00:00 GMT")
+		w := httptest.NewRecorder()
+		h.cutoff(w, r)
+		var out struct {
+			ServerTime string `json:"serverTime"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+			t.Fatal(err)
+		}
+		if out.ServerTime != expected {
+			t.Fatalf("service clock = %s, want %s", out.ServerTime, expected)
+		}
+		now = now.Add(time.Second)
 	}
 }
