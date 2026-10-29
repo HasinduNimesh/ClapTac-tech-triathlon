@@ -10,7 +10,7 @@
     "test": "node --test tests/*.test.mjs"
   },
   "dependencies": {
-    "dexie": "^4.0.10",
+    "dexie": "^4.4.7",
     "leaflet": "^1.9.4",
     "oidc-client-ts": "^3.1.0",
     "react": "^18.3.1",
