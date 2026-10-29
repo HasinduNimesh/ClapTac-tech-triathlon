@@ -4,7 +4,7 @@ import { apiJSON } from "../api/client";
 import { requestedDate, todayInSriLanka } from "../api/date.mjs";
 import { DeliveryStop, DeliveryTripDetail, DeliveryTripSummary, LatenessProbability, LiveLocation } from "../api/delivery";
 import { DEPOT_LABELS, LoadingTripSummary, depotCode, sameDepot } from "../api/loading";
-import { DisruptionRisk, PlanDetail } from "../api/planning";
+import { DisruptionRisk, PlanDetail, WeatherForecast } from "../api/planning";
 import { useAuth } from "../auth/AuthContext";
 import { useLocale } from "../i18n";
 import { ARRIVAL_ESTIMATE_VERSION, estimateArrival, previousReportedStop } from "./arrivalEstimate.mjs";
@@ -14,6 +14,8 @@ import { singleFlightMessagePost } from "./singleFlightMessagePost.mjs";
 
 import { enrichTripWithWatch, generateNeedsActionAlerts } from "./tripWatch.mjs";
 import { disruptionsForTrip, groupActionsByTrip } from "./liveAlerts.mjs";
+import { SEVERITY_COLORS, disruptionAreas } from "./disruptionMap.mjs";
+import { DisruptionLegend, DisruptionToggle, RISK_TYPE_LABELS, toMapAreas } from "./DisruptionLayer";
 import { FRESH_TRIP_BUDGET_MINUTES } from "./planModel";
 
 import { runRecovery } from "./breakdownRecovery.mjs";
@@ -36,7 +38,6 @@ type Severity = "critical" | "high" | "medium" | "low";
 type ActionItem = { key: string; severity: Severity; tripId?: string; tripLabel?: string; title: string; text: string; actions: { label: string; onClick?: () => void; to?: string; primary?: boolean }[] };
 
 const fallbackServiceTime = { minutes: 20, version: "fixed_20m_v1" };
-const RISK_TYPE_LABELS: Record<string, string> = { HEAVY_RAIN: "Heavy rain", FLOODING: "Flooding", LANDSLIDE: "Landslide", ROAD_CLOSURE: "Road closure", ROAD_DAMAGE: "Road damage", OTHER: "Other" };
 const postTripMessageOnce = singleFlightMessagePost(async ({ token, tripId, body, stopId }) =>
   apiJSON(`/delivery/trips/${tripId}/messages`, token, { method: "POST", body: JSON.stringify({ body, stopId: stopId || undefined }) }),
 );
@@ -66,6 +67,7 @@ export function LiveOperationsPage() {
   const outlets = useApi<{ items: Outlet[] }>("/shared/outlets");
   const loading = useApi<{ items: LoadingTripSummary[] }>(`/loading/trips?date=${date}`);
   const risks = useApi<{ items: DisruptionRisk[] }>(`/planning/disruption-risks?date=${date}`);
+  const weather = useApi<WeatherForecast>(`/planning/disruption-risks/weather?date=${date}`);
   const forecast = useApi<{ forecast?: { serviceMinutesPerStop?: number; serviceEstimateVersion?: string } }>("/orders/forecast");
   const serviceMinutes = forecast.data?.forecast?.serviceMinutesPerStop ?? fallbackServiceTime.minutes;
 
@@ -250,7 +252,7 @@ export function LiveOperationsPage() {
           ]} />
           <span className="muted" style={{ fontSize: "0.8125rem" }}>◷ {t("Progress comes from driver updates, not GPS")}</span>
         </>}>
-          {view === "map" ? <TripMap rows={visible} outlets={outletMap(outlets.data?.items)} live={live} now={now} onOpen={setOpenTrip} /> : (
+          {view === "map" ? <TripMap rows={visible} outlets={outletMap(outlets.data?.items)} live={live} now={now} onOpen={setOpenTrip} risks={risks.data?.items} weather={weather.data} /> : (
             <div className="dp-table-wrap">
               <table className="dp-table">
                 <thead><tr><th>{t("Vehicle / depot")}</th><th>{t("Brand · district")}</th><th>{t("Trip")}</th><th>{t("Progress")}</th><th>{t("Next stop")}</th><th>{t("Planned / estimated")}</th><th>{t("Cooling")}</th><th>{t("Last update")}</th><th>{t("Status")}</th></tr></thead>
@@ -292,9 +294,10 @@ export function LiveOperationsPage() {
 // Trips on an OpenStreetMap map. Outlet positions are approximate (district
 // centre + offset). A truck sits at its live position while the driver phone
 // reports it, else at its last reported stop, or the depot before the first update; trips with no recent update stay grey so silence is visible.
-function TripMap({ rows, outlets, live, now, onOpen }: { rows: Row[]; outlets: Map<string, Outlet>; live: Record<string, LiveLocation>; now: number; onOpen: (tripId: string) => void }) {
+function TripMap({ rows, outlets, live, now, onOpen, risks, weather }: { rows: Row[]; outlets: Map<string, Outlet>; live: Record<string, LiveLocation>; now: number; onOpen: (tripId: string) => void; risks?: DisruptionRisk[]; weather?: WeatherForecast | null }) {
   const { t } = useLocale();
   const [selected, setSelected] = useState("");
+  const [showRisks, setShowRisks] = useState(true);
   const color = (s: RowState) => (s === "broken" ? "#c03221" : s === "late" ? "#d9822b" : s === "silent" || s === "waiting" ? "#8a92a6" : "#008b52");
   const tone = (s: RowState) => (s === "broken" ? "red" : s === "late" ? "amber" : s === "silent" ? "silent" : s === "waiting" ? "muted" : "green") as "red" | "amber" | "silent" | "muted" | "green";
   // The marker disc is grey for silent and waiting trips; its label text uses the darker silent grey so it stays readable on the white label.
@@ -314,7 +317,9 @@ function TripMap({ rows, outlets, live, now, onOpen }: { rows: Row[]; outlets: M
     if (depotAt) depots.add(depotCode(row.summary.depot));
     const path: LatLng[] = [...(depotAt ? [depotAt] : []), ...stops.map(at).filter((p): p is LatLng => Boolean(p))];
     const focus = selected === row.summary.tripId;
-    lines.push({ id: row.summary.tripId, points: path, color: focus ? "#3a57e8" : "#9db3ee", weight: focus ? 5 : 3, dashed: row.state === "waiting" });
+    // A trip whose remaining route touches a road or weather risk is drawn in that risk's colour.
+    const risk = showRisks ? row.disruptions?.[0]?.effectiveSeverity : undefined;
+    lines.push({ id: row.summary.tripId, points: path, color: focus ? "#3a57e8" : risk ? SEVERITY_COLORS[risk] : "#9db3ee", weight: focus || risk ? 5 : 3, dashed: row.state === "waiting" });
     const last = [...stops].reverse().find((s) => s.outcomeCode || s.arrivedAt);
     // A truck is drawn only where it has really been reported: its last stop, else its depot.
     const livePosition = livePoint(live[row.summary.tripId], now) as LatLng | null;
@@ -331,17 +336,20 @@ function TripMap({ rows, outlets, live, now, onOpen }: { rows: Row[]; outlets: M
   }
   for (const d of depots) markers.push({ id: `depot-${d}`, at: depotPosition(d)!, kind: "depot", color: "#232d42", label: `${DEPOT_LABELS[d] || d} ${t("depot")}`, title: `${DEPOT_LABELS[d] || d} ${t("depot")}` });
   const chosen = rows.find((r) => r.summary.tripId === selected);
+  const areas = showRisks ? toMapAreas(disruptionAreas(risks, weather), t) : [];
   return (
-    <div className="dp-panel-body">
+    <div className="dp-panel-body dp-stack">
+      <DisruptionToggle shown={showRisks} onChange={setShowRisks} forecastError={weather?.error} />
       <div className="dp-grid-2" style={{ gridTemplateColumns: "minmax(0, 2fr) minmax(280px, 1fr)" }}>
         <div style={{ position: "relative" }}>
-          <WaypointMap label={t("Map of trips on the road")} markers={markers} lines={lines} fitKey={rows.map((r) => r.summary.tripId).join()} />
+          <WaypointMap label={t("Map of trips on the road")} markers={markers} lines={lines} areas={areas} fitKey={rows.map((r) => r.summary.tripId).join()} />
           <div className="dp-map-legend" style={{ zIndex: 500 }}>
             <p style={{ margin: 0 }}><span style={{ color: "#008b52" }}>●</span> {t("On track")}</p>
             <p style={{ margin: 0 }}><span style={{ color: "#d9822b" }}>●</span> {t("At risk of missing a window")}</p>
             <p style={{ margin: 0 }}><span style={{ color: "#c03221" }}>●</span> {t("Needs action now")}</p>
             <p style={{ margin: 0 }}><span style={{ color: "#8a92a6" }}>●</span> {t("No recent update (last known place)")}</p>
             <p style={{ margin: 0 }}><span style={{ color: "#3a57e8" }}>●</span> {t("Selected trip and its stops")}</p>
+            {showRisks && <DisruptionLegend rain={!weather?.error} />}
           </div>
           {chosen && (
             <div className="dp-panel" style={{ position: "absolute", right: 16, bottom: 16, zIndex: 500, width: 300, padding: 16 }}>

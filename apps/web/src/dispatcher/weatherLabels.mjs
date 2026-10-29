@@ -1,0 +1,38 @@
+// Labels for the road-risk and rain-forecast layer on the operations and planning maps, and the
+// forecast suggestions in the disruption risk panel.
+export const weatherLabels = {
+  si: {
+    "Rain forecast": "වැසි පුරෝකථනය",
+    "heaviest around": "වැඩිම වැස්ස ආසන්න වේලාව",
+    chance: "සම්භාවිතාව",
+    "Road or weather risk: high": "මාර්ග හෝ කාලගුණ අවදානම: ඉහළ",
+    "Road or weather risk: medium or low": "මාර්ග හෝ කාලගුණ අවදානම: මධ්‍යම හෝ අඩු",
+    "Rain forecast (5 mm or more)": "වැසි පුරෝකථනය (මි.මී. 5 හෝ වැඩි)",
+    "Show road risks and rain forecast": "මාර්ග අවදානම් සහ වැසි පුරෝකථනය පෙන්වන්න",
+    "Rain forecast unavailable for this date; recorded risks are still shown.": "මෙම දිනය සඳහා වැසි පුරෝකථනය නොමැත; සටහන් කළ අවදානම් තවමත් පෙන්වයි.",
+    "Rain from Open-Meteo at each district centre.": "එක් එක් දිස්ත්‍රික් මධ්‍යස්ථානයේ වැසි Open-Meteo වෙතින්.",
+    "A wide coloured edge marks a trip that passes a risk.": "පළල් වර්ණ දාරයක් අවදානමක් හරහා යන ගමනක් සලකුණු කරයි.",
+    "Rain forecast suggestions": "වැසි පුරෝකථන යෝජනා",
+    "From the Open-Meteo forecast at each district centre. Nothing changes until you add a suggestion as a risk.": "එක් එක් දිස්ත්‍රික් මධ්‍යස්ථානයේ Open-Meteo පුරෝකථනයෙන්. ඔබ යෝජනාවක් අවදානමක් ලෙස එක් කරන තුරු කිසිවක් වෙනස් නොවේ.",
+    "Loading the rain forecast…": "වැසි පුරෝකථනය පූරණය වෙමින්…",
+    "No heavy rain is forecast for the delivery districts on this date.": "මෙම දිනයේ බෙදාහැරීමේ දිස්ත්‍රික්ක සඳහා තද වැසි පුරෝකථනය කර නැත.",
+    "Add as risk": "අවදානමක් ලෙස එක් කරන්න",
+  },
+  ta: {
+    "Rain forecast": "மழை முன்னறிவிப்பு",
+    "heaviest around": "அதிக மழை நேரம் சுமார்",
+    chance: "வாய்ப்பு",
+    "Road or weather risk: high": "சாலை அல்லது வானிலை அபாயம்: அதிகம்",
+    "Road or weather risk: medium or low": "சாலை அல்லது வானிலை அபாயம்: நடுத்தரம் அல்லது குறைவு",
+    "Rain forecast (5 mm or more)": "மழை முன்னறிவிப்பு (5 மி.மீ. அல்லது அதற்கு மேல்)",
+    "Show road risks and rain forecast": "சாலை அபாயங்களையும் மழை முன்னறிவிப்பையும் காட்டு",
+    "Rain forecast unavailable for this date; recorded risks are still shown.": "இந்தத் தேதிக்கு மழை முன்னறிவிப்பு இல்லை; பதிவு செய்த அபாயங்கள் இன்னும் காட்டப்படுகின்றன.",
+    "Rain from Open-Meteo at each district centre.": "ஒவ்வொரு மாவட்ட மையத்திலும் மழை Open-Meteo இலிருந்து.",
+    "A wide coloured edge marks a trip that passes a risk.": "அகலமான வண்ண விளிம்பு அபாயத்தைக் கடக்கும் பயணத்தைக் குறிக்கிறது.",
+    "Rain forecast suggestions": "மழை முன்னறிவிப்பு பரிந்துரைகள்",
+    "From the Open-Meteo forecast at each district centre. Nothing changes until you add a suggestion as a risk.": "ஒவ்வொரு மாவட்ட மையத்திலும் உள்ள Open-Meteo முன்னறிவிப்பிலிருந்து. நீங்கள் ஒரு பரிந்துரையை அபாயமாகச் சேர்க்கும் வரை எதுவும் மாறாது.",
+    "Loading the rain forecast…": "மழை முன்னறிவிப்பு ஏற்றப்படுகிறது…",
+    "No heavy rain is forecast for the delivery districts on this date.": "இந்தத் தேதியில் விநியோக மாவட்டங்களுக்குக் கனமழை முன்னறிவிக்கப்படவில்லை.",
+    "Add as risk": "அபாயமாகச் சேர்",
+  },
+};

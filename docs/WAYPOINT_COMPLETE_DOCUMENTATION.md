@@ -699,6 +699,8 @@ When a vehicle breaks down mid-plan: `GET /plans/{id}/breakdowns/proposals?vehic
 
 Dispatchers record weather/road risks for a date (`scope` DEPOT, DISTRICT or ROUTE; `risk_type` HEAVY_RAIN, FLOODING, LANDSLIDE, ROAD_CLOSURE, ROAD_DAMAGE, OTHER; severity, source, confidence 0–1). They are **append-only**; an *override* (ACKNOWLEDGED, OVERRIDE with a new severity, or DISMISSED, reason 8–500 chars) is also append-only, and the latest override wins. Risks inform the dispatcher; they do not change the allocator.
 
+`GET /disruption-risks/weather?date=` reads the Open-Meteo rain forecast for the twelve district centres (cached 30 minutes; dates from 7 days ago to 15 days ahead). A district expecting 25 mm in the day or 10 mm in an hour gets a suggested HEAVY_RAIN (MEDIUM); 50 mm or 20 mm in an hour, HEAVY_RAIN (HIGH); 100 mm, FLOODING (HIGH). Suggestions are never stored: the dispatcher adds one from the risk panel as an ordinary risk with source `Open-Meteo forecast`. If the forecast cannot be read, the districts are still listed with an `error` so the maps can place recorded risks. The live operations and planning maps draw risks as circles coloured by severity, rain of 5 mm or more as dashed blue circles, and trips that pass a risk in the risk's colour.
+
 #### Internal APIs for peers
 
 `/internal/trips`, `/internal/trips/{tripId}`, `/internal/orders/{orderId}` serve the loading and order services (scope `plans:read-internal`); `/internal/automation-snapshot` serves shared-service's automation engine.
@@ -3079,6 +3081,7 @@ These are the rules the codebase deliberately follows. Each exists for a reason 
 | Variable | Service | Meaning |
 |---|---|---|
 | `CALENDAR_PATH` | order | Fallback operating-calendar CSV (`/data/calendar.csv`) |
+| `WEATHER_API_URL` (`https://api.open-meteo.com/v1/forecast`; `off` disables), `WEATHER_API_KEY` | planning | Rain forecast for suggested disruption risks and the map rain layer |
 | `MINIO_ENDPOINT`, `MINIO_BUCKET` (`waypoint-proof`), `MINIO_ACCESS_KEY`/`MINIO_SECRET_KEY` (`s3mock`), `MINIO_REGION` (`us-east-1`) | loading, delivery, integration | Object storage |
 | `DELIVERY_PROOF_RETENTION_ENABLED` (`false`), `DELIVERY_PROOF_RETENTION_DAYS` (`180`) | delivery | Proof erasure worker |
 | `DELIVERY_SERVICE_MINUTES_PER_STOP` (`20`, 0–240) | delivery | Service allowance behind arrival projections; should match the planner's |

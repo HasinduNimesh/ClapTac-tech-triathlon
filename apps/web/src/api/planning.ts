@@ -90,6 +90,25 @@ export type DisruptionRisk = {
   overriddenAt?: string;
 };
 
+/** A heavy-rain risk the forecast suggests for a district; a dispatcher adds it or ignores it. */
+export type WeatherSuggestion = { riskType: "HEAVY_RAIN" | "FLOODING"; severity: "MEDIUM" | "HIGH"; summary: string; confidence: number };
+
+export type DistrictWeather = {
+  district: string;
+  latitude: number;
+  longitude: number;
+  /** Rain figures are missing when the forecast could not be read for this date. */
+  dayRainMm?: number;
+  workingRainMm?: number;
+  maxHourlyRainMm?: number;
+  peakHour?: string;
+  rainProbability?: number;
+  maxGustKmh?: number;
+  suggestion?: WeatherSuggestion;
+};
+
+export type WeatherForecast = { date: string; source: string; sourceUrl: string; fetchedAt?: string; error?: string; districts: DistrictWeather[] };
+
 export type PlanOrder = {
   id: string;
   orderRef: string;

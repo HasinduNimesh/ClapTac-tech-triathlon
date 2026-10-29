@@ -6,12 +6,15 @@ import { apiJSON } from "../api/client";
 import { requestedDate, todayInSriLanka } from "../api/date.mjs";
 import { newOperationId } from "../api/delivery";
 import { DEPOT_LABELS, depotCode } from "../api/loading";
-import { DEFER_REASONS, FuelLedger, Plan, PlanDetail, PlanOrder, ReminderResult } from "../api/planning";
+import { DEFER_REASONS, DisruptionRisk, FuelLedger, Plan, PlanDetail, PlanOrder, ReminderResult, WeatherForecast } from "../api/planning";
 import { useAuth } from "../auth/AuthContext";
 import { useLocale } from "../i18n";
 import { planLevelAcks, trackerRows, unacknowledgedTargets, type TrackerCell } from "./ackTracking.mjs";
 import { resolveFuelAttempt } from "./fuelSubmission.mjs";
 import { DisruptionRiskPanel } from "./DisruptionRiskPanel";
+import { DisruptionLegend, DisruptionToggle, toMapAreas } from "./DisruptionLayer";
+import { SEVERITY_COLORS, disruptionAreas } from "./disruptionMap.mjs";
+import { disruptionsForTrip } from "./liveAlerts.mjs";
 import { Outlet, isVanOnly, outletMap } from "./types";
 import { FRESH_TRIP_BUDGET_MINUTES, normalizePlan, planChecks, tripLoads } from "./planModel";
 import { LatLng, MapLine, MapMarker, WaypointMap, depotPosition } from "../components/WaypointMap";
@@ -73,6 +76,9 @@ export function PlanningPage() {
   const [fuelAttempt, setFuelAttempt] = useState<{ signature: string; operationId: string } | null>(null);
   const outlets = useApi<{ items: Outlet[] }>("/shared/outlets");
   const outletById = outletMap(outlets.data?.items);
+  const risks = useApi<{ items: DisruptionRisk[] }>(`/planning/disruption-risks?date=${date}`);
+  const weather = useApi<WeatherForecast>(`/planning/disruption-risks/weather?date=${date}`);
+  const [showRisks, setShowRisks] = useState(true);
 
   async function loadFuelLedger(weekOf: string) {
     try {
@@ -342,12 +348,20 @@ export function PlanningPage() {
                   const stops = detail.allocations.filter((a) => a.tripId === load.tripId).sort((a, b) => a.sequence - b.sequence);
                   const points = stops.map((a) => at(ordersById.get(a.orderId)?.outletId)).filter((p): p is LatLng => Boolean(p));
                   lines.push({ id: load.tripId, points: depotAt ? [depotAt, ...points] : points, color, weight: 3 });
+                  // A trip that passes a road or weather risk gets a wide halo in that risk's colour under its own line.
+                  const risk = showRisks ? disruptionsForTrip(risks.data?.items, { tripId: load.tripId, vehicleId: load.vehicle?.id, depot, planRef: detail.plan.planRef, remainingDistricts: stops.map((a) => outletById.get(ordersById.get(a.orderId)?.outletId || "")?.district || "") })[0] : undefined;
+                  if (risk) lines.unshift({ id: `${load.tripId}-risk`, points: depotAt ? [depotAt, ...points] : points, color: SEVERITY_COLORS[risk.effectiveSeverity], weight: 9 });
                   stops.forEach((a) => { const order = ordersById.get(a.orderId); const p = at(order?.outletId); if (p) markers.push({ id: a.id, at: p, kind: "stop", color, label: `${vehicleNumber(load.vehicle?.id)}·${a.sequence}`, title: `${vehicleNumber(load.vehicle?.id)} ${t("Trip")} ${load.tripNumber} · ${a.sequence}. ${outletLabel(order)}` }); });
                 });
                 for (const u of detail.unallocated) { const order = ordersById.get(u.orderId); const p = at(order?.outletId); if (p) markers.push({ id: `u-${u.orderId}`, at: p, kind: "stop", color: "#c03221", title: `${u.orderRef || order?.orderRef} · ${t("Unallocated")} · ${t(u.reasonCode)}` }); }
                 for (const d of depots) markers.push({ id: `depot-${d}`, at: depotPosition(d)!, kind: "depot", color: "#232d42", label: `${DEPOT_LABELS[d] || d}`, title: `${DEPOT_LABELS[d] || d}` });
+                const areas = showRisks ? toMapAreas(disruptionAreas(risks.data?.items, weather.data), t) : [];
                 return <div className="dp-panel-body dp-stack">
-                  <WaypointMap label={t("Map of planned trips")} markers={markers} lines={lines} height={480} fitKey={`${detail.plan.id}-${loads.length}-${detail.allocations.length}`} />
+                  <DisruptionToggle shown={showRisks} onChange={setShowRisks} forecastError={weather.data?.error} />
+                  <div style={{ position: "relative" }}>
+                    <WaypointMap label={t("Map of planned trips")} markers={markers} lines={lines} areas={areas} height={480} fitKey={`${detail.plan.id}-${loads.length}-${detail.allocations.length}`} />
+                    {showRisks && <div className="dp-map-legend" style={{ zIndex: 500 }}><DisruptionLegend rain={!weather.data?.error} /><p style={{ margin: 0 }}>{t("A wide coloured edge marks a trip that passes a risk.")}</p></div>}
+                  </div>
                   <p className="muted" style={{ margin: 0, fontSize: "0.8125rem" }}>{t("Each colour is one vehicle trip in stop order; red points are unallocated orders. Outlet positions are approximate (district centre).")}</p>
                 </div>;
               })()}

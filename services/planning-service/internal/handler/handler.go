@@ -47,6 +47,7 @@ type Handler struct {
 	Profiles   authorization.ProfileResolver
 	Service    Planner
 	Automation AutomationHistory
+	Weather    WeatherForecaster
 }
 
 var _ Planner = service.Service{}
@@ -73,6 +74,7 @@ func (h Handler) Routes(r chi.Router) {
 		r.With(authorization.RequireWith(h.Authn, h.Profiles, authorization.PermPlanUpdate)).Post("/plans/{id}/reminders", h.remind)
 		r.With(authorization.RequireWith(h.Authn, h.Profiles, authorization.PermPlanAcknowledge)).Get("/plans/{id}/reminders", h.reminders)
 		r.With(authorization.RequireWith(h.Authn, h.Profiles, authorization.PermPlanView)).Get("/disruption-risks", h.listDisruptionRisks)
+		r.With(authorization.RequireWith(h.Authn, h.Profiles, authorization.PermPlanView)).Get("/disruption-risks/weather", h.weatherForecast)
 		r.With(authorization.RequireWith(h.Authn, h.Profiles, authorization.PermPlanUpdate)).Post("/disruption-risks", h.createDisruptionRisk)
 		r.With(authorization.RequireWith(h.Authn, h.Profiles, authorization.PermPlanUpdate)).Post("/disruption-risks/{riskId}/override", h.overrideDisruptionRisk)
 		r.With(authorization.RequireAnyWith(h.Authn, h.Profiles, authorization.PermPlanView, authorization.PermPlansReadInternal)).Get("/internal/trips", h.internalTrips)
