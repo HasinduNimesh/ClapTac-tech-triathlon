@@ -1,0 +1,17 @@
+digraph G {
+  rankdir=LR; fontname="Helvetica"; nodesep=0.45; ranksep=1.1;
+  node [fontname="Helvetica", fontsize=15, shape=box, style="rounded,filled", fillcolor="#e9f7ef", color="#4aa96c"];
+  edge [fontname="Helvetica", fontsize=12, color="#4a5b7a"];
+  label="Who calls whom (service to service, with the machine scopes they hold)"; labelloc=t; fontsize=22;
+  order [label="order-service"]; planning [label="planning-service"]; fleet [label="fleet-service"]; loading [label="loading-service"];
+  delivery [label="delivery-service"]; shared [label="shared-service\n(also the audit sink)"]; integ [label="integration-service"];
+  orch [label="agent-orchestrator", fillcolor="#fdecef", color="#d9667a"]; assist [label="agent-assistants", fillcolor="#fdecef", color="#d9667a"];
+  order -> planning [label="plan state\nplans:read-internal"]; order -> delivery [label="tracking\ndeliveries:read-internal"]; order -> shared [label="outlets, policy, audit"];
+  planning -> order [label="orders to plan\norders:read-internal"]; planning -> fleet [label="availability, workshop\nfleet:read-internal, fleet:update"]; planning -> delivery [label="last served, recovery suspend\ndeliveries:read-internal,\ndeliveries:recover-internal"]; planning -> shared [label="outlets, policy, calendar, audit"];
+  loading -> planning [label="published trips\nplans:read-internal"]; loading -> order [label="order lines\norders:read-internal"]; loading -> shared [label="audit, notices"];
+  delivery -> loading [label="READY snapshot\nloading:read-internal"]; delivery -> shared [label="outlets, audit"]; delivery -> order [label="delivery follow-ups\norders:write-internal"];
+  fleet -> shared [label="audit (outbox, every 2 s)\naudit:write"];
+  shared -> integ [label="send SMS\n(notify worker)"]; shared -> planning [label="automation snapshot\nautomations:read-internal"]; integ -> shared [label="SMS status\nnotifications:write"];
+  orch -> order [label="user's own token", color="#d9667a"]; orch -> planning [color="#d9667a"]; orch -> fleet [color="#d9667a"]; orch -> loading [color="#d9667a"]; orch -> delivery [color="#d9667a"]; orch -> shared [color="#d9667a"];
+  assist -> order [label="user's own token", color="#d9667a"]; assist -> shared [color="#d9667a"];
+}

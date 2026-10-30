@@ -1,0 +1,16 @@
+digraph G {
+  rankdir=LR; fontname="Helvetica"; nodesep=0.35; ranksep=0.5;
+  node [fontname="Helvetica", fontsize=15, shape=box, style="rounded,filled", color="#5b6b8a"];
+  edge [fontname="Helvetica", fontsize=12, color="#5b6b8a"];
+  label="One order, from request to receipt: who does what, and what the system checks"; labelloc=t; fontsize=22;
+  s1 [label="1. Store manager\nplaces order\n(before 4 PM cutoff)\norder-service: validates,\nidempotent, status confirmed", fillcolor="#dbe4ff"];
+  s2 [label="2. Dispatcher plans\nplanning-service: Generate\n(deterministic allocator)\nchecks weight, volume, cooling,\ndepot, window, fuel, 2 trips,\nvehicle availability", fillcolor="#e9f7ef"];
+  s3 [label="3. Dispatcher locks plan\nstatus confirmed;\ntrips published;\nversion + content hash", fillcolor="#e9f7ef"];
+  s4 [label="4. Loader loads\nloading-service: acknowledge,\nstart, report shortfall;\ndispatcher decides;\nconfirm ready to depart", fillcolor="#fff7e6"];
+  s5 [label="5. Driver delivers\ndelivery-service: trip appears\nonly when READY; stops,\nproof (photo/signature),\noffline queue + sync", fillcolor="#fdecef"];
+  s6 [label="6. Store confirms receipt\norder-service: quantities,\ndiscrepancy, temperature\n(chilled)", fillcolor="#dbe4ff"];
+  s7 [label="7. Everyone sees it\nshared-service: audit trail;\nlive status, notices, SMS", fillcolor="#eefaf8"];
+  s1 -> s2 -> s3 -> s4 -> s5 -> s6 -> s7;
+  s3 -> s2 [label="revise (reopen)", style=dashed, constraint=false];
+  s2 -> d [style=invis]; d [label="Deferred\n(reason code,\nnext run)", fillcolor="#f7f7f7"]; s2 -> d [label="cannot fit"];
+}

@@ -1,0 +1,27 @@
+digraph G {
+  rankdir=TB; fontname="Helvetica"; nodesep=0.4; ranksep=0.5; compound=true;
+  node [fontname="Helvetica", fontsize=15, shape=box, style="rounded,filled", fillcolor="#ffffff", color="#5b6b8a"];
+  edge [fontname="Helvetica", fontsize=12, color="#5b6b8a"];
+  label="Where it runs: one Azure VM (2 vCPU, 8 GB)"; labelloc=t; fontsize=22;
+  user [label="Browsers and\nthe driver phone", shape=oval, fillcolor="#dbe4ff"];
+  dev [label="Developer laptop\n(ssh tunnel to tools)", shape=oval, fillcolor="#dbe4ff"];
+  gh [label="GitHub\nActions: tests, scans, build images\n(manual deploy button)", shape=oval, fillcolor="#eeeeee"];
+  ghcr [label="GHCR image registry", shape=oval, fillcolor="#eeeeee"];
+  subgraph cluster_vm { label="Azure VM"; style="rounded,filled"; fillcolor="#f7faff"; color="#7a8aa5";
+    caddy [label="Caddy (systemd, host)\nwaypoint.claptac.dev\nid.waypoint.claptac.dev\ngateway.waypoint.claptac.dev", fillcolor="#ffe9b8"];
+    thunder [label="waypoint-thunderid-prod\n(docker run, own config in\n~/.config/waypoint/thunderid)\n127.0.0.1:8091", fillcolor="#f3e0ff"];
+    subgraph cluster_compose { label="Docker Compose project (the Waypoint stack)"; style="rounded,filled"; fillcolor="#eef7f1"; color="#4aa96c";
+      nginx [label="nginx 127.0.0.1:8080", fillcolor="#ffe9b8"];
+      apps [label="web, loader-web\n(static images)"];
+      svcs [label="order, planning, fleet, loading,\ndelivery, shared, integration\n(Go, :8080 each)"];
+      agents [label="agent-orchestrator, agent-assistants,\nagent-manager (127.0.0.1:8085)", fillcolor="#fdecef"];
+      stores [label="postgres (volume)  redis\nminio = adobe/s3mock (no volume)", shape=cylinder, fillcolor="#dfe8f5"];
+      obs [label="prometheus 127.0.0.1:9090\ngrafana 127.0.0.1:3001", fillcolor="#eefaf8"];
+    }
+    cg [label="cellular-gateway stack\n(separate compose project)\ndashboard :13000, API :18000", fillcolor="#fff0e0"];
+  }
+  user -> caddy [label="443"]; caddy -> nginx; caddy -> thunder [label="/oauth2, /gate, /flow only"]; caddy -> cg [label="gateway.* host"];
+  nginx -> apps; nginx -> svcs; nginx -> agents; svcs -> stores; svcs -> thunder [label="JWKS, M2M tokens", style=dashed]; obs -> svcs [label="scrape", style=dotted];
+  gh -> ghcr [label="push images"]; gh -> caddy [label="ssh deploy\n(preflight checks first)", style=dashed, lhead=cluster_vm]; ghcr -> svcs [label="pull", style=dashed];
+  dev -> obs [label="ssh -L 3001/9090/8085", style=dashed]; svcs -> cg [label="SMS via integration-service", style=dashed];
+}

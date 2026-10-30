@@ -1,0 +1,20 @@
+digraph G {
+  rankdir=LR; fontname="Helvetica"; nodesep=0.4; ranksep=0.6;
+  node [fontname="Helvetica", fontsize=15, shape=box, style="rounded,filled", fillcolor="#ffffff", color="#5b6b8a"];
+  edge [fontname="Helvetica", fontsize=12, color="#5b6b8a"];
+  label="The guarded agent tier: the model only reads and writes text, our code decides and acts"; labelloc=t; fontsize=22;
+  user [label="Signed-in person\n(dispatcher or store manager)", shape=oval, fillcolor="#dbe4ff"];
+  nginx [label="nginx\n/api/v1/agent/*", fillcolor="#ffe9b8"];
+  orch [label="agent-orchestrator (Go)\n1. validate token, role\n2. fixed tool allowlist\n3. max 4 calls per turn\n4. sensitive tools -> approval", fillcolor="#fdecef", color="#d9667a"];
+  assist [label="agent-assistants (Python)\norder helper: model reads text,\ncode matches live products\ndashboard assistant: fixed card list", fillcolor="#fdecef", color="#d9667a"];
+  llm [label="LLM provider\n(forced function call,\nbounded output)", fillcolor="#f7f7f7"];
+  svc [label="Business services\nown RBAC + ownership + rules\n(same token as the user)", fillcolor="#e9f7ef", color="#4aa96c"];
+  appr [label="Approval (5 min, owner-bound)\nCreateOrder, DeferOrder,\nReassignAllocation, ConfirmPlan", fillcolor="#fff7e6"];
+  mgr [label="agent-manager\ntrace: steps + reasons\n(hashes, no tokens/raw text)", fillcolor="#eefaf8"];
+  user -> nginx -> orch; nginx -> assist;
+  orch -> llm [label="prompt + tool schemas"]; assist -> llm;
+  orch -> svc [label="read tools\n(user's bearer)"]; assist -> svc [label="products, outlet,\nown orders (read only)"];
+  orch -> appr [label="propose"]; appr -> user [label="Approve / Reject", dir=both];
+  appr -> svc [label="execute after approval"];
+  orch -> mgr [style=dotted]; assist -> mgr [style=dotted];
+}

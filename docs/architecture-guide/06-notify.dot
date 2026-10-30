@@ -1,0 +1,18 @@
+digraph G {
+  rankdir=LR; fontname="Helvetica"; nodesep=0.35; ranksep=0.6;
+  node [fontname="Helvetica", fontsize=15, shape=box, style="rounded,filled", fillcolor="#ffffff", color="#5b6b8a"];
+  edge [fontname="Helvetica", fontsize=12, color="#5b6b8a"];
+  label="Side pipelines: audit trail and notifications (SMS)"; labelloc=t; fontsize=22;
+  ev [label="Business event\n(order created, plan locked,\nshortfall decided, delivered,\nreceipt, deferral...)", shape=oval, fillcolor="#dbe4ff"];
+  svcs [label="Owning service\n(order, planning, loading,\ndelivery, fleet)", fillcolor="#e9f7ef", color="#4aa96c"];
+  audit [label="shared-service\nPOST /shared/audit-events\n(scope audit:write)\nappend-only audit.events", fillcolor="#e9f7ef", color="#4aa96c"];
+  outbox [label="notification_outbox\n(in-app row always;\nSMS row only with consent)", shape=cylinder, fillcolor="#dfe8f5"];
+  worker [label="notify worker\n(inside shared-service)\nclaims PENDING rows", fillcolor="#e9f7ef", color="#4aa96c"];
+  integ [label="integration-service\nPOST /notifications/send", fillcolor="#e9f7ef", color="#4aa96c"];
+  gw [label="SMS provider\ncellular gateway (phone)\nor Twilio", fillcolor="#fff0e0"];
+  hook [label="Provider callback\n(HMAC / signature checked)\nSMS_SENT, SMS_FAILED", fillcolor="#fff7e6"];
+  ui [label="Store manager sees the\nin-app notice;\ndispatcher sees Audit + Live", shape=oval, fillcolor="#dbe4ff"];
+  ev -> svcs; svcs -> audit [label="every action"]; svcs -> outbox [label="deferral, delay,\nshortfall"];
+  outbox -> worker -> integ -> gw; gw -> hook -> integ [style=dashed]; integ -> outbox [label="status via shared-service", style=dashed];
+  audit -> ui; outbox -> ui;
+}
