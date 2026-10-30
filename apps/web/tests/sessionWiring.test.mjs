@@ -27,7 +27,8 @@ test("signing in again returns to the page, through the safe return-to rule", ()
 });
 
 test("renewal switches on with the scope only, so nothing changes until the identity server allows it", () => {
-  assert.match(manager, /automaticSilentRenew: canRenew\(config\.scope\)/);
+  assert.match(manager, /const renewable = canRenew\(config\.scope\)/);
+  assert.match(manager, /automaticSilentRenew: renewable/);
   assert.match(manager, /scope: config\.scope/);
   assert.match(dockerfile, /ARG VITE_OIDC_SCOPE="openid profile"/);
   assert.match(ci, /VITE_OIDC_SCOPE=\$\{\{ vars\.PROD_WEB_OIDC_SCOPE \|\| 'openid profile' \}\}/);
