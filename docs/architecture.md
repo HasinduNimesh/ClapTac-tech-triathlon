@@ -1,5 +1,7 @@
 # Architecture
 
+> A fuller, diagram-based walk through every component and connection is in the [Architecture Guide](ARCHITECTURE_GUIDE.md).
+
 Waypoint is a four-role delivery workflow built as a React PWA, two Flutter apps and independently deployable Go services, with a small Python service for the order and dashboard assistants. The authoritative service prefix table is in [Architecture A](architecture/architecture-a.md).
 
 ## What runs

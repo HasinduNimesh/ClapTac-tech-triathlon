@@ -1,0 +1,47 @@
+digraph G {
+  rankdir=TB; compound=true; fontname="Helvetica"; nodesep=0.35; ranksep=0.55; splines=true;
+  node [fontname="Helvetica", fontsize=15, shape=box, style="rounded,filled", fillcolor="#ffffff", color="#5b6b8a"];
+  edge [fontname="Helvetica", fontsize=12, color="#5b6b8a"];
+  label="Waypoint: system overview (production). Service-to-service calls are in the next diagram"; labelloc=t; fontsize=22;
+
+  subgraph cluster_clients { label="Clients (the four roles)"; style="rounded,filled"; fillcolor="#eef2ff"; color="#8aa0ff";
+    web [label="Web app (React PWA)\nDispatcher + Store manager\n/ and /dispatcher, /store-manager", fillcolor="#dbe4ff"];
+    loader [label="Loader app\n(Flutter web)\n/loader-app/", fillcolor="#dbe4ff"];
+    driver [label="Driver app\n(Flutter Android)\noffline queue (SQLite)", fillcolor="#dbe4ff"];
+  }
+  subgraph cluster_edge { label="Edge on the Azure VM"; style="rounded,filled"; fillcolor="#fff7e6"; color="#e0a030";
+    caddy [label="Caddy (host)\nTLS, hostnames", fillcolor="#ffe9b8"];
+    nginx [label="nginx (container)\nstatic files, /api routing,\nsecurity headers, rate limit", fillcolor="#ffe9b8"];
+  }
+  idp [label="ThunderID (OIDC)\nid.waypoint.claptac.dev\nusers, roles, tokens, JWKS", fillcolor="#f3e0ff", color="#9a5fc9"];
+  subgraph cluster_svc { label="Business services (Go)"; style="rounded,filled"; fillcolor="#e9f7ef"; color="#4aa96c";
+    order [label="order-service"]; planning [label="planning-service"]; fleet [label="fleet-service"];
+    loading [label="loading-service"]; delivery [label="delivery-service"]; shared [label="shared-service\n(profiles, audit, notices,\nautomations, handovers)"];
+    integ [label="integration-service\n(SMS in/out)"];
+  }
+  subgraph cluster_ai { label="Agent tier"; style="rounded,filled"; fillcolor="#fdecef"; color="#d9667a";
+    orch [label="agent-orchestrator (Go)\ndispatcher assistant"]; assist [label="agent-assistants (Python)\norder helper, dashboard assistant"]; mgr [label="agent-manager\ntraces"];
+  }
+  subgraph cluster_data { label="Data"; style="rounded,filled"; fillcolor="#f1f5f9"; color="#7a8aa5";
+    pg [label="PostgreSQL 16\none schema per service", shape=cylinder, fillcolor="#dfe8f5"];
+    redis [label="Redis\nrate limits + caches\n(fail-open)", shape=cylinder, fillcolor="#dfe8f5"];
+    obj [label="Object store (S3 API)\nproof photos, signatures\n(mock now, R2 next)", shape=cylinder, fillcolor="#dfe8f5"];
+  }
+  subgraph cluster_ext { label="Outside services"; style="rounded,filled"; fillcolor="#f7f7f7"; color="#aaaaaa";
+    llm [label="LLM provider\n(Gemini, OpenAI-compatible API)"]; meteo [label="Open-Meteo\nrain forecast"]; osm [label="OpenStreetMap tiles"]; sms [label="SMS gateway\n(cellular phone) / Twilio"];
+  }
+  subgraph cluster_ops { label="Observability"; style="rounded,filled"; fillcolor="#eefaf8"; color="#4fb3a8";
+    prom [label="Prometheus"]; graf [label="Grafana"];
+  }
+
+  web -> caddy [label="HTTPS"]; loader -> caddy; driver -> caddy [label="HTTPS (sync, proofs, GPS)"];
+  caddy -> nginx [label="127.0.0.1:8080"]; caddy -> idp [label="id.* paths only"];
+  web -> idp [label="sign-in (code + PKCE)", style=dashed]; driver -> idp [style=dashed]; loader -> idp [style=dashed];
+  nginx -> order; nginx -> planning; nginx -> fleet; nginx -> loading; nginx -> delivery; nginx -> shared; nginx -> integ; nginx -> orch; nginx -> assist;
+  order -> pg [label="each service owns one schema"]; shared -> redis [style=dotted, label="caches, limits"];
+  orch -> llm; assist -> llm; orch -> mgr [style=dotted]; assist -> mgr [style=dotted];
+  planning -> meteo; web -> osm [style=dashed]; integ -> sms; sms -> integ [label="webhook", style=dashed];
+  delivery -> obj [label="proofs"];
+  prom -> shared [dir=back, style=dotted, label="scrape /metrics\n(all services)", constraint=false];
+  idp -> shared [style=invis];
+}
